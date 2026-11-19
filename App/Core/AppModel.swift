@@ -709,13 +709,26 @@ final class AppModel {
         return try checkResponse(res)
     }
 
+    /// EIP-712 chain id for user-signed actions: the wallet's chain for WalletConnect accounts.
+    var userSignChainId: UInt64 {
+        if account?.kind == .wallet { return account?.wcChainId ?? 42161 }
+        return HLSigning.userSignChainId
+    }
+
     @discardableResult
     func submitUser(_ a: UserSignedAction) async throws -> JSON {
-        guard account?.kind == .privateKey else {
+        guard let acc = account, acc.kind.canTransfer else {
             throw HLError(L("Transfers and withdrawals require the main wallet private key (an API wallet cannot sign them)"))
         }
-        let w = try wallet()
-        let sig = w.sign(digest: HLSigning.userSignedDigest(a))
+        let sig: HLSignature
+        if acc.kind == .wallet {
+            guard let topic = acc.wcTopic else { throw HLError(L("Wallet is not connected. Reconnect it in Settings.")) }
+            sig = try await WalletConnectService.shared.signTypedData(
+                topic: topic, address: acc.address, chainId: a.chainId, json: a.typedDataJSON(),
+                wallet: acc.walletApp.flatMap(WalletApp.init(rawValue:)))
+        } else {
+            sig = try wallet().sign(digest: HLSigning.userSignedDigest(a))
+        }
         let res = try await api.exchange(action: a.action, nonce: a.nonce, signature: sig, vault: nil)
         return try checkResponse(res)
     }
@@ -761,6 +774,7 @@ final class AppModel {
 
     func removeAccount(_ a: Account) {
         Keychain.delete(a.keychainKey)
+        if let topic = a.wcTopic { WalletConnectService.shared.disconnect(topic: topic) }
         accounts.removeAll { $0.id == a.id }
         if activeAccountId == a.id { activeAccountId = accounts.first?.id }
     }

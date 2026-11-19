@@ -6,6 +6,18 @@ public struct HLSignature: Equatable {
     public let s: [UInt8]
     public let v: Int
 
+    public init(r: [UInt8], s: [UInt8], v: Int) {
+        self.r = r; self.s = s; self.v = v
+    }
+
+    /// Parses a 65-byte r||s||v hex signature as returned by wallets (v may be 0/1 or 27/28).
+    public init?(hex: String) {
+        guard let b = Hex.decode(hex), b.count == 65 else { return nil }
+        var v = Int(b[64])
+        if v < 27 { v += 27 }
+        self.init(r: Array(b[0..<32]), s: Array(b[32..<64]), v: v)
+    }
+
     public var mp: MP {
         .map([("r", .str(Hex.encode(r))), ("s", .str(Hex.encode(s))), ("v", .int(Int64(v)))])
     }

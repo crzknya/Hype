@@ -7,6 +7,9 @@ options:
 packages:
   HyperCore:
     path: HyperCore
+  reown:
+    url: https://github.com/reown-com/reown-swift
+    exactVersion: 2.3.2
 targets:
   Hype:
     type: application
@@ -16,6 +19,8 @@ targets:
     dependencies:
       - package: HyperCore
         product: HyperCore
+      - package: reown
+        product: WalletConnect
     info:
       path: App/Info.plist
       properties:
@@ -32,7 +37,10 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [com.hype.trader.refresh]
         NSFaceIDUsageDescription: Unlock the app and confirm sensitive actions
         ITSAppUsesNonExemptEncryption: false
-        LSApplicationQueriesSchemes: [https]
+        LSApplicationQueriesSchemes: [https, rabby, metamask, trust, rainbow, wc]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.hype.trader
+            CFBundleURLSchemes: [hype]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hype.trader

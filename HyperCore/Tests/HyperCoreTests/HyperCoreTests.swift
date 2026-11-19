@@ -77,6 +77,16 @@ final class HyperCoreTests: XCTestCase {
             case "sendAsset": action = HLAction.sendAsset(destination: a["destination"].str, sourceDex: a["sourceDex"].str, destinationDex: a["destinationDex"].str,
                                                           token: a["token"].str, amount: a["amount"].str, fromSubAccount: a["fromSubAccount"].str,
                                                           nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
+            case "approveAgentArb":
+                action = HLAction.approveAgent(agentAddress: a["agentAddress"].str, agentName: a["agentName"].str,
+                                               nonce: UInt64(a["nonce"].int64!), mainnet: mainnet, chainId: 0xa4b1)
+                XCTAssertEqual(action.action["signatureChainId"]?.json(), "\"0xa4b1\"")
+                // Typed data JSON for the wallet must be valid and carry the domain chain id.
+                let td = try JSON.parse(Data(action.typedDataJSON().utf8))
+                XCTAssertEqual(td["domain"]["chainId"].int, 42161)
+                XCTAssertEqual(td["primaryType"].str, "HyperliquidTransaction:ApproveAgent")
+                XCTAssertEqual(td["message"]["agentName"].str, "Hype iOS")
+                XCTAssertEqual(td["types"]["HyperliquidTransaction:ApproveAgent"].array.count, 4)
             default: XCTFail("unknown \(name)"); continue
             }
             let digest = HLSigning.userSignedDigest(action)
@@ -85,6 +95,9 @@ final class HyperCoreTests: XCTestCase {
             XCTAssertEqual(Hex.encode(sig.r, prefix: false), c["r"].str, "r \(name)")
             XCTAssertEqual(Hex.encode(sig.s, prefix: false), c["s"].str, "s \(name)")
             XCTAssertEqual(String(sig.v), c["v"].str, "v \(name)")
+            // Round-trip through the wallet hex format.
+            let hex = Hex.encode(sig.r + sig.s + [UInt8(sig.v - 27)])
+            XCTAssertEqual(HLSignature(hex: hex), sig)
         }
     }
 

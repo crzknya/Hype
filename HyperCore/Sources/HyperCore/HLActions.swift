@@ -114,63 +114,68 @@ public enum HLAction {
 
     private static func chain(_ mainnet: Bool) -> String { mainnet ? "Mainnet" : "Testnet" }
 
-    public static func usdSend(destination: String, amount: String, time: UInt64, mainnet: Bool) -> UserSignedAction {
+    public static func usdSend(destination: String, amount: String, time: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         let dest = destination.lowercased()
         return UserSignedAction(
-            action: .map([("type", .str("usdSend")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("usdSend")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("destination", .str(dest)),
                           ("amount", .str(amount)), ("time", .int(Int64(time)))]),
             primaryType: "HyperliquidTransaction:UsdSend",
             fields: [.init("hyperliquidChain", "string"), .init("destination", "string"), .init("amount", "string"), .init("time", "uint64")],
             values: ["hyperliquidChain": .string(chain(mainnet)), "destination": .string(dest), "amount": .string(amount), "time": .uint(time)],
-            nonce: time)
+            nonce: time, chainId: chainId)
     }
 
-    public static func withdraw(destination: String, amount: String, time: UInt64, mainnet: Bool) -> UserSignedAction {
+    public static func withdraw(destination: String, amount: String, time: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         let dest = destination.lowercased()
         return UserSignedAction(
-            action: .map([("type", .str("withdraw3")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("withdraw3")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("destination", .str(dest)),
                           ("amount", .str(amount)), ("time", .int(Int64(time)))]),
             primaryType: "HyperliquidTransaction:Withdraw",
             fields: [.init("hyperliquidChain", "string"), .init("destination", "string"), .init("amount", "string"), .init("time", "uint64")],
             values: ["hyperliquidChain": .string(chain(mainnet)), "destination": .string(dest), "amount": .string(amount), "time": .uint(time)],
-            nonce: time)
+            nonce: time, chainId: chainId)
     }
 
     /// token: "NAME:0xTOKENID"
-    public static func spotSend(destination: String, token: String, amount: String, time: UInt64, mainnet: Bool) -> UserSignedAction {
+    public static func spotSend(destination: String, token: String, amount: String, time: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         let dest = destination.lowercased()
         return UserSignedAction(
-            action: .map([("type", .str("spotSend")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("spotSend")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("destination", .str(dest)), ("token", .str(token)),
                           ("amount", .str(amount)), ("time", .int(Int64(time)))]),
             primaryType: "HyperliquidTransaction:SpotSend",
             fields: [.init("hyperliquidChain", "string"), .init("destination", "string"), .init("token", "string"), .init("amount", "string"), .init("time", "uint64")],
             values: ["hyperliquidChain": .string(chain(mainnet)), "destination": .string(dest), "token": .string(token),
                      "amount": .string(amount), "time": .uint(time)],
-            nonce: time)
+            nonce: time, chainId: chainId)
     }
 
-    public static func usdClassTransfer(amount: String, toPerp: Bool, nonce: UInt64, mainnet: Bool) -> UserSignedAction {
+    public static func usdClassTransfer(amount: String, toPerp: Bool, nonce: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         UserSignedAction(
-            action: .map([("type", .str("usdClassTransfer")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("usdClassTransfer")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("amount", .str(amount)), ("toPerp", .bool(toPerp)),
                           ("nonce", .int(Int64(nonce)))]),
             primaryType: "HyperliquidTransaction:UsdClassTransfer",
             fields: [.init("hyperliquidChain", "string"), .init("amount", "string"), .init("toPerp", "bool"), .init("nonce", "uint64")],
             values: ["hyperliquidChain": .string(chain(mainnet)), "amount": .string(amount), "toPerp": .bool(toPerp), "nonce": .uint(nonce)],
-            nonce: nonce)
+            nonce: nonce, chainId: chainId)
     }
 
     /// Moves collateral between perp dexes ("" = main perp dex, "spot" = spot, otherwise a HIP-3 dex name).
     /// token: "NAME:0xTOKENID" of the dex collateral token.
     public static func sendAsset(destination: String, sourceDex: String, destinationDex: String, token: String,
-                                 amount: String, fromSubAccount: String, nonce: UInt64, mainnet: Bool) -> UserSignedAction {
+                                 amount: String, fromSubAccount: String, nonce: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         let dest = destination.lowercased()
         let sub = fromSubAccount.lowercased()
         return UserSignedAction(
-            action: .map([("type", .str("sendAsset")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("sendAsset")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("destination", .str(dest)),
                           ("sourceDex", .str(sourceDex)), ("destinationDex", .str(destinationDex)), ("token", .str(token)),
                           ("amount", .str(amount)), ("fromSubAccount", .str(sub)), ("nonce", .int(Int64(nonce)))]),
@@ -181,18 +186,19 @@ public enum HLAction {
             values: ["hyperliquidChain": .string(chain(mainnet)), "destination": .string(dest), "sourceDex": .string(sourceDex),
                      "destinationDex": .string(destinationDex), "token": .string(token), "amount": .string(amount),
                      "fromSubAccount": .string(sub), "nonce": .uint(nonce)],
-            nonce: nonce)
+            nonce: nonce, chainId: chainId)
     }
 
-    public static func approveAgent(agentAddress: String, agentName: String, nonce: UInt64, mainnet: Bool) -> UserSignedAction {
+    public static func approveAgent(agentAddress: String, agentName: String, nonce: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
         let agent = agentAddress.lowercased()
         return UserSignedAction(
-            action: .map([("type", .str("approveAgent")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+            action: .map([("type", .str("approveAgent")), ("signatureChainId", .str(HLSigning.hex(chainId))),
                           ("hyperliquidChain", .str(chain(mainnet))), ("agentAddress", .str(agent)),
                           ("agentName", .str(agentName)), ("nonce", .int(Int64(nonce)))]),
             primaryType: "HyperliquidTransaction:ApproveAgent",
             fields: [.init("hyperliquidChain", "string"), .init("agentAddress", "address"), .init("agentName", "string"), .init("nonce", "uint64")],
             values: ["hyperliquidChain": .string(chain(mainnet)), "agentAddress": .address(agent), "agentName": .string(agentName), "nonce": .uint(nonce)],
-            nonce: nonce)
+            nonce: nonce, chainId: chainId)
     }
 }

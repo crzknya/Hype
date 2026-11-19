@@ -27,7 +27,7 @@ struct TransferSheet: View {
                 case .send: send
                 case .deposit: deposit
                 }
-                if kind != .deposit && model.account?.kind != .privateKey {
+                if kind != .deposit && !(model.account?.kind.canTransfer ?? false) {
                     Section {
                         Label(L("This operation is signed by the main wallet. An API wallet can only trade. Add an account with a private key or do it on app.hyperliquid.xyz."),
                               systemImage: "exclamationmark.triangle")
@@ -185,7 +185,7 @@ struct TransferSheet: View {
     }
 
     private func submitButton(_ title: String, _ op: @escaping () async throws -> String) -> some View {
-        PrimaryButton(title: title, busy: busy, disabled: model.account?.kind != .privateKey) {
+        PrimaryButton(title: title, busy: busy, disabled: !(model.account?.kind.canTransfer ?? false)) {
             hideKeyboard()
             busy = true
             Task {

@@ -314,24 +314,24 @@ extension AppModel {
     func usdClassTransfer(amount: Double, toPerp: Bool) async throws {
         var amt = HLNum.wire(amount, maxDecimals: 6)
         if let v = vaultForActions { amt += " subaccount:\(v)" }
-        try await submitUser(HLAction.usdClassTransfer(amount: amt, toPerp: toPerp, nonce: nextNonce(), mainnet: network.isMainnet))
+        try await submitUser(HLAction.usdClassTransfer(amount: amt, toPerp: toPerp, nonce: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount() }
     }
 
     func withdraw(amount: Double, destination: String) async throws {
-        try await submitUser(HLAction.withdraw(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet))
+        try await submitUser(HLAction.withdraw(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
     }
 
     func sendUsd(amount: Double, destination: String) async throws {
-        try await submitUser(HLAction.usdSend(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet))
+        try await submitUser(HLAction.usdSend(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
     }
 
     func sendSpot(token: SpotToken, amount: Double, destination: String) async throws {
         try await submitUser(HLAction.spotSend(destination: destination, token: token.wire,
                                                amount: HLNum.wire(amount, maxDecimals: token.weiDecimals),
-                                               time: nextNonce(), mainnet: network.isMainnet))
+                                               time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
     }
 
@@ -341,7 +341,7 @@ extension AppModel {
         let dest = vaultForActions ?? me
         try await submitUser(HLAction.sendAsset(destination: dest, sourceDex: from, destinationDex: to, token: token.wire,
                                                 amount: HLNum.wire(amount, maxDecimals: min(token.weiDecimals, 8)),
-                                                fromSubAccount: vaultForActions ?? "", nonce: nextNonce(), mainnet: network.isMainnet))
+                                                fromSubAccount: vaultForActions ?? "", nonce: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAllAccounts() }
     }
 
@@ -354,7 +354,7 @@ extension AppModel {
     /// Creates and approves a new API wallet using the main key; returns the agent private key.
     func createAgent(name: String) async throws -> (address: String, key: String) {
         let (agent, key) = try HLWallet.generate()
-        try await submitUser(HLAction.approveAgent(agentAddress: agent.address, agentName: name, nonce: nextNonce(), mainnet: network.isMainnet))
+        try await submitUser(HLAction.approveAgent(agentAddress: agent.address, agentName: name, nonce: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         return (agent.address, key)
     }
 

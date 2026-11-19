@@ -58,6 +58,13 @@ user("approveAgent", {"type":"approveAgent","agentAddress":"0x5e9ee1089755c34351
             {"name": "agentName", "type": "string"},
             {"name": "nonce", "type": "uint64"}], "HyperliquidTransaction:ApproveAgent", True)
 user("sendAsset", {"type":"sendAsset","destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","sourceDex":"","destinationDex":"xyz","token":"USDC:0x6d1e7cde53ba9467b783cb7c530ce054","amount":"25.5","fromSubAccount":"","nonce":nonce}, S.SEND_ASSET_SIGN_TYPES, "HyperliquidTransaction:SendAsset", True)
+# Signed on Arbitrum (as an external wallet like Rabby would do).
+arb = {"type":"approveAgent","agentAddress":"0x5e9ee1089755c3435139848e47e6635505d5a13a","agentName":"Hype iOS","nonce":nonce,
+       "signatureChainId":"0xa4b1","hyperliquidChain":"Mainnet"}
+arb_types = [{"name": "hyperliquidChain", "type": "string"},{"name": "agentAddress", "type": "address"},
+             {"name": "agentName", "type": "string"},{"name": "nonce", "type": "uint64"}]
+arb_payload = S.user_signed_payload("HyperliquidTransaction:ApproveAgent", arb_types, arb)
+users.append({"name": "approveAgentArb", "action": arb, "digest": digest(arb_payload), **sig(S.sign_inner(w, arb_payload))})
 out["user"] = users
 out["wire"] = [[x, S.float_to_wire(x)] for x in [1670.1, 0.0147, 1800.0, 0.00012345, 100000.0, 1e-8, 123.45600, 0.1+0.2]]
 print(json.dumps(out, indent=1))

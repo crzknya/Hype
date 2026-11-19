@@ -204,6 +204,21 @@
    "r": "f04d1d4599ae2ce0abb22072a3eea09c6a14dafc15dd0d32e1df217b419ea1cd",
    "s": "67c2d70a5de867d643d4fb51c449fd30935e14c11645a5750899705604e5dcef",
    "v": "27"
+  },
+  {
+   "name": "approveAgentArb",
+   "action": {
+    "type": "approveAgent",
+    "agentAddress": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "agentName": "Hype iOS",
+    "nonce": 1700000000000,
+    "signatureChainId": "0xa4b1",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "eacbc543f986257358eb618c963b03dc08f045c21dfcf95670844e25df20553a",
+   "r": "9107f34bc37893fff9fa1cc833e1e346a53752435c101ebfa83aa1ebfc7cc05a",
+   "s": "354c7a00815ebd694e7bb39a10a912ba47029a899267a711c5568644a6104eec",
+   "v": 28
   }
  ],
  "wire": [

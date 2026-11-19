@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var adding = false
     @State private var creatingAgent = false
+    @State private var connectingWallet = false
+    @State private var renewingAgent = false
 
     var body: some View {
         @Bindable var model = model
@@ -31,14 +33,22 @@ struct SettingsView: View {
                             Button(role: .destructive) { model.removeAccount(a) } label: { Label(L("Delete"), systemImage: "trash") }
                         }
                     }
-                    Button { adding = true } label: { Label(L("Add account"), systemImage: "plus.circle") }
+                    Button { connectingWallet = true } label: {
+                        Label(L("Connect wallet (Rabby, MetaMask…)"), systemImage: "link.circle")
+                    }
+                    Button { adding = true } label: { Label(L("Add account with a key or address"), systemImage: "plus.circle") }
+                    if let acc = model.account, acc.kind == .wallet {
+                        Button { renewingAgent = true } label: {
+                            Label(L("Renew trading key for {0}", acc.name), systemImage: "arrow.clockwise.circle")
+                        }
+                    }
                     if model.account?.kind == .privateKey {
                         Button { creatingAgent = true } label: { Label(L("Create an API wallet from this account"), systemImage: "key.viewfinder") }
                     }
                 } header: {
                     Text(L("Accounts"))
                 } footer: {
-                    Text(L("An API wallet is recommended: it can trade but cannot withdraw funds. Keys are stored in the Keychain on this device only."))
+                    Text(L("Connecting a wallet works like app.hyperliquid.xyz: you sign once in the wallet, then trade without prompts; withdrawals and transfers are confirmed in the wallet. Keys are stored in the Keychain on this device only."))
                 }
 
                 ReferralSection()
@@ -104,6 +114,8 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $adding) { AddAccountView() }
             .sheet(isPresented: $creatingAgent) { CreateAgentView() }
+            .sheet(isPresented: $connectingWallet) { ConnectWalletView(renew: nil) }
+            .sheet(isPresented: $renewingAgent) { ConnectWalletView(renew: model.account) }
         }
     }
 }
@@ -125,7 +137,7 @@ struct AddAccountView: View {
             Form {
                 Section {
                     Picker(L("Type"), selection: $kind) {
-                        ForEach(Account.Kind.allCases) { Text($0.title).tag($0) }
+                        ForEach(Account.Kind.allCases.filter { $0 != .wallet }) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 } footer: { Text(kindHelp) }
@@ -187,6 +199,8 @@ struct AddAccountView: View {
             return L("Full access including withdrawals and transfers. Use only if you understand the risks: the key is stored in the Keychain on this device.")
         case .watch:
             return L("View positions, orders and history of any address without trading.")
+        case .wallet:
+            return ""
         }
     }
 
@@ -209,6 +223,8 @@ struct AddAccountView: View {
         let v = vault.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !v.isEmpty && !Address.isValid(v) { warning = L("Invalid sub-account address"); return }
         switch kind {
+        case .wallet:
+            return
         case .watch:
             guard Address.isValid(addr) else { warning = L("Invalid address"); return }
             finish(Account(name: name.isEmpty ? L("Watch") : name, address: addr, kind: .watch), key: nil)
