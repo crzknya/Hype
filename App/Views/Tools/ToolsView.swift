@@ -275,11 +275,15 @@ struct FundingScannerView: View {
     @Environment(AppModel.self) private var model
     @State private var positive = true
 
+    private var list: [Market] {
+        let all: [Market] = model.perps.map { (m: Market) -> Market in model.marketById[m.id] ?? m }
+        let liquid: [Market] = all.filter { (m: Market) -> Bool in m.dayNtlVlm > 100_000 }
+        let desc = positive
+        let sorted: [Market] = liquid.sorted { (a: Market, b: Market) -> Bool in desc ? a.funding > b.funding : a.funding < b.funding }
+        return Array(sorted.prefix(40))
+    }
+
     var body: some View {
-        let list = model.perps.map { model.marketById[$0.id] ?? $0 }
-            .filter { $0.dayNtlVlm > 100_000 }
-            .sorted { positive ? $0.funding > $1.funding : $0.funding < $1.funding }
-            .prefix(40)
         List {
             Picker("", selection: $positive) {
                 Text("Высокий +").tag(true)
@@ -287,7 +291,7 @@ struct FundingScannerView: View {
             }
             .pickerStyle(.segmented)
             Section {
-                ForEach(Array(list)) { m in
+                ForEach(list) { m in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(m.name).font(.subheadline.bold())
@@ -313,12 +317,12 @@ struct FundingScannerView: View {
 struct MoversView: View {
     @Environment(AppModel.self) private var model
     var body: some View {
-        let all = model.perps.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm > 500_000 }
-        let gainers = all.sorted { $0.change24h > $1.change24h }.prefix(10)
-        let losers = all.sorted { $0.change24h < $1.change24h }.prefix(10)
+        let all: [Market] = model.perps.map { (m: Market) -> Market in model.marketById[m.id] ?? m }.filter { (m: Market) -> Bool in m.dayNtlVlm > 500_000 }
+        let gainers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h > b.change24h }.prefix(10))
+        let losers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h < b.change24h }.prefix(10))
         List {
-            Section("Рост за 24ч") { ForEach(Array(gainers)) { row($0) } }
-            Section("Падение за 24ч") { ForEach(Array(losers)) { row($0) } }
+            Section("Рост за 24ч") { ForEach(gainers) { row($0) } }
+            Section("Падение за 24ч") { ForEach(losers) { row($0) } }
         }
         .navigationTitle("Лидеры")
     }

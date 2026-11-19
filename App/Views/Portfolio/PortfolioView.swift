@@ -46,11 +46,7 @@ struct PortfolioView: View {
 
     private var summaryCard: some View {
         let s = model.summary
-        let spotValue = model.spotBalances.reduce(0.0) { acc, b in
-            if b.coin == "USDC" { return acc + b.total }
-            let px = model.spots.first { $0.base == b.coin && $0.quote == "USDC" }.map { model.mid($0.id) } ?? 0
-            return acc + b.total * px
-        }
+        let spotValue = model.spotValue
         return Card {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -185,7 +181,7 @@ struct PortfolioView: View {
         case .spot:
             if model.spotBalances.isEmpty { EmptyState(text: "Нет спотовых балансов") }
             ForEach(model.spotBalances) { b in
-                let px = b.coin == "USDC" ? 1 : (model.spots.first { $0.base == b.coin && $0.quote == "USDC" }.map { model.mid($0.id) } ?? 0)
+                let px: Double = model.spotPrice(b.coin)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(b.coin).font(.subheadline.bold())

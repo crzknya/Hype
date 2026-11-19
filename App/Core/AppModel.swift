@@ -139,6 +139,19 @@ final class AppModel {
     func position(_ coin: String) -> Position? { positions.first { $0.coin == coin } }
     func orders(for coin: String) -> [OpenOrder] { openOrders.filter { $0.coin == coin } }
 
+    /// USD price of a spot token (via its /USDC market).
+    func spotPrice(_ coin: String) -> Double {
+        if coin == "USDC" { return 1 }
+        guard let m = spots.first(where: { $0.base == coin && $0.quote == "USDC" }) else { return 0 }
+        return mid(m.id)
+    }
+
+    var spotValue: Double {
+        var total = 0.0
+        for b in spotBalances { total += b.total * spotPrice(b.coin) }
+        return total
+    }
+
     var usdcSpot: Double { spotBalances.first { $0.coin == "USDC" }?.available ?? 0 }
 
     // MARK: Lifecycle
