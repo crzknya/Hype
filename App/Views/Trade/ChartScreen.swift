@@ -145,8 +145,8 @@ struct IndicatorsSheet: View {
                     Toggle(L("Volume"), isOn: $model.showVolume)
                 }
                 Section {
-                    ForEach($model.indicators) { $cfg in
-                        IndicatorRow(config: $cfg, showToggle: !isEditing) { editing = cfg.id }
+                    ForEach(model.indicators) { cfg in
+                        IndicatorRow(config: binding(for: cfg.id), showToggle: !isEditing) { editing = cfg.id }
                     }
                     .onDelete { model.indicators.remove(atOffsets: $0) }
                     .onMove { model.indicators.move(fromOffsets: $0, toOffset: $1) }
@@ -182,9 +182,7 @@ struct IndicatorsSheet: View {
             .navigationTitle(L("Indicators"))
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $editing) { id in
-                if let i = model.indicators.firstIndex(where: { $0.id == id }) {
-                    IndicatorEditor(config: $model.indicators[i])
-                }
+                IndicatorEditor(config: binding(for: id))
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -197,6 +195,18 @@ struct IndicatorsSheet: View {
                 }
             }
         }
+    }
+}
+
+extension IndicatorsSheet {
+    /// Binding looked up by id, so rows that SwiftUI re-renders right after a deletion
+    /// never index past the end of the array (that crashed when deleting the last indicator).
+    func binding(for id: UUID) -> Binding<IndicatorConfig> {
+        Binding(
+            get: { model.indicators.first { $0.id == id } ?? IndicatorConfig.make(.ema, color: 0) },
+            set: { new in
+                if let i = model.indicators.firstIndex(where: { $0.id == id }) { model.indicators[i] = new }
+            })
     }
 }
 
