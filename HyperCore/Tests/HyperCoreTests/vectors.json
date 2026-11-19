@@ -1,0 +1,211 @@
+{
+ "privateKey": "0x0123456789012345678901234567890123456789012345678901234567890123",
+ "address": "0x14791697260E4c9A71f18484C9f997B308e59325",
+ "keccakEmpty": "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+ "keccakAbc": "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+ "l1": [
+  {
+   "name": "order",
+   "msgpack": "83a474797065a56f72646572a66f72646572739286a16104a162c3a170a6313637302e31a173a6302e30313437a172c2a17481a56c696d697481a3746966a347746386a16104a162c2a170a431383030a173a6302e30313437a172c3a17481a77472696767657283a869734d61726b6574c3a9747269676765725078a431383030a47470736ca27470a867726f7570696e67aa6e6f726d616c5470736c",
+   "actionHash": "cdd7fdc5a097876b469b05d8b9538048926abefeb1544f3c82af207312d1e0af",
+   "digest": "552b2be962e478dc4d18e2db543a84276605ea9ff947fb91d0df4c63880a35cf",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "dfa8a40d60c09eeaf4fce8b8b265072d3c81487d025065167e656593e0a3cd3e",
+   "s": "0868c0f83fe09b42b4d81e6c37fe768382fa73a9976b757b7128173532bf7893",
+   "v": "28"
+  },
+  {
+   "name": "orderVaultTestnet",
+   "msgpack": "83a474797065a56f72646572a66f72646572739286a16104a162c3a170a6313637302e31a173a6302e30313437a172c2a17481a56c696d697481a3746966a347746386a16104a162c2a170a431383030a173a6302e30313437a172c3a17481a77472696767657283a869734d61726b6574c3a9747269676765725078a431383030a47470736ca27470a867726f7570696e67aa6e6f726d616c5470736c",
+   "actionHash": "0d147564fb239087fee7e6cd08e58ade31008cdb09659cd6bc3d25f73cd68edb",
+   "digest": "990f55ae17b3ffd3005c3f2de256bfd29248aa0c2ec85bd6119b999a7b91b7f6",
+   "vault": "0x1719884eb866cb12b2287399b15f7db5e7d775ea",
+   "expiresAfter": null,
+   "mainnet": false,
+   "nonce": 1700000000000,
+   "r": "8d36abc2e23841eaac5007966e918dbc73673d34ed76e9c801216663085fb6be",
+   "s": "369f5be7e1e6e2a5c6b825e199c25f219804ff1f3a45441107c32da01da72611",
+   "v": "28"
+  },
+  {
+   "name": "orderExpires",
+   "msgpack": "83a474797065a56f72646572a66f72646572739286a16104a162c3a170a6313637302e31a173a6302e30313437a172c2a17481a56c696d697481a3746966a347746386a16104a162c2a170a431383030a173a6302e30313437a172c3a17481a77472696767657283a869734d61726b6574c3a9747269676765725078a431383030a47470736ca27470a867726f7570696e67aa6e6f726d616c5470736c",
+   "actionHash": "e2aecc25807b790c379d3b4aafc849f22bfb8cdf04340057436c63c0c1af582d",
+   "digest": "816221cafb77efb8e8252af07cc808580ba58290ac58bf4c8fcb68ac24c4e236",
+   "vault": null,
+   "expiresAfter": 1700000060000,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "2cffbb5ef30120787af4155a78feb535a31036c131048277e8f50f5351ba99cf",
+   "s": "0711e725d2276d602341bfd0b5bde74003c1c8e14d118b2829573d9be450a76e",
+   "v": "28"
+  },
+  {
+   "name": "cancel",
+   "msgpack": "82a474797065a663616e63656ca763616e63656c739182a16104a16fce075bcd15",
+   "actionHash": "28850c8105e7d927147b1aeac52b9d3a899034f7bb96797878bcf893e971b410",
+   "digest": "6c45b9122845f9da4ff4279b842ed539303baf43c04037acd68805ba98fa1326",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "4356bc342aa93b86d5b1a8d541401eacca541d1e767bb11f18e90f5cebd874cf",
+   "s": "61cf8c5b0f8790ce17ecba28fe20ab5acb6fbf2a0509f076b46087bc44016cad",
+   "v": "28"
+  },
+  {
+   "name": "leverage",
+   "msgpack": "84a474797065ae7570646174654c65766572616765a5617373657400a7697343726f7373c3a86c657665726167650a",
+   "actionHash": "e69c035a0297dd24d9b288c3e8509ae251baf7bf43a43b895327a2cab098389e",
+   "digest": "e6ef425fe152bfa4961bd961d5eaec6f78faec0e337371b3d174159ecd4810f8",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "4fa0ed1f37b56019934737616f720140dc2d415064df1f02ef44e0a6431dc02d",
+   "s": "0541f7b41434b08725ae4d5908e3dc426e8a9ae09833f907d077fc4e32df6c2e",
+   "v": "27"
+  },
+  {
+   "name": "twap",
+   "msgpack": "82a474797065a9747761704f72646572a47477617086a16101a162c3a173a3312e35a172c2a16d1ea174c3",
+   "actionHash": "8c714539332b8093c98c0e70b50ea8e87e5827789d015ebabab9ea0816452143",
+   "digest": "09023fd8f6c0b28e1e9a144d7dbfb793f20b7b2557834437b37e55e143ffea41",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "beaf238709df8045e1d438b9d97eda53aff6a12d4b94aa9253135bc2e7650706",
+   "s": "458c06b32f8d1c3b5963d25e82d4836202bdf8c6d378f9973134eae41b720348",
+   "v": "28"
+  },
+  {
+   "name": "spotCloid",
+   "msgpack": "83a474797065a56f72646572a66f72646572739187a161cd277ba162c2a170aa302e3030303132333435a173a6313030303030a172c2a17481a56c696d697481a3746966a3496f63a163d92230783030303030303030303030303030303030303030303030303030303030303031a867726f7570696e67a26e61",
+   "actionHash": "ccd6b687080ecbbb8710fbab020afc818ec56263b389692838cc220a80e7dcb8",
+   "digest": "a7772def896ce8e47743a1052835b42ee3b9742af585c399eacc0108d6c6df90",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "7b94ef544ab0b5a6fd2c70326fb2d814671a714a128f077042f32fa9305c15f3",
+   "s": "5bc7821b531a6fdbdd4f7887595dcc65acc80e7bdac4b2f7598181d1aa9c8ef7",
+   "v": "28"
+  }
+ ],
+ "user": [
+  {
+   "name": "usdSend",
+   "action": {
+    "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "amount": "1",
+    "time": 1700000000000,
+    "type": "usdSend",
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "66fdd5ad8d92e9585a18ec3ed6c5476e0447bd7aa4fcd442c071ae2ab83d4bca",
+   "r": "115e9b16a9d32fa3e8feeeaa92e152e5694c43389b1db3b77707665d1a2bed0e",
+   "s": "1fc96a61f717f21c2ba121cb71e0b3831c43763fd2e620b92de537f85f07c8f0",
+   "v": "27"
+  },
+  {
+   "name": "withdraw",
+   "action": {
+    "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "amount": "12.5",
+    "time": 1700000000000,
+    "type": "withdraw3",
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "a324c4bcc557b57d9c18a9ec3bcf9929f32ba76e329b828c015141ac8a70ae2c",
+   "r": "ea1d00cd41c1c35da5132b5a377873220e4d745d934c7a33cb091dacf22def9a",
+   "s": "41fc9ad34e015926c60e0a8bd13ddcf4f37642ab5daec0ff068dbe4d3f100e8f",
+   "v": "28"
+  },
+  {
+   "name": "classTransfer",
+   "action": {
+    "type": "usdClassTransfer",
+    "amount": "100",
+    "toPerp": false,
+    "nonce": 1700000000000,
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Testnet"
+   },
+   "digest": "498933379480374f7dce320441c4d63ebd2e8233d2b23fecc902ba9ed22a08d4",
+   "r": "c2cd83bdd24450d1c8c268ea663cbb007a164169bed6d473770b18035c852508",
+   "s": "10b253eefb0a9eaa350b0acfc217fcb09fbc61cd4da0b86886942d29190a0665",
+   "v": "28"
+  },
+  {
+   "name": "spotSend",
+   "action": {
+    "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "amount": "3",
+    "token": "PURR:0xc4bf3f870c0e9465323c0b6ed28096c2",
+    "time": 1700000000000,
+    "type": "spotSend",
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "fbefcc99d4f1c83783b3957ad9883f01867022928fc49234dc123ebe028dd32f",
+   "r": "fcbf6253f73472eba0485c8511ffe03a6cfc5c2a28b012919e6f964c89a7970b",
+   "s": "683095f014064ddaa642d13c0c7bd9ee7a7635728f5539c6a910c241312bdd1d",
+   "v": "28"
+  },
+  {
+   "name": "approveAgent",
+   "action": {
+    "type": "approveAgent",
+    "agentAddress": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "agentName": "ios",
+    "nonce": 1700000000000,
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "7e23f87040da3cbb75459811d4c22f6b0994c7bfd7068b33f73f76349807ed52",
+   "r": "2ee89a61a7a7cd9cac0dbbe781f0e0987788ea20059db0938893cddb247fb32e",
+   "s": "096e53a37a85c7031324036c86dbb1977c4705322f33c6ef6fdf86adc9a77093",
+   "v": "27"
+  }
+ ],
+ "wire": [
+  [
+   1670.1,
+   "1670.1"
+  ],
+  [
+   0.0147,
+   "0.0147"
+  ],
+  [
+   1800.0,
+   "1800"
+  ],
+  [
+   0.00012345,
+   "0.00012345"
+  ],
+  [
+   100000.0,
+   "100000"
+  ],
+  [
+   1e-08,
+   "0.00000001"
+  ],
+  [
+   123.456,
+   "123.456"
+  ],
+  [
+   0.30000000000000004,
+   "0.3"
+  ]
+ ]
+}

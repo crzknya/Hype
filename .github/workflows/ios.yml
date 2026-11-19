@@ -1,0 +1,16 @@
+name: iOS
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version && swift --version
+      - name: Test HyperCore (signing vs Python SDK vectors)
+        working-directory: HyperCore
+        run: swift test
