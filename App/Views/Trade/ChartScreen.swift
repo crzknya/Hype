@@ -255,6 +255,11 @@ struct IndicatorEditor: View {
                     Stepper(L("Fast: {0}", config.p1), value: $config.p1, in: 2...100)
                     Stepper(L("Slow: {0}", config.p2), value: $config.p2, in: 3...200)
                     Stepper(L("Signal: {0}", config.p3), value: $config.p3, in: 2...100)
+                case .volumeProfile:
+                    Stepper(L("Rows: {0}", config.p1), value: $config.p1, in: 10...200, step: 5)
+                    Stepper(L("Value area: {0}%", Int(config.upper)), value: $config.upper, in: 50...95, step: 5)
+                    Stepper(L("Width: {0}% of chart", config.p2), value: $config.p2, in: 10...60, step: 5)
+                    Text(L("Volume by price for the candles on screen. POC is the level with the most volume; VAH/VAL bound the value area. Green: volume of rising candles, red: falling.")).font(.caption).foregroundStyle(Color.hlMuted)
                 case .stochastic:
                     Stepper(L("%K period: {0}", config.p1), value: $config.p1, in: 2...100)
                     Stepper(L("%K smoothing: {0}", config.p2), value: $config.p2, in: 1...20)

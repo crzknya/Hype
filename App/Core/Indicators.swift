@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
-    case ema, sma, bollinger, vwap, rsi, macd, stochastic
+    case ema, sma, bollinger, vwap, rsi, macd, stochastic, volumeProfile
     var id: String { rawValue }
 
     var title: String {
@@ -14,6 +14,7 @@ enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
         case .rsi: return "RSI"
         case .macd: return "MACD"
         case .stochastic: return L("Stochastic")
+        case .volumeProfile: return L("Volume Profile")
         }
     }
 
@@ -43,6 +44,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .rsi: return IndicatorConfig(kind: kind, p1: 14, upper: 70, lower: 30, color: color)
         case .macd: return IndicatorConfig(kind: kind, p1: 12, p2: 26, p3: 9, color: color)
         case .stochastic: return IndicatorConfig(kind: kind, p1: 14, p2: 3, p3: 3, upper: 80, lower: 20, color: color)
+        case .volumeProfile: return IndicatorConfig(kind: kind, p1: 40, p2: 30, upper: 70, color: color)
         }
     }
 
@@ -54,6 +56,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         IndicatorConfig(kind: .vwap, p1: 0, color: 4, visible: false),
         IndicatorConfig(kind: .rsi, p1: 14, color: 5, visible: false),
         IndicatorConfig(kind: .macd, p1: 12, p2: 26, p3: 9, color: 0, visible: false),
+        IndicatorConfig(kind: .volumeProfile, p1: 40, p2: 30, upper: 70, color: 4, visible: false),
     ]
 
     var label: String {
@@ -63,6 +66,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .vwap: return "VWAP"
         case .macd: return "MACD \(p1), \(p2), \(p3)"
         case .stochastic: return "Stoch \(p1), \(p2), \(p3)"
+        case .volumeProfile: return "VPVR \(p1)"
         }
     }
 }
@@ -222,7 +226,59 @@ struct ChartPane {
     var levels: [Double] = []
 }
 
+/// Visible-range volume profile settings.
+struct VolumeProfileSpec {
+    let rows: Int
+    let valueArea: Double     // 0...1
+    let widthFraction: Double // share of the plot width
+    let color: Color
+}
+
+/// Computed profile for a price range.
+struct VolumeProfile {
+    let lo: Double
+    let step: Double
+    let buy: [Double]
+    let sell: [Double]
+    let poc: Int
+    let vaLow: Int
+    let vaHigh: Int
+    var total: [Double] { zip(buy, sell).map { $0 + $1 } }
+
+    /// Distributes each candle's volume uniformly over the price bins its range covers.
+    static func compute(_ candles: ArraySlice<Candle>, rows: Int, valueArea: Double) -> VolumeProfile? {
+        guard rows > 1, let lo = candles.map(\.l).min(), let hi = candles.map(\.h).max(), hi > lo else { return nil }
+        let step = (hi - lo) / Double(rows)
+        var buy = [Double](repeating: 0, count: rows)
+        var sell = [Double](repeating: 0, count: rows)
+        for c in candles where c.v > 0 {
+            let span = max(c.h - c.l, step * 1e-6)
+            let first = max(0, min(rows - 1, Int((c.l - lo) / step)))
+            let last = max(0, min(rows - 1, Int((c.h - lo) / step)))
+            let up = c.c >= c.o
+            for b in first...last {
+                let bLo = lo + Double(b) * step, bHi = bLo + step
+                let overlap = c.h == c.l ? 1.0 / Double(last - first + 1) : max(0, min(bHi, c.h) - max(bLo, c.l)) / span
+                let v = c.v * overlap
+                if up { buy[b] += v } else { sell[b] += v }
+            }
+        }
+        let total = zip(buy, sell).map { $0 + $1 }
+        let sum = total.reduce(0, +)
+        guard sum > 0, let poc = total.indices.max(by: { total[$0] < total[$1] }) else { return nil }
+        // Value area: grow from the POC towards the larger neighbour until the target share is covered.
+        var lowI = poc, highI = poc, acc = total[poc]
+        while acc < sum * valueArea && (lowI > 0 || highI < rows - 1) {
+            let down = lowI > 0 ? total[lowI - 1] : -1
+            let upV = highI < rows - 1 ? total[highI + 1] : -1
+            if upV >= down { highI += 1; acc += total[highI] } else { lowI -= 1; acc += total[lowI] }
+        }
+        return VolumeProfile(lo: lo, step: step, buy: buy, sell: sell, poc: poc, vaLow: lowI, vaHigh: highI)
+    }
+}
+
 struct ChartLayers {
+    var volumeProfile: VolumeProfileSpec?
     var overlays: [ChartSeries] = []
     var bands: [(up: [Double?], low: [Double?], color: Color)] = []
     var panes: [ChartPane] = []
@@ -261,6 +317,10 @@ struct ChartLayers {
                                          lines: [ChartSeries(values: m.macd, color: color),
                                                  ChartSeries(values: m.signal, color: IndicatorPalette.color(cfg.color + 4))],
                                          histogram: m.hist, levels: [0]))
+            case .volumeProfile:
+                r.volumeProfile = VolumeProfileSpec(rows: max(5, cfg.p1), valueArea: min(0.99, max(0.1, cfg.upper / 100)),
+                                                    widthFraction: min(0.8, max(0.05, Double(cfg.p2) / 100)), color: color)
+                r.legend.append((cfg.label, color))
             case .stochastic:
                 let s = TA.stochastic(candles, cfg.p1, cfg.p2, cfg.p3)
                 r.panes.append(ChartPane(title: cfg.label, titleColor: color,

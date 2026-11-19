@@ -147,6 +147,11 @@ struct CandleChart: View {
             if started { path.closeSubpath(); main.fill(path, with: .color(b.color.opacity(0.07))) }
         }
 
+        // Volume profile (visible range), drawn behind the candles from the right edge.
+        if let spec = layers.volumeProfile, let vp = VolumeProfile.compute(s, rows: spec.rows, valueArea: spec.valueArea) {
+            drawVolumeProfile(&main, vp, spec: spec, plotW: plotW, y: y)
+        }
+
         // Candles
         for i in r {
             let c = candles[i]
@@ -236,6 +241,41 @@ struct CandleChart: View {
                 ctx.draw(Text(Fmt.price(price, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
                          at: CGPoint(x: plotW + 4, y: p.y), anchor: .leading)
             }
+        }
+    }
+
+    private func drawVolumeProfile(_ ctx: inout GraphicsContext, _ vp: VolumeProfile, spec: VolumeProfileSpec,
+                                   plotW: CGFloat, y: (Double) -> CGFloat) {
+        let total = vp.total
+        let maxV = total.max() ?? 0
+        guard maxV > 0 else { return }
+        let maxW = plotW * CGFloat(spec.widthFraction)
+        for b in 0..<total.count where total[b] > 0 {
+            let top = y(vp.lo + Double(b + 1) * vp.step)
+            let bottom = y(vp.lo + Double(b) * vp.step)
+            let h = max(1, bottom - top - 1)
+            let inVA = b >= vp.vaLow && b <= vp.vaHigh
+            let alpha: Double = inVA ? 0.38 : 0.16
+            let wBuy = maxW * CGFloat(vp.buy[b] / maxV)
+            let wSell = maxW * CGFloat(vp.sell[b] / maxV)
+            // Sell part at the far right, buy part to its left.
+            ctx.fill(Path(CGRect(x: plotW - wSell, y: top, width: wSell, height: h)), with: .color(Color.hlRed.opacity(alpha)))
+            ctx.fill(Path(CGRect(x: plotW - wSell - wBuy, y: top, width: wBuy, height: h)), with: .color(Color.hlGreen.opacity(alpha)))
+        }
+        // POC and value-area boundaries
+        let pocY = y(vp.lo + (Double(vp.poc) + 0.5) * vp.step)
+        var poc = Path()
+        poc.move(to: CGPoint(x: 0, y: pocY)); poc.addLine(to: CGPoint(x: plotW, y: pocY))
+        ctx.stroke(poc, with: .color(spec.color), lineWidth: 1.2)
+        ctx.draw(Text("POC").font(.system(size: 8, weight: .bold)).foregroundColor(spec.color),
+                 at: CGPoint(x: 4, y: pocY - 6), anchor: .leading)
+        for (price, label) in [(vp.lo + Double(vp.vaHigh + 1) * vp.step, "VAH"), (vp.lo + Double(vp.vaLow) * vp.step, "VAL")] {
+            let yy = y(price)
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
+            ctx.stroke(path, with: .color(spec.color.opacity(0.6)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+            ctx.draw(Text(label).font(.system(size: 8, weight: .semibold)).foregroundColor(spec.color.opacity(0.8)),
+                     at: CGPoint(x: 4, y: yy - 6), anchor: .leading)
         }
     }
 
