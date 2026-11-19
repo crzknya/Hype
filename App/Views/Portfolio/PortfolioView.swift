@@ -31,8 +31,7 @@ struct PortfolioView: View {
             }
             .background(Color.hlBg)
             .refreshable {
-                await model.refreshAccount()
-                await model.refreshOrders()
+                await model.refreshAllAccounts()
                 await model.refreshHistory()
             }
             .navigationTitle(L("Portfolio"))
@@ -71,6 +70,14 @@ struct PortfolioView: View {
                     Stat(title: L("Account leverage"), value: Fmt.num(s.leverage, 2) + "x")
                     Stat(title: L("Margin ratio"), value: Fmt.pct(s.marginRatio, 1, signed: false),
                          color: s.marginRatio > 0.8 ? .hlRed : s.marginRatio > 0.5 ? .orange : .hlGreen)
+                }
+            }
+            let dexNames: [String] = model.dexSummaries.keys.sorted().filter { (k: String) -> Bool in (model.dexSummaries[k]?.accountValue ?? 0) > 0 }
+            if !dexNames.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(dexNames, id: \.self) { k in
+                        Stat(title: "HIP-3 · \(k)", value: Fmt.usd(model.dexSummaries[k]?.accountValue ?? 0))
+                    }
                 }
             }
             if let err = model.accountError {

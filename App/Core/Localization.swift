@@ -404,6 +404,8 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
+        "Choose different accounts": "Выберите разные счета",
+        "HIP-3 dexes (stocks, indices) have separate margin. Move collateral to the dex before trading its markets, unless unified margin is enabled on app.hyperliquid.xyz.": "У HIP-3 бирж (акции, индексы) отдельная маржа. Переведите залог на биржу перед торговлей её рынками, если на app.hyperliquid.xyz не включена единая маржа.",
         "Language": "Язык",
         "TWAP": "TWAP",
     ]

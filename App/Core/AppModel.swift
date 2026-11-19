@@ -43,6 +43,8 @@ final class AppModel {
     // MARK: Market data
     var perps: [Market] = []
     var spots: [Market] = []
+    var hip3: [Market] = []
+    var perpDexs: [PerpDex] = []
     var marketById: [String: Market] = [:]
     var spotTokens: [Int: SpotToken] = [:]
     var mids: [String: Double] = [:]
@@ -56,6 +58,10 @@ final class AppModel {
     // MARK: Account
     var summary = AccountSummary()
     var positions: [Position] = []
+    var dexSummaries: [String: AccountSummary] = [:]
+    @ObservationIgnored private var mainPositions: [Position] = []
+    @ObservationIgnored private var dexPositions: [String: [Position]] = [:]
+    @ObservationIgnored private var activeDexes: Set<String> = []
     var openOrders: [OpenOrder] = []
     var fills: [Fill] = []
     var fundingHistory: [FundingEntry] = []
@@ -192,7 +198,7 @@ final class AppModel {
         guard !loading else { return }
         api.network = network
         clearAccountState()
-        perps = []; spots = []; marketById = [:]; mids = [:]; metaLoaded = false
+        perps = []; spots = []; hip3 = []; perpDexs = []; marketById = [:]; mids = [:]; metaLoaded = false
         socket.setURL(network.ws)
         Task {
             await refreshMarkets()
@@ -204,6 +210,7 @@ final class AppModel {
 
     private func clearAccountState() {
         summary = AccountSummary(); positions = []; openOrders = []; fills = []; fundingHistory = []
+        mainPositions = []; dexPositions = [:]; dexSummaries = [:]; activeDexes = []
         ledger = []; spotBalances = []; twaps = []; portfolioHistory = []; accountError = nil
         activeAsset = ActiveAssetData()
     }
@@ -309,25 +316,61 @@ final class AppModel {
             parsePerps(p)
             parseSpots(s)
             metaLoaded = true
+            let firstHip3 = hip3.isEmpty
+            await refreshHip3()
+            if firstHip3 && !hip3.isEmpty { await refreshAllAccounts() }
             if marketById[selectedCoin] == nil, let first = perps.first { selectedCoin = first.id }
         } catch {
             if !metaLoaded { show(.error, L("Failed to load markets: {0}", error.localizedDescription)) }
         }
     }
 
-    private func parsePerps(_ j: JSON) {
+    /// Loads HIP-3 builder dexes (stocks like xyz:NVDA, indices, ...) and their markets.
+    func refreshHip3() async {
+        if let list = await tryInfo("perpDexs", []) {
+            var dexes: [PerpDex] = []
+            for (i, d) in list.array.dropFirst().enumerated() {
+                let name = d["name"].str
+                guard !name.isEmpty else { continue }
+                let old = perpDexs.first { $0.name == name }
+                dexes.append(PerpDex(name: name, fullName: d["fullName"].string ?? name, offset: 110000 + i * 10000,
+                                     collateralToken: old?.collateralToken))
+            }
+            let newNames = Set(dexes.map(\.name)).subtracting(perpDexs.map(\.name))
+            perpDexs = dexes
+            for n in newNames { socket.subscribe(.map([("type", .str("allMids")), ("dex", .str(n))])) }
+        }
+        var out: [Market] = []
+        for (k, d) in perpDexs.enumerated() {
+            guard let j = await tryInfo("metaAndAssetCtxs", [("dex", .str(d.name))]) else { continue }
+            if let c = j[0]["collateralToken"].int { perpDexs[k].collateralToken = c }
+            out += parsePerpUniverse(j, offset: d.offset, dex: d.name)
+        }
+        hip3 = out
+        for m in out { marketById[m.id] = m }
+    }
+
+    private func parsePerpUniverse(_ j: JSON, offset: Int, dex: String) -> [Market] {
         let universe = j[0]["universe"].array
         let ctxs = j[1].array
         var out: [Market] = []
         for (i, u) in universe.enumerated() {
             if u["isDelisted"].bool == true { continue }
-            let name = u["name"].str
-            var m = Market(id: name, name: name, base: name, quote: "USD", asset: i, isSpot: false,
+            let coin = u["name"].str
+            let short = coin.contains(":") ? String(coin.split(separator: ":", maxSplits: 1)[1]) : coin
+            let mode = u["marginMode"].str
+            let isolatedOnly = (u["onlyIsolated"].bool ?? false) || mode == "strictIsolated" || mode == "noCross"
+            var m = Market(id: coin, name: short, base: short, quote: "USD", asset: offset + i, isSpot: false,
                            szDecimals: u["szDecimals"].int ?? 0, maxLeverage: u["maxLeverage"].int ?? 1,
-                           onlyIsolated: u["onlyIsolated"].bool ?? false)
+                           onlyIsolated: isolatedOnly, dex: dex)
             if i < ctxs.count { apply(ctx: ctxs[i], to: &m) }
             out.append(m)
         }
+        return out
+    }
+
+    private func parsePerps(_ j: JSON) {
+        let out = parsePerpUniverse(j, offset: 0, dex: "")
         perps = out
         for m in out { marketById[m.id] = m }
     }
@@ -380,9 +423,11 @@ final class AppModel {
                                      totalMarginUsed: ms["totalMarginUsed"].dbl, withdrawable: ch["withdrawable"].dbl,
                                      maintenanceMargin: ch["crossMaintenanceMarginUsed"].dbl,
                                      crossAccountValue: cs["accountValue"].dbl)
-            positions = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
+            mainPositions = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
             spotBalances = sp["balances"].array.map(SpotBalance.init).filter { $0.total != 0 }
             accountError = nil
+            if tick % 3 == 0 { await refreshDexAccounts(user) }
+            positions = mainPositions + perpDexs.flatMap { dexPositions[$0.name] ?? [] }
             if tick % 3 == 0 { await refreshOrders() }
             tick += 1
         } catch {
@@ -390,11 +435,53 @@ final class AppModel {
         }
     }
 
+    /// Positions and margin on HIP-3 dexes (each dex has its own clearinghouse).
+    private func refreshDexAccounts(_ user: String) async {
+        for d in perpDexs {
+            guard let ch = await tryInfo("clearinghouseState", [("user", .str(user)), ("dex", .str(d.name))]), user == userAddress else { continue }
+            let ms = ch["marginSummary"], cs = ch["crossMarginSummary"]
+            let sum = AccountSummary(accountValue: ms["accountValue"].dbl, totalNtlPos: ms["totalNtlPos"].dbl,
+                                     totalMarginUsed: ms["totalMarginUsed"].dbl, withdrawable: ch["withdrawable"].dbl,
+                                     maintenanceMargin: ch["crossMaintenanceMarginUsed"].dbl,
+                                     crossAccountValue: cs["accountValue"].dbl)
+            let pos = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
+            dexSummaries[d.name] = sum
+            dexPositions[d.name] = pos
+            if sum.accountValue > 0 || !pos.isEmpty { activeDexes.insert(d.name) }
+        }
+    }
+
     func refreshOrders() async {
         guard let user = userAddress else { return }
-        if let o = try? await api.info(type: "frontendOpenOrders", [("user", .str(user))]), user == userAddress {
-            openOrders = o.array.map(OpenOrder.init)
+        var dexes = activeDexes
+        if let m = selectedMarket, m.isHip3 { dexes.insert(m.dex) }
+        guard let o = await tryInfo("frontendOpenOrders", [("user", .str(user))]), user == userAddress else { return }
+        var all = o.array.map(OpenOrder.init)
+        for d in dexes.sorted() {
+            if let j = await tryInfo("frontendOpenOrders", [("user", .str(user)), ("dex", .str(d))]) {
+                all += j.array.map(OpenOrder.init)
+            }
         }
+        guard user == userAddress else { return }
+        var seen = Set<Int64>()
+        openOrders = all.filter { seen.insert($0.oid).inserted }
+    }
+
+    /// Full refresh including HIP-3 dex clearinghouses.
+    func refreshAllAccounts() async {
+        if let u = userAddress { await refreshDexAccounts(u) }
+        await refreshAccount()
+        await refreshOrders()
+    }
+
+    /// Withdrawable margin for the dex a market trades on.
+    func withdrawable(for m: Market) -> Double {
+        m.isHip3 ? (dexSummaries[m.dex]?.withdrawable ?? 0) : summary.withdrawable
+    }
+
+    /// Value of all perp accounts (main + HIP-3 dexes).
+    var totalPerpValue: Double {
+        summary.accountValue + dexSummaries.values.reduce(0) { $0 + $1.accountValue }
     }
 
     func refreshHistory() async {

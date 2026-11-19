@@ -317,6 +317,22 @@ extension AppModel {
         Task { await refreshAccount(); await refreshHistory() }
     }
 
+    /// Moves collateral between the main perp dex (""), spot ("spot") and HIP-3 dexes.
+    func sendAsset(from: String, to: String, token: SpotToken, amount: Double) async throws {
+        guard let me = account?.address else { throw HLError(L("Add an account in Settings")) }
+        let dest = vaultForActions ?? me
+        try await submitUser(HLAction.sendAsset(destination: dest, sourceDex: from, destinationDex: to, token: token.wire,
+                                                amount: HLNum.wire(amount, maxDecimals: min(token.weiDecimals, 8)),
+                                                fromSubAccount: vaultForActions ?? "", nonce: nextNonce(), mainnet: network.isMainnet))
+        Task { await refreshAllAccounts() }
+    }
+
+    /// Collateral token of a dex ("" main → USDC).
+    func collateral(of dex: String) -> SpotToken? {
+        if let idx = perpDexs.first(where: { $0.name == dex })?.collateralToken { return spotTokens[idx] }
+        return spotTokens.values.first { $0.name == "USDC" }
+    }
+
     /// Creates and approves a new API wallet using the main key; returns the agent private key.
     func createAgent(name: String) async throws -> (address: String, key: String) {
         let (agent, key) = try HLWallet.generate()

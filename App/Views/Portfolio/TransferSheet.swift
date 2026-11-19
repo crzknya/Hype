@@ -11,7 +11,8 @@ struct TransferSheet: View {
     @Environment(\.dismiss) private var dismiss
     let kind: TransferKind
     @State private var amountText = ""
-    @State private var toPerp = true
+    @State private var fromAcc = "spot"
+    @State private var toAcc = ""
     @State private var destination = ""
     @State private var tokenIndex = -1    // -1 = USDC (perp balance), otherwise spot token index
     @State private var fromSpot = false
@@ -52,26 +53,59 @@ struct TransferSheet: View {
 
     @ViewBuilder private var classTransfer: some View {
         Section {
-            Picker(L("Direction"), selection: $toPerp) {
-                Text(L("Spot → Perp")).tag(true)
-                Text(L("Perp → Spot")).tag(false)
+            Picker(L("From"), selection: $fromAcc) {
+                ForEach(accountsList, id: \.self) { Text(accountTitle($0)).tag($0) }
             }
-            .pickerStyle(.segmented)
-            NumField(title: "USDC", text: $amountText) {
+            Picker(L("To"), selection: $toAcc) {
+                ForEach(accountsList, id: \.self) { Text(accountTitle($0)).tag($0) }
+            }
+            NumField(title: transferToken?.name ?? "USDC", text: $amountText) {
                 Button("MAX") { amountText = Fmt.input(maxClass, 2) }.font(.caption.bold())
             }
-            LabeledContent(L("Available"), value: Fmt.usd(maxClass))
+            LabeledContent(L("Available"), value: Fmt.num(maxClass, 2))
+        } footer: {
+            Text(L("HIP-3 dexes (stocks, indices) have separate margin. Move collateral to the dex before trading its markets, unless unified margin is enabled on app.hyperliquid.xyz."))
         }
         Section {
             submitButton(L("Transfer funds")) {
                 guard let a = Fmt.parse(amountText), a > 0 else { throw HLError(L("Enter an amount")) }
-                try await model.usdClassTransfer(amount: a, toPerp: toPerp)
-                return L("Transferred {0}", Fmt.usd(a))
+                guard fromAcc != toAcc else { throw HLError(L("Choose different accounts")) }
+                let pair = Set([fromAcc, toAcc])
+                if pair == Set(["", "spot"]) {
+                    try await model.usdClassTransfer(amount: a, toPerp: toAcc == "")
+                } else {
+                    guard let t = transferToken else { throw HLError(L("Token not found")) }
+                    try await model.sendAsset(from: fromAcc, to: toAcc, token: t, amount: a)
+                }
+                return L("Transferred {0}", Fmt.num(a, 2) + " " + (transferToken?.name ?? "USDC"))
             }
         }
     }
 
-    private var maxClass: Double { toPerp ? model.usdcSpot : model.summary.withdrawable }
+    /// "" = main perps, "spot", or a HIP-3 dex name.
+    private var accountsList: [String] { ["", "spot"] + model.perpDexs.map(\.name) }
+
+    private func accountTitle(_ a: String) -> String {
+        switch a {
+        case "": return L("Perps")
+        case "spot": return L("Spot")
+        default: return "HIP-3 · \(a)"
+        }
+    }
+
+    /// Collateral token of the HIP-3 dex involved in the transfer (USDC otherwise).
+    private var transferToken: SpotToken? {
+        let dex = [fromAcc, toAcc].first { $0 != "" && $0 != "spot" }
+        return model.collateral(of: dex ?? "")
+    }
+
+    private var maxClass: Double {
+        switch fromAcc {
+        case "": return model.summary.withdrawable
+        case "spot": return model.spotBalances.first { $0.coin == (transferToken?.name ?? "USDC") }?.available ?? 0
+        default: return model.dexSummaries[fromAcc]?.withdrawable ?? 0
+        }
+    }
 
     @ViewBuilder private var withdraw: some View {
         Section {

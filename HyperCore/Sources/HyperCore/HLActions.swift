@@ -158,6 +158,27 @@ public enum HLAction {
             nonce: nonce)
     }
 
+    /// Moves collateral between perp dexes ("" = main perp dex, "spot" = spot, otherwise a HIP-3 dex name).
+    /// token: "NAME:0xTOKENID" of the dex collateral token.
+    public static func sendAsset(destination: String, sourceDex: String, destinationDex: String, token: String,
+                                 amount: String, fromSubAccount: String, nonce: UInt64, mainnet: Bool) -> UserSignedAction {
+        let dest = destination.lowercased()
+        let sub = fromSubAccount.lowercased()
+        return UserSignedAction(
+            action: .map([("type", .str("sendAsset")), ("signatureChainId", .str(HLSigning.userSignChainIdHex)),
+                          ("hyperliquidChain", .str(chain(mainnet))), ("destination", .str(dest)),
+                          ("sourceDex", .str(sourceDex)), ("destinationDex", .str(destinationDex)), ("token", .str(token)),
+                          ("amount", .str(amount)), ("fromSubAccount", .str(sub)), ("nonce", .int(Int64(nonce)))]),
+            primaryType: "HyperliquidTransaction:SendAsset",
+            fields: [.init("hyperliquidChain", "string"), .init("destination", "string"), .init("sourceDex", "string"),
+                     .init("destinationDex", "string"), .init("token", "string"), .init("amount", "string"),
+                     .init("fromSubAccount", "string"), .init("nonce", "uint64")],
+            values: ["hyperliquidChain": .string(chain(mainnet)), "destination": .string(dest), "sourceDex": .string(sourceDex),
+                     "destinationDex": .string(destinationDex), "token": .string(token), "amount": .string(amount),
+                     "fromSubAccount": .string(sub), "nonce": .uint(nonce)],
+            nonce: nonce)
+    }
+
     public static func approveAgent(agentAddress: String, agentName: String, nonce: UInt64, mainnet: Bool) -> UserSignedAction {
         let agent = agentAddress.lowercased()
         return UserSignedAction(

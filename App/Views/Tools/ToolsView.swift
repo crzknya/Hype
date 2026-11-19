@@ -266,7 +266,8 @@ struct CoinPicker: View {
         }
     }
     var list: [Market] {
-        let all = (model.perps + model.spots.filter { $0.dayNtlVlm > 0 }).sorted { $0.dayNtlVlm > $1.dayNtlVlm }
+        let liveSpots: [Market] = model.spots.filter { (m: Market) -> Bool in m.dayNtlVlm > 0 }
+        let all: [Market] = (model.perps + model.hip3 + liveSpots).sorted { (a: Market, b: Market) -> Bool in a.dayNtlVlm > b.dayNtlVlm }
         return search.isEmpty ? all : all.filter { $0.name.uppercased().contains(search.uppercased()) }
     }
 }
@@ -276,7 +277,7 @@ struct FundingScannerView: View {
     @State private var positive = true
 
     private var list: [Market] {
-        let all: [Market] = model.perps.map { (m: Market) -> Market in model.marketById[m.id] ?? m }
+        let all: [Market] = (model.perps + model.hip3).map { (m: Market) -> Market in model.marketById[m.id] ?? m }
         let liquid: [Market] = all.filter { (m: Market) -> Bool in m.dayNtlVlm > 100_000 }
         let desc = positive
         let sorted: [Market] = liquid.sorted { (a: Market, b: Market) -> Bool in desc ? a.funding > b.funding : a.funding < b.funding }
@@ -317,7 +318,7 @@ struct FundingScannerView: View {
 struct MoversView: View {
     @Environment(AppModel.self) private var model
     var body: some View {
-        let all: [Market] = model.perps.map { (m: Market) -> Market in model.marketById[m.id] ?? m }.filter { (m: Market) -> Bool in m.dayNtlVlm > 500_000 }
+        let all: [Market] = (model.perps + model.hip3).map { (m: Market) -> Market in model.marketById[m.id] ?? m }.filter { (m: Market) -> Bool in m.dayNtlVlm > 500_000 }
         let gainers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h > b.change24h }.prefix(10))
         let losers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h < b.change24h }.prefix(10))
         List {

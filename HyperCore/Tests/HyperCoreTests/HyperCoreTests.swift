@@ -73,6 +73,9 @@ final class HyperCoreTests: XCTestCase {
             case "classTransfer": action = HLAction.usdClassTransfer(amount: a["amount"].str, toPerp: a["toPerp"].bool!, nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
             case "spotSend": action = HLAction.spotSend(destination: a["destination"].str, token: a["token"].str, amount: a["amount"].str, time: UInt64(a["time"].int64!), mainnet: mainnet)
             case "approveAgent": action = HLAction.approveAgent(agentAddress: a["agentAddress"].str, agentName: a["agentName"].str, nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
+            case "sendAsset": action = HLAction.sendAsset(destination: a["destination"].str, sourceDex: a["sourceDex"].str, destinationDex: a["destinationDex"].str,
+                                                          token: a["token"].str, amount: a["amount"].str, fromSubAccount: a["fromSubAccount"].str,
+                                                          nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
             default: XCTFail("unknown \(name)"); continue
             }
             let digest = HLSigning.userSignedDigest(action)

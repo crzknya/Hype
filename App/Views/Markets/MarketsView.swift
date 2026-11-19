@@ -8,7 +8,7 @@ struct MarketsView: View {
     @State private var descending = true
 
     enum Segment: String, CaseIterable, Identifiable {
-        case favorites = "★", perps = "Perps", spot = "Spot"
+        case favorites = "★", perps = "Perps", hip3 = "HIP-3", spot = "Spot"
         var id: String { rawValue }
     }
 
@@ -60,13 +60,19 @@ struct MarketsView: View {
 
     private var list: [Market] {
         var base: [Market]
-        switch segment {
-        case .perps: base = model.perps.map { model.marketById[$0.id] ?? $0 }
-        case .spot: base = model.spots.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm > 0 || !search.isEmpty }
-        case .favorites: base = model.favorites.compactMap { model.marketById[$0] }
-        }
         let q = search.trimmingCharacters(in: .whitespaces).uppercased()
-        if !q.isEmpty { base = base.filter { $0.name.uppercased().contains(q) || $0.id.uppercased().contains(q) } }
+        if !q.isEmpty {
+            // Search across all markets regardless of the selected segment.
+            let all: [Market] = model.perps + model.hip3 + model.spots
+            base = all.map { model.marketById[$0.id] ?? $0 }.filter { $0.name.uppercased().contains(q) || $0.id.uppercased().contains(q) }
+        } else {
+            switch segment {
+            case .perps: base = model.perps.map { model.marketById[$0.id] ?? $0 }
+            case .hip3: base = model.hip3.map { model.marketById[$0.id] ?? $0 }
+            case .spot: base = model.spots.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm > 0 }
+            case .favorites: base = model.favorites.compactMap { model.marketById[$0] }
+            }
+        }
         let sorted: [Market]
         switch sort {
         case .volume: sorted = base.sorted { $0.dayNtlVlm < $1.dayNtlVlm }
@@ -135,6 +141,7 @@ struct MarketRow: View {
                 HStack(spacing: 4) {
                     Text(market.name).font(.system(size: 15, weight: .semibold))
                     if !market.isSpot { Badge(text: "\(market.maxLeverage)x") }
+                    if market.isHip3 { Badge(text: market.dex, color: .orange) }
                 }
                 HStack(spacing: 6) {
                     Text(Fmt.compactUsd(market.dayNtlVlm)).font(.caption2).foregroundStyle(Color.hlMuted)
@@ -160,14 +167,15 @@ struct MarketPickerSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
-    @State private var spot = false
+    @State private var kind = 0   // 0 perps, 1 HIP-3, 2 spot
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("", selection: $spot) {
-                    Text(L("Perps")).tag(false)
-                    Text(L("Spot")).tag(true)
+                Picker("", selection: $kind) {
+                    Text(L("Perps")).tag(0)
+                    Text("HIP-3").tag(1)
+                    Text(L("Spot")).tag(2)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal).padding(.vertical, 8)
@@ -185,9 +193,10 @@ struct MarketPickerSheet: View {
     }
 
     var list: [Market] {
-        let base = (spot ? model.spots : model.perps).map { model.marketById[$0.id] ?? $0 }
         let q = search.uppercased()
-        let filtered = q.isEmpty ? base.filter { !spot || $0.dayNtlVlm > 0 } : base.filter { $0.name.uppercased().contains(q) }
+        let source: [Market] = q.isEmpty ? [model.perps, model.hip3, model.spots][kind] : model.perps + model.hip3 + model.spots
+        let base: [Market] = source.map { model.marketById[$0.id] ?? $0 }
+        let filtered: [Market] = q.isEmpty ? base.filter { kind != 2 || $0.dayNtlVlm > 0 } : base.filter { $0.name.uppercased().contains(q) || $0.id.uppercased().contains(q) }
         let favs = filtered.filter { model.favorites.contains($0.id) }.sorted { $0.dayNtlVlm > $1.dayNtlVlm }
         let rest = filtered.filter { !model.favorites.contains($0.id) }.sorted { $0.dayNtlVlm > $1.dayNtlVlm }
         return favs + rest

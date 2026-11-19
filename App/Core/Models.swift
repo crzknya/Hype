@@ -11,6 +11,7 @@ struct Market: Identifiable, Hashable {
     let szDecimals: Int
     let maxLeverage: Int
     let onlyIsolated: Bool
+    var dex: String = ""     // "" = main perp dex, otherwise HIP-3 builder dex name (e.g. "xyz")
     var markPx: Double = 0
     var midPx: Double = 0
     var oraclePx: Double = 0
@@ -22,6 +23,8 @@ struct Market: Identifiable, Hashable {
 
     static func == (a: Market, b: Market) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
+
+    var isHip3: Bool { !dex.isEmpty }
 
     var change24h: Double { prevDayPx > 0 && markPx > 0 ? markPx / prevDayPx - 1 : 0 }
     var fundingAnnual: Double { funding * 24 * 365 }
@@ -35,6 +38,15 @@ struct Market: Identifiable, Hashable {
     func roundPrice(_ px: Double) -> Decimal { HLNum.roundPrice(px, szDecimals: szDecimals, isSpot: isSpot) }
     func roundSize(_ sz: Double, mode: NSDecimalNumber.RoundingMode = .down) -> Decimal { HLNum.roundSize(sz, szDecimals: szDecimals, mode: mode) }
     var minSizeStep: Double { pow(10, -Double(szDecimals)) }
+}
+
+/// A HIP-3 builder-deployed perp dex (stocks, indices, etc).
+struct PerpDex: Identifiable, Hashable {
+    let name: String
+    let fullName: String
+    let offset: Int          // asset id offset: 110000 + i * 10000
+    var collateralToken: Int?
+    var id: String { name }
 }
 
 struct SpotToken: Identifiable, Hashable {

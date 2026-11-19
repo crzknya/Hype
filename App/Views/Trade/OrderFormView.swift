@@ -294,7 +294,7 @@ struct OrderFormView: View {
         let fromWs = isBuy ? model.activeAsset.maxBuy : model.activeAsset.maxSell
         if fromWs > 0 && type == .market { return fromWs }
         let avail = (isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell)
-        let margin = avail > 0 ? avail : model.summary.withdrawable
+        let margin = avail > 0 ? avail : model.withdrawable(for: market)
         return refPrice > 0 ? margin * Double(currentLeverage) / refPrice * 0.995 : 0
     }
 
@@ -312,7 +312,7 @@ struct OrderFormView: View {
             return Fmt.num(maxSize, market.szDecimals) + " " + market.base
         }
         let avail = isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell
-        return Fmt.usd(avail > 0 ? avail : model.summary.withdrawable)
+        return Fmt.usd(avail > 0 ? avail : model.withdrawable(for: market))
     }
 
     private var twapLabel: String {

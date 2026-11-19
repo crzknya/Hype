@@ -46,6 +46,7 @@ struct TradeView: View {
                             Text(model.selectedMarket?.name ?? model.selectedCoin).font(.headline)
                             if let m = model.selectedMarket, !m.isSpot { Badge(text: "\(m.maxLeverage)x") }
                             if let m = model.selectedMarket, m.isSpot { Badge(text: "SPOT", color: .orange) }
+                            if let m = model.selectedMarket, m.isHip3 { Badge(text: m.dex, color: .orange) }
                             Image(systemName: "chevron.down").font(.caption)
                         }
                         .foregroundStyle(.primary)

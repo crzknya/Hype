@@ -172,6 +172,25 @@
    "r": "2ee89a61a7a7cd9cac0dbbe781f0e0987788ea20059db0938893cddb247fb32e",
    "s": "096e53a37a85c7031324036c86dbb1977c4705322f33c6ef6fdf86adc9a77093",
    "v": "27"
+  },
+  {
+   "name": "sendAsset",
+   "action": {
+    "type": "sendAsset",
+    "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "sourceDex": "",
+    "destinationDex": "xyz",
+    "token": "USDC:0x6d1e7cde53ba9467b783cb7c530ce054",
+    "amount": "25.5",
+    "fromSubAccount": "",
+    "nonce": 1700000000000,
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "19dcc5ac284c6c7cfae3cba78884c743d80f08801f60bde520611a7cb44c5c89",
+   "r": "f04d1d4599ae2ce0abb22072a3eea09c6a14dafc15dd0d32e1df217b419ea1cd",
+   "s": "67c2d70a5de867d643d4fb51c449fd30935e14c11645a5750899705604e5dcef",
+   "v": "27"
   }
  ],
  "wire": [
