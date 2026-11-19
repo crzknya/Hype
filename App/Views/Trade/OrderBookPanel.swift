@@ -86,18 +86,20 @@ struct OrderBookPanel: View {
         return GeometryReader { g in
             ZStack(alignment: .trailing) {
                 Rectangle().fill(color.opacity(0.14)).frame(width: g.size.width * CGFloat(cum / maxCum))
-                if wide {
-                    HStack(spacing: 8) {
-                        Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(amount(l.sz, l.px)).frame(maxWidth: .infinity, alignment: .trailing)
-                        Text(amount(cum, l.px)).foregroundStyle(Color.hlMuted).frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 6)
-                } else {
-                    HStack {
-                        Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color)
-                        Spacer()
-                        Text(amount(l.sz, l.px))
+                Group {
+                    if wide {
+                        HStack(spacing: 8) {
+                            Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(amount(l.sz, l.px)).frame(maxWidth: .infinity, alignment: .trailing)
+                            Text(amount(cum, l.px)).foregroundStyle(Color.hlMuted).frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 6)
+                    } else {
+                        HStack {
+                            Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color)
+                            Spacer()
+                            Text(amount(l.sz, l.px))
+                        }
                     }
                 }
                 .font(.system(size: wide ? 14 : 11, design: .monospaced))
