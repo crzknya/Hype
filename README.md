@@ -37,6 +37,7 @@ API-кошелёк не может выводить средства, поэто
 - Mainnet и Testnet.
 
 **Дополнительно**
+- Язык интерфейса: English (по умолчанию) или Русский — Настройки → Language.
 - Риск-сайзинг: размер позиции считается из риска в $ или % депозита и стоп-лосса. Кнопки быстрого TP/SL с соотношением 1:2.
 - Предпросмотр ордера: стоимость, маржа, оценка ликвидации, комиссия по вашему тиру, PnL по TP и SL. Перед отправкой показывается экран подтверждения.
 - Ценовые алерты с локальными уведомлениями: в реальном времени и в фоне через BGAppRefresh.
@@ -56,7 +57,8 @@ HyperCore/            Swift Package: подпись и сериализация 
   secp256k1 — libsecp256k1 через swift-secp256k1 0.24.0
   Tests/ — сверка подписей с официальным hyperliquid-python-sdk
 App/
-  Core/   AppModel (состояние, REST + WebSocket), Trading, Network, Socket, Models
+  Core/   AppModel (состояние, REST + WebSocket), Trading, Network, Socket, Models,
+          Localization (L("English key") + словарь ru)
   Views/  Markets, Trade (график, стакан, форма ордера), Portfolio, Tools, Settings
 project.yml           XcodeGen
 tools/gen_vectors.py  генерация тестовых векторов

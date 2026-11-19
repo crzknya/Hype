@@ -30,7 +30,7 @@ targets:
         UIUserInterfaceStyle: Dark
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.hype.trader.refresh]
-        NSFaceIDUsageDescription: Блокировка приложения и подтверждение важных действий
+        NSFaceIDUsageDescription: Unlock the app and confirm sensitive actions
         ITSAppUsesNonExemptEncryption: false
         LSApplicationQueriesSchemes: [https]
     settings:

@@ -47,9 +47,9 @@ struct Account: Identifiable, Codable, Hashable {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .agent: return "API-кошелёк"
-            case .privateKey: return "Приватный ключ"
-            case .watch: return "Только просмотр"
+            case .agent: return L("API wallet")
+            case .privateKey: return L("Private key")
+            case .watch: return L("Watch-only")
             }
         }
         var canTrade: Bool { self != .watch }

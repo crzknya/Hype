@@ -6,13 +6,13 @@ enum OrderTypeUI: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .market: return "Рыночный"
-        case .limit: return "Лимитный"
-        case .stopMarket: return "Стоп-маркет"
-        case .stopLimit: return "Стоп-лимит"
-        case .takeMarket: return "Тейк-маркет"
-        case .takeLimit: return "Тейк-лимит"
-        case .scale: return "Scale (сетка)"
+        case .market: return L("Market order")
+        case .limit: return L("Limit order")
+        case .stopMarket: return L("Stop Market")
+        case .stopLimit: return L("Stop Limit")
+        case .takeMarket: return L("Take Market")
+        case .takeLimit: return L("Take Limit")
+        case .scale: return L("Scale (grid)")
         case .twap: return "TWAP"
         }
     }
@@ -68,30 +68,30 @@ extension AppModel {
 
     func validate(_ d: OrderDraft) throws {
         let m = d.market
-        guard d.size > 0 else { throw HLError("Укажите размер") }
+        guard d.size > 0 else { throw HLError(L("Enter a size")) }
         let sz = NSDecimalNumber(decimal: m.roundSize(d.size, mode: .plain)).doubleValue
-        guard sz > 0 else { throw HLError("Размер меньше минимального шага \(Fmt.num(m.minSizeStep, m.szDecimals))") }
+        guard sz > 0 else { throw HLError(L("Size is below the minimum step {0}", Fmt.num(m.minSizeStep, m.szDecimals))) }
         let px = d.price ?? d.triggerPx ?? mid(m.id)
         if d.type != .scale && d.type != .twap && !d.reduceOnly && sz * px < 10 {
-            throw HLError("Минимальная стоимость ордера — $10 (сейчас \(Fmt.usd(sz * px)))")
+            throw HLError(L("Minimum order value is $10 (now {0})", Fmt.usd(sz * px)))
         }
-        if d.type.needsPrice && (d.price ?? 0) <= 0 { throw HLError("Укажите цену") }
-        if d.type.needsTrigger && (d.triggerPx ?? 0) <= 0 { throw HLError("Укажите цену срабатывания") }
+        if d.type.needsPrice && (d.price ?? 0) <= 0 { throw HLError(L("Enter a price")) }
+        if d.type.needsTrigger && (d.triggerPx ?? 0) <= 0 { throw HLError(L("Enter a trigger price")) }
         if d.type == .scale {
-            guard let a = d.scaleStart, let b = d.scaleEnd, a > 0, b > 0 else { throw HLError("Укажите диапазон цен сетки") }
-            guard d.scaleCount >= 2 && d.scaleCount <= 50 else { throw HLError("Количество ордеров: от 2 до 50") }
-            if sz * min(a, b) / Double(d.scaleCount) < 10 { throw HLError("Каждый ордер сетки должен быть не меньше $10") }
+            guard let a = d.scaleStart, let b = d.scaleEnd, a > 0, b > 0 else { throw HLError(L("Enter the grid price range")) }
+            guard d.scaleCount >= 2 && d.scaleCount <= 50 else { throw HLError(L("Number of orders: 2 to 50")) }
+            if sz * min(a, b) / Double(d.scaleCount) < 10 { throw HLError(L("Each grid order must be at least $10")) }
         }
         if d.type == .twap {
-            guard d.twapMinutes >= 5 && d.twapMinutes <= 1440 else { throw HLError("Длительность TWAP: 5–1440 минут") }
+            guard d.twapMinutes >= 5 && d.twapMinutes <= 1440 else { throw HLError(L("TWAP duration: 5–1440 minutes")) }
         }
         if let tp = d.tp, tp > 0 {
             let ref = d.price ?? mid(m.id)
-            if d.isBuy ? tp <= ref : tp >= ref { throw HLError("Тейк-профит должен быть \(d.isBuy ? "выше" : "ниже") цены входа") }
+            if d.isBuy ? tp <= ref : tp >= ref { throw HLError(L("Take profit must be {0} the entry price", d.isBuy ? L("above") : L("below"))) }
         }
         if let sl = d.sl, sl > 0 {
             let ref = d.price ?? mid(m.id)
-            if d.isBuy ? sl >= ref : sl <= ref { throw HLError("Стоп-лосс должен быть \(d.isBuy ? "ниже" : "выше") цены входа") }
+            if d.isBuy ? sl >= ref : sl <= ref { throw HLError(L("Stop loss must be {0} the entry price", d.isBuy ? L("below") : L("above"))) }
         }
     }
 
@@ -107,8 +107,8 @@ extension AppModel {
                                             minutes: d.twapMinutes, randomize: d.twapRandomize)
             let data = try await submit(action)
             Task { await refreshHistory() }
-            if let id = data["status"]["running"]["twapId"].int64 { return "TWAP запущен (#\(id))" }
-            return "TWAP запущен"
+            if let id = data["status"]["running"]["twapId"].int64 { return L("TWAP started (#{0})", id) }
+            return L("TWAP started")
 
         case .scale:
             let orders = scaleWires(d)
@@ -155,22 +155,22 @@ extension AppModel {
         var parts: [String] = []
         for s in data["statuses"].array {
             if s["filled"]["totalSz"].double != nil {
-                parts.append("исполнено \(s["filled"]["totalSz"].str) по \(s["filled"]["avgPx"].str)")
+                parts.append(L("filled {0} at {1}", s["filled"]["totalSz"].str, s["filled"]["avgPx"].str))
             } else if let oid = s["resting"]["oid"].int64 {
-                parts.append("выставлен #\(oid)")
+                parts.append(L("resting #{0}", oid))
             } else if s.string == "waitingForFill" || s.string == "waitingForTrigger" {
-                parts.append("ожидает срабатывания")
+                parts.append(L("waiting for trigger"))
             }
         }
-        if parts.isEmpty { return "Ордер отправлен" }
-        if parts.count > 3 { return "Выставлено ордеров: \(parts.count)" }
-        return "Ордер " + parts.joined(separator: "; ")
+        if parts.isEmpty { return L("Order sent") }
+        if parts.count > 3 { return L("Orders placed: {0}", parts.count) }
+        return L("Order ") + parts.joined(separator: "; ")
     }
 
     // MARK: Position actions
 
     func closePosition(_ p: Position, fraction: Double = 1, limitPx: Double? = nil) async throws -> String {
-        guard let m = market(p.coin) else { throw HLError("Рынок \(p.coin) не найден") }
+        guard let m = market(p.coin) else { throw HLError(L("Market {0} not found", p.coin)) }
         let isBuy = !p.isLong
         let sz = fraction >= 1 ? Decimal(string: HLNum.wire(p.size)) ?? m.roundSize(p.size, mode: .plain)
                                : m.roundSize(p.size * fraction, mode: .plain)
@@ -192,14 +192,14 @@ extension AppModel {
             return wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy), sz: Decimal(string: HLNum.wire(p.size)) ?? 0,
                         reduceOnly: true, kind: .limit(tif: .ioc))
         }
-        guard !wires.isEmpty else { throw HLError("Нет открытых позиций") }
+        guard !wires.isEmpty else { throw HLError(L("No open positions")) }
         let data = try await submit(HLAction.order(wires))
         Task { await refreshAccount(); await refreshOrders() }
         return summarize(data, count: wires.count)
     }
 
     func reverse(_ p: Position) async throws -> String {
-        guard let m = market(p.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         let isBuy = !p.isLong
         let sz = m.roundSize(p.size * 2, mode: .plain)
         let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
@@ -209,7 +209,7 @@ extension AppModel {
 
     /// Sets position TP/SL (replaces existing position TP/SL orders of the same kind).
     func setPositionTpsl(_ p: Position, tp: Double?, sl: Double?) async throws -> String {
-        guard let m = market(p.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         let existing = openOrders.filter { $0.coin == p.coin && $0.isPositionTpsl }
         var toCancel: [(asset: Int, oid: Int64)] = []
         for o in existing {
@@ -224,7 +224,7 @@ extension AppModel {
         if let sl, sl > 0 { orders.append(triggerWire(m, isBuy: isBuy, trigger: sl, limit: nil, sz: sz, tpsl: .sl)) }
         guard !orders.isEmpty else {
             Task { await refreshOrders() }
-            return "TP/SL сняты"
+            return L("TP/SL removed")
         }
         let data = try await submit(HLAction.order(orders, grouping: .positionTpsl))
         Task { await refreshOrders() }
@@ -239,7 +239,7 @@ extension AppModel {
     }
 
     func updateIsolatedMargin(_ p: Position, deltaUsd: Double) async throws {
-        guard let m = market(p.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         try await submit(HLAction.updateIsolatedMargin(asset: m.asset, ntli: Int64((deltaUsd * 1_000_000).rounded())))
         Task { await refreshAccount() }
     }
@@ -247,7 +247,7 @@ extension AppModel {
     // MARK: Orders
 
     func cancel(_ o: OpenOrder) async throws {
-        guard let m = market(o.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(o.coin) else { throw HLError(L("Market not found")) }
         try await submit(HLAction.cancel([(m.asset, o.oid)]))
         openOrders.removeAll { $0.oid == o.oid }
         Task { await refreshOrders() }
@@ -256,14 +256,14 @@ extension AppModel {
     func cancelAll(coin: String? = nil) async throws -> String {
         let list = openOrders.filter { coin == nil || $0.coin == coin }
         let items: [(asset: Int, oid: Int64)] = list.compactMap { o in market(o.coin).map { ($0.asset, o.oid) } }
-        guard !items.isEmpty else { throw HLError("Нет открытых ордеров") }
+        guard !items.isEmpty else { throw HLError(L("No open orders")) }
         try await submit(HLAction.cancel(items))
         Task { await refreshOrders() }
-        return "Отменено ордеров: \(items.count)"
+        return L("Orders cancelled: {0}", items.count)
     }
 
     func modify(_ o: OpenOrder, price: Double, size: Double, trigger: Double?) async throws {
-        guard let m = market(o.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(o.coin) else { throw HLError(L("Market not found")) }
         let sz = m.roundSize(size, mode: .plain)
         let kind: OrderKind
         if o.isTrigger {
@@ -279,7 +279,7 @@ extension AppModel {
     }
 
     func cancelTwap(_ t: TwapState) async throws {
-        guard let m = market(t.coin) else { throw HLError("Рынок не найден") }
+        guard let m = market(t.coin) else { throw HLError(L("Market not found")) }
         try await submit(HLAction.twapCancel(asset: m.asset, twapId: t.id))
         twaps.removeAll { $0.id == t.id }
         Task { await refreshHistory() }

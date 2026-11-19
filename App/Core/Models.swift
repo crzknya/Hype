@@ -132,12 +132,12 @@ struct OpenOrder: Identifiable, Hashable {
 
     var typeTitle: String {
         switch orderType {
-        case "Limit": return "Лимит"
-        case "Market": return "Рынок"
-        case "Stop Market": return "Стоп-маркет"
-        case "Stop Limit": return "Стоп-лимит"
-        case "Take Profit Market": return "Тейк-маркет"
-        case "Take Profit Limit": return "Тейк-лимит"
+        case "Limit": return L("Limit")
+        case "Market": return L("Market")
+        case "Stop Market": return L("Stop Market")
+        case "Stop Limit": return L("Stop Limit")
+        case "Take Profit Market": return L("Take Market")
+        case "Take Profit Limit": return L("Take Limit")
         default: return orderType
         }
     }
@@ -177,16 +177,16 @@ struct Fill: Identifiable, Hashable {
 
     var dirTitle: String {
         switch dir {
-        case "Open Long": return "Открытие лонга"
-        case "Open Short": return "Открытие шорта"
-        case "Close Long": return "Закрытие лонга"
-        case "Close Short": return "Закрытие шорта"
-        case "Buy": return "Покупка"
-        case "Sell": return "Продажа"
-        case "Long > Short": return "Лонг → шорт"
-        case "Short > Long": return "Шорт → лонг"
-        case "Liquidated Isolated Long", "Liquidated Cross Long": return "Ликвидация лонга"
-        case "Liquidated Isolated Short", "Liquidated Cross Short": return "Ликвидация шорта"
+        case "Open Long": return L("Open Long")
+        case "Open Short": return L("Open Short")
+        case "Close Long": return L("Close Long")
+        case "Close Short": return L("Close Short")
+        case "Buy": return L("Purchase")
+        case "Sell": return L("Sale")
+        case "Long > Short": return L("Long → Short")
+        case "Short > Long": return L("Short → Long")
+        case "Liquidated Isolated Long", "Liquidated Cross Long": return L("Long liquidated")
+        case "Liquidated Isolated Short", "Liquidated Cross Short": return L("Short liquidated")
         default: return dir
         }
     }
@@ -228,15 +228,15 @@ struct LedgerEntry: Identifiable, Hashable {
         var amount = d["usdc"].double ?? d["amount"].double ?? 0
         var det = ""
         switch type {
-        case "withdraw": amount = -abs(amount); det = "Вывод"
-        case "deposit": det = "Депозит"
-        case "accountClassTransfer": det = (d["toPerp"].bool ?? false) ? "Спот → Перп" : "Перп → Спот"
+        case "withdraw": amount = -abs(amount); det = L("Withdrawal")
+        case "deposit": det = L("Deposit")
+        case "accountClassTransfer": det = (d["toPerp"].bool ?? false) ? L("Spot → Perp") : L("Perp → Spot")
         case "internalTransfer", "send", "spotTransfer":
-            det = "Перевод \(d["token"].string ?? "USDC") \(Address.short(d["destination"].str))"
-        case "vaultDeposit": det = "Депозит в vault"; amount = -abs(amount)
-        case "vaultWithdraw": det = "Вывод из vault"
-        case "subAccountTransfer": det = "Субаккаунт"
-        case "liquidation": det = "Ликвидация"
+            det = L("Transfer {0} {1}", d["token"].string ?? "USDC", Address.short(d["destination"].str))
+        case "vaultDeposit": det = L("Vault deposit"); amount = -abs(amount)
+        case "vaultWithdraw": det = L("Vault withdrawal")
+        case "subAccountTransfer": det = L("Sub-account")
+        case "liquidation": det = L("Liquidation")
         default: det = type
         }
         usdc = amount

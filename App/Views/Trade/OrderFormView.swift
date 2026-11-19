@@ -36,23 +36,23 @@ struct OrderFormView: View {
             typeMenu
 
             if type.needsTrigger {
-                NumField(title: "Триггер", text: $triggerText, placeholder: Fmt.price(refMid)) { midButton { triggerText = $0 } }
+                NumField(title: L("Trigger"), text: $triggerText, placeholder: Fmt.price(refMid)) { midButton { triggerText = $0 } }
             }
             if type.needsPrice {
-                NumField(title: "Цена", text: $priceText, placeholder: Fmt.price(refMid)) { midButton { priceText = $0 } }
+                NumField(title: L("Price"), text: $priceText, placeholder: Fmt.price(refMid)) { midButton { priceText = $0 } }
             }
             if type == .scale {
-                NumField(title: "От", text: $scaleStartText, placeholder: Fmt.price(refMid)) { midButton { scaleStartText = $0 } }
-                NumField(title: "До", text: $scaleEndText, placeholder: Fmt.price(refMid))
-                Stepper("Ордеров: \(scaleCount)", value: $scaleCount, in: 2...50).font(.caption)
+                NumField(title: L("From"), text: $scaleStartText, placeholder: Fmt.price(refMid)) { midButton { scaleStartText = $0 } }
+                NumField(title: L("To"), text: $scaleEndText, placeholder: Fmt.price(refMid))
+                Stepper(L("Orders: {0}", scaleCount), value: $scaleCount, in: 2...50).font(.caption)
                 HStack {
-                    Text("Скос \(Fmt.num(scaleSkew, 1))").font(.caption).frame(width: 64, alignment: .leading)
+                    Text(L("Skew {0}", Fmt.num(scaleSkew, 1))).font(.caption).frame(width: 64, alignment: .leading)
                     Slider(value: $scaleSkew, in: 0.2...5, step: 0.1)
                 }
             }
             if type == .twap {
-                Stepper("Длительность: \(twapLabel)", value: $twapMinutes, in: 5...1440, step: twapMinutes < 60 ? 5 : 30).font(.caption)
-                Toggle("Случайные интервалы", isOn: $twapRandomize).font(.caption)
+                Stepper(L("Duration: {0}", twapLabel), value: $twapMinutes, in: 5...1440, step: twapMinutes < 60 ? 5 : 30).font(.caption)
+                Toggle(L("Randomize intervals"), isOn: $twapRandomize).font(.caption)
             }
 
             sizeField
@@ -61,7 +61,7 @@ struct OrderFormView: View {
             .onChange(of: pct) { _, v in applyPct(v) }
 
             HStack {
-                Text("Доступно").font(.caption2).foregroundStyle(Color.hlMuted)
+                Text(L("Available")).font(.caption2).foregroundStyle(Color.hlMuted)
                 Spacer()
                 Text(availableText).font(.system(size: 11, design: .monospaced))
             }
@@ -74,7 +74,7 @@ struct OrderFormView: View {
                 submit()
             }
             if !model.canTrade {
-                Text(model.account == nil ? "Добавьте аккаунт в Настройках" : "Аккаунт только для просмотра")
+                Text(model.account == nil ? L("Add an account in Settings") : L("Watch-only account"))
                     .font(.caption2).foregroundStyle(Color.hlMuted)
             }
         }
@@ -127,7 +127,7 @@ struct OrderFormView: View {
 
     private func sideButton(_ buy: Bool) -> some View {
         Button { withAnimation(.easeOut(duration: 0.15)) { isBuy = buy } } label: {
-            Text(buy ? (market.isSpot ? "Купить" : "Лонг") : (market.isSpot ? "Продать" : "Шорт"))
+            Text(buy ? (market.isSpot ? L("Buy") : L("Long")) : (market.isSpot ? L("Sell") : L("Short")))
                 .font(.system(size: 14, weight: .bold))
                 .frame(maxWidth: .infinity).frame(height: 34)
                 .foregroundStyle(isBuy == buy ? .black : Color.hlMuted)
@@ -167,7 +167,7 @@ struct OrderFormView: View {
     }
 
     private var sizeField: some View {
-        NumField(title: riskOn ? "Размер (риск)" : "Размер", text: $sizeText) {
+        NumField(title: riskOn ? L("Size (risk)") : L("Size"), text: $sizeText) {
             Button(sizeInUsd ? "USD" : market.base) {
                 // Convert value to the new unit.
                 if let v = Fmt.parse(sizeText), refPrice > 0 {
@@ -201,7 +201,7 @@ struct OrderFormView: View {
                 HStack {
                     Toggle("TP/SL", isOn: $tpslOn).toggleStyle(CheckToggle())
                     Spacer()
-                    Toggle("Риск-сайзинг", isOn: $riskOn).toggleStyle(CheckToggle())
+                    Toggle(L("Risk sizing"), isOn: $riskOn).toggleStyle(CheckToggle())
                 }
             }
         }
@@ -210,10 +210,10 @@ struct OrderFormView: View {
 
     private var tpslFields: some View {
         VStack(spacing: 6) {
-            NumField(title: "TP", text: $tpText, placeholder: "цена") {
+            NumField(title: "TP", text: $tpText, placeholder: L("price")) {
                 Text(roeText(tpText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlGreen)
             }
-            NumField(title: "SL", text: $slText, placeholder: "цена") {
+            NumField(title: "SL", text: $slText, placeholder: L("price")) {
                 Text(roeText(slText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlRed)
             }
             HStack(spacing: 4) {
@@ -229,18 +229,18 @@ struct OrderFormView: View {
                     .buttonStyle(.plain)
                 }
             }
-            Text("Кнопки: SL на ±%, TP на двойное расстояние (R:R 1:2)").font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+            Text(L("Buttons: SL at ±%, TP at double the distance (R:R 1:2)")).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             if riskOn {
-                NumField(title: "Риск $", text: $riskText, placeholder: "50") {
+                NumField(title: L("Risk $"), text: $riskText, placeholder: "50") {
                     Menu {
                         ForEach([0.005, 0.01, 0.02, 0.05], id: \.self) { p in
-                            Button("\(Fmt.num(p * 100, 1))% депозита") {
+                            Button(L("{0}% of balance", Fmt.num(p * 100, 1))) {
                                 riskText = Fmt.input(model.summary.accountValue * p, 2)
                             }
                         }
                     } label: { Image(systemName: "percent").font(.caption) }
                 }
-                Text("Размер считается так, чтобы при срабатывании SL убыток был равен риску.")
+                Text(L("Size is calculated so that the loss at SL equals the risk."))
                     .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             }
         }
@@ -316,7 +316,7 @@ struct OrderFormView: View {
     }
 
     private var twapLabel: String {
-        twapMinutes < 60 ? "\(twapMinutes) мин" : "\(twapMinutes / 60)ч \(twapMinutes % 60 > 0 ? "\(twapMinutes % 60)м" : "")"
+        twapMinutes < 60 ? L("{0} min", twapMinutes) : L("{0}h {1}", twapMinutes / 60, twapMinutes % 60 > 0 ? L("{0}m", twapMinutes % 60) : "")
     }
 
     private func roeText(_ s: String) -> String {
@@ -341,7 +341,7 @@ struct OrderFormView: View {
     }
 
     private var buttonTitle: String {
-        let side = market.isSpot ? (isBuy ? "Купить" : "Продать") : (isBuy ? "Лонг" : "Шорт")
+        let side = market.isSpot ? (isBuy ? L("Buy") : L("Sell")) : (isBuy ? L("Long") : L("Short"))
         return "\(side) \(market.base)"
     }
 
@@ -371,35 +371,35 @@ struct OrderFormView: View {
         let value = d.size * px
         var lines: [SummaryLine] = []
         if given != nil {
-            lines.append(SummaryLine("Рынок", market.name, .primary))
-            lines.append(SummaryLine("Сторона", d.isBuy ? (market.isSpot ? "Покупка" : "Лонг") : (market.isSpot ? "Продажа" : "Шорт"), d.isBuy ? .hlGreen : .hlRed))
-            lines.append(SummaryLine("Тип", d.type.title, .primary))
-            lines.append(SummaryLine("Размер", "\(Fmt.num(d.size, market.szDecimals)) \(market.base)", .primary))
-            if let p = d.price, d.type.needsPrice { lines.append(SummaryLine("Цена", Fmt.price(p), .primary)) }
-            if let t = d.triggerPx, d.type.needsTrigger { lines.append(SummaryLine("Триггер", Fmt.price(t), .primary)) }
-            if d.type == .market { lines.append(SummaryLine("Макс. проскальзывание", Fmt.pct(model.slippage, 1, signed: false), .primary)) }
-            if d.type == .scale { lines.append(SummaryLine("Сетка", "\(d.scaleCount) ордеров \(Fmt.price(d.scaleStart ?? 0)) → \(Fmt.price(d.scaleEnd ?? 0))", .primary)) }
+            lines.append(SummaryLine(L("Market"), market.name, .primary))
+            lines.append(SummaryLine(L("Side"), d.isBuy ? (market.isSpot ? L("Purchase") : L("Long")) : (market.isSpot ? L("Sale") : L("Short")), d.isBuy ? .hlGreen : .hlRed))
+            lines.append(SummaryLine(L("Type"), d.type.title, .primary))
+            lines.append(SummaryLine(L("Size"), "\(Fmt.num(d.size, market.szDecimals)) \(market.base)", .primary))
+            if let p = d.price, d.type.needsPrice { lines.append(SummaryLine(L("Price"), Fmt.price(p), .primary)) }
+            if let t = d.triggerPx, d.type.needsTrigger { lines.append(SummaryLine(L("Trigger"), Fmt.price(t), .primary)) }
+            if d.type == .market { lines.append(SummaryLine(L("Max slippage"), Fmt.pct(model.slippage, 1, signed: false), .primary)) }
+            if d.type == .scale { lines.append(SummaryLine(L("Grid"), L("{0} orders {1} → {2}", d.scaleCount, Fmt.price(d.scaleStart ?? 0), Fmt.price(d.scaleEnd ?? 0)), .primary)) }
             if d.type == .twap { lines.append(SummaryLine("TWAP", twapLabel, .primary)) }
-            if let tp = d.tp { lines.append(SummaryLine("Тейк-профит", Fmt.price(tp), .hlGreen)) }
-            if let sl = d.sl { lines.append(SummaryLine("Стоп-лосс", Fmt.price(sl), .hlRed)) }
-            if d.reduceOnly { lines.append(SummaryLine("Reduce only", "да", .primary)) }
+            if let tp = d.tp { lines.append(SummaryLine(L("Take profit"), Fmt.price(tp), .hlGreen)) }
+            if let sl = d.sl { lines.append(SummaryLine(L("Stop loss"), Fmt.price(sl), .hlRed)) }
+            if d.reduceOnly { lines.append(SummaryLine("Reduce only", L("yes"), .primary)) }
         }
-        lines.append(SummaryLine("Стоимость", value > 0 ? Fmt.usd(value) : "—", .primary))
+        lines.append(SummaryLine(L("Value"), value > 0 ? Fmt.usd(value) : "—", .primary))
         if !market.isSpot {
-            lines.append(SummaryLine("Маржа", value > 0 ? Fmt.usd(value / Double(currentLeverage)) : "—", .primary))
+            lines.append(SummaryLine(L("Margin"), value > 0 ? Fmt.usd(value / Double(currentLeverage)) : "—", .primary))
             if value > 0, !d.reduceOnly,
                let liq = model.estimateLiq(m: market, isBuy: d.isBuy, entry: px, size: d.size, leverage: currentLeverage,
                                            isCross: model.activeAsset.isCross && !market.onlyIsolated) {
-                lines.append(SummaryLine("Ликвидация ≈", Fmt.price(liq), .orange))
+                lines.append(SummaryLine(L("Liquidation ≈"), Fmt.price(liq), .orange))
             }
         }
         let fee = (d.type == .market || d.type == .twap || d.type.triggerIsMarket) ? model.takerFee : model.makerFee
-        lines.append(SummaryLine("Комиссия ≈", value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
+        lines.append(SummaryLine(L("Fee ≈"), value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
         if let sl = d.sl, sl > 0, d.size > 0 {
-            lines.append(SummaryLine("Убыток по SL", Fmt.signedUsd(-abs(px - sl) * d.size), .hlRed))
+            lines.append(SummaryLine(L("Loss at SL"), Fmt.signedUsd(-abs(px - sl) * d.size), .hlRed))
         }
         if let tp = d.tp, tp > 0, d.size > 0 {
-            lines.append(SummaryLine("Прибыль по TP", Fmt.signedUsd(abs(tp - px) * d.size), .hlGreen))
+            lines.append(SummaryLine(L("Profit at TP"), Fmt.signedUsd(abs(tp - px) * d.size), .hlGreen))
         }
         return lines
     }
@@ -479,7 +479,7 @@ struct OrderConfirmSheet: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("Подтверждение ордера").font(.headline).padding(.top, 16)
+            Text(L("Order confirmation")).font(.headline).padding(.top, 16)
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(summary) { l in
@@ -493,10 +493,10 @@ struct OrderConfirmSheet: View {
                 }
             }
             HStack(spacing: 10) {
-                Button("Отмена") { dismiss() }
+                Button(L("Cancel")) { dismiss() }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 10))
-                PrimaryButton(title: "Подтвердить", color: draft.isBuy ? .hlGreen : .hlRed) { onConfirm() }
+                PrimaryButton(title: L("Confirm"), color: draft.isBuy ? .hlGreen : .hlRed) { onConfirm() }
             }
         }
         .padding(.horizontal)
@@ -517,16 +517,16 @@ struct LeverageSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Режим маржи", selection: $isCross) {
+                    Picker(L("Margin mode"), selection: $isCross) {
                         Text("Cross").tag(true)
                         Text("Isolated").tag(false)
                     }
                     .pickerStyle(.segmented)
                     .disabled(market.onlyIsolated)
                 } footer: {
-                    Text(isCross ? "Cross: вся свободная маржа аккаунта поддерживает позицию." : "Isolated: риск ограничен маржой, выделенной под эту позицию.")
+                    Text(isCross ? L("Cross: all free account margin backs the position.") : L("Isolated: risk is limited to the margin allocated to this position."))
                 }
-                Section("Плечо: \(Int(leverage))x") {
+                Section(L("Leverage: {0}x", Int(leverage))) {
                     Slider(value: $leverage, in: 1...Double(max(market.maxLeverage, 1)), step: 1)
                     HStack {
                         ForEach(presets, id: \.self) { p in
@@ -536,12 +536,12 @@ struct LeverageSheet: View {
                     }
                 }
                 Section {
-                    PrimaryButton(title: "Применить", busy: busy) {
+                    PrimaryButton(title: L("Apply"), busy: busy) {
                         busy = true
                         Task {
                             do {
                                 try await model.updateLeverage(market, leverage: Int(leverage), isCross: isCross)
-                                model.show(.success, "Плечо \(Int(leverage))x \(isCross ? "Cross" : "Isolated")")
+                                model.show(.success, L("Leverage {0}x {1}", Int(leverage), isCross ? "Cross" : "Isolated"))
                                 dismiss()
                             } catch {
                                 model.show(.error, error.localizedDescription)
@@ -552,9 +552,9 @@ struct LeverageSheet: View {
                     .listRowBackground(Color.clear)
                 }
             }
-            .navigationTitle("Плечо \(market.name)")
+            .navigationTitle(L("Leverage {0}", market.name))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
             .onAppear {
                 leverage = Double(model.position(market.id)?.leverage ?? max(1, model.activeAsset.leverage))
                 isCross = market.onlyIsolated ? false : model.activeAsset.isCross

@@ -18,16 +18,16 @@ struct OrderBookPanel: View {
         VStack(spacing: 1) {
             HStack {
                 Menu {
-                    Picker("Группировка", selection: $model.bookSigFigs) {
-                        Text("Без группировки").tag(Int?.none)
-                        Text("5 знаков").tag(Int?.some(5))
-                        Text("4 знака").tag(Int?.some(4))
-                        Text("3 знака").tag(Int?.some(3))
-                        Text("2 знака").tag(Int?.some(2))
+                    Picker(L("Grouping"), selection: $model.bookSigFigs) {
+                        Text(L("No grouping")).tag(Int?.none)
+                        Text(L("5 digits")).tag(Int?.some(5))
+                        Text(L("4 digits")).tag(Int?.some(4))
+                        Text(L("3 digits")).tag(Int?.some(3))
+                        Text(L("2 digits")).tag(Int?.some(2))
                     }
                 } label: {
                     HStack(spacing: 2) {
-                        Text("Цена")
+                        Text(L("Price"))
                         Image(systemName: "line.3.horizontal.decrease").font(.system(size: 8))
                     }
                 }
@@ -100,7 +100,7 @@ struct TradesPanel: View {
     var body: some View {
         VStack(spacing: 1) {
             HStack {
-                Text("Цена"); Spacer(); Text("Размер"); Text("Время").frame(width: 40, alignment: .trailing)
+                Text(L("Price")); Spacer(); Text(L("Size")); Text(L("Time")).frame(width: 40, alignment: .trailing)
             }
             .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             ForEach(model.trades.prefix(22)) { t in

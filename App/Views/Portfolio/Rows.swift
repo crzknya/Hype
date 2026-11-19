@@ -30,34 +30,34 @@ struct PositionRow: View {
             }
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
                 GridRow {
-                    Stat(title: "Размер", value: "\(Fmt.num(p.size, m?.szDecimals ?? 4))")
-                    Stat(title: "Стоимость", value: Fmt.usd(p.positionValue))
-                    Stat(title: "Маржа", value: Fmt.usd(p.marginUsed))
+                    Stat(title: L("Size"), value: "\(Fmt.num(p.size, m?.szDecimals ?? 4))")
+                    Stat(title: L("Value"), value: Fmt.usd(p.positionValue))
+                    Stat(title: L("Margin"), value: Fmt.usd(p.marginUsed))
                 }
                 GridRow {
-                    Stat(title: "Вход", value: Fmt.price(p.entryPx))
-                    Stat(title: "Марк", value: Fmt.price(mark))
-                    Stat(title: "Ликвидация", value: p.liquidationPx.map { Fmt.price($0) } ?? "—", color: .orange)
+                    Stat(title: L("Entry"), value: Fmt.price(p.entryPx))
+                    Stat(title: L("Mark"), value: Fmt.price(mark))
+                    Stat(title: L("Liquidation"), value: p.liquidationPx.map { Fmt.price($0) } ?? "—", color: .orange)
                 }
                 GridRow {
-                    Stat(title: "Фандинг", value: Fmt.signedUsd(-p.fundingSinceOpen), color: Color.pnl(-p.fundingSinceOpen))
+                    Stat(title: L("Funding"), value: Fmt.signedUsd(-p.fundingSinceOpen), color: Color.pnl(-p.fundingSinceOpen))
                     Stat(title: "TP", value: tpsl.first { $0.orderType.hasPrefix("Take") }.map { Fmt.price($0.triggerPx) } ?? "—", color: .hlGreen)
                     Stat(title: "SL", value: tpsl.first { $0.orderType.hasPrefix("Stop") }.map { Fmt.price($0.triggerPx) } ?? "—", color: .hlRed)
                 }
             }
             if model.canTrade {
                 HStack(spacing: 6) {
-                    actionButton("Закрыть", color: .hlRed) { confirmClose(1) }
+                    actionButton(L("Close"), color: .hlRed) { confirmClose(1) }
                     actionButton("50%") { confirmClose(0.5) }
-                    actionButton("Лимит") { sheet = .close }
+                    actionButton(L("Limit")) { sheet = .close }
                     actionButton("TP/SL") { sheet = .tpsl }
                     Menu {
-                        Button("Закрыть 25%") { confirmClose(0.25) }
-                        Button("Развернуть позицию") {
+                        Button(L("Close 25%")) { confirmClose(0.25) }
+                        Button(L("Reverse position")) {
                             model.perform { try await model.reverse(p) }
                         }
-                        if p.leverageType == "isolated" { Button("Изменить маржу") { sheet = .margin } }
-                        Button("Открыть график") { model.select(p.coin) }
+                        if p.leverageType == "isolated" { Button(L("Adjust margin")) { sheet = .margin } }
+                        Button(L("Open chart")) { model.select(p.coin) }
                     } label: {
                         Image(systemName: "ellipsis").frame(width: 34, height: 30)
                             .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
@@ -109,13 +109,13 @@ struct OrderRow: View {
                 }
                 HStack(spacing: 10) {
                     if o.isTrigger {
-                        Text("Триггер \(o.triggerCondition.isEmpty ? Fmt.price(o.triggerPx) : o.triggerCondition)")
+                        Text(L("Trigger {0}", o.triggerCondition.isEmpty ? Fmt.price(o.triggerPx) : o.triggerCondition))
                     }
-                    if !o.orderType.contains("Market") { Text("Цена \(Fmt.price(o.limitPx))") }
+                    if !o.orderType.contains("Market") { Text(L("Price {0}", Fmt.price(o.limitPx))) }
                 }
                 .font(.system(size: 11, design: .monospaced))
                 HStack(spacing: 10) {
-                    Text("\(Fmt.num(o.origSz - o.sz, m?.szDecimals ?? 4)) / \(o.sz == 0 ? "позиция" : Fmt.num(o.origSz, m?.szDecimals ?? 4))")
+                    Text("\(Fmt.num(o.origSz - o.sz, m?.szDecimals ?? 4)) / \(o.sz == 0 ? L("position") : Fmt.num(o.origSz, m?.szDecimals ?? 4))")
                     Text(Fmt.dateTime(o.timestamp)).foregroundStyle(Color.hlMuted)
                 }
                 .font(.system(size: 11, design: .monospaced))
@@ -163,7 +163,7 @@ struct FillRow: View {
                     Text(Fmt.signedUsd(fill.closedPnl)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.pnl(fill.closedPnl))
                 }
-                Text("Комиссия \(Fmt.num(fill.fee, 4)) \(fill.feeToken)").font(.caption2).foregroundStyle(Color.hlMuted)
+                Text(L("Fee {0} {1}", Fmt.num(fill.fee, 4), fill.feeToken)).font(.caption2).foregroundStyle(Color.hlMuted)
                 Text(Fmt.usd(fill.px * fill.sz)).font(.caption2.monospaced())
             }
         }
@@ -180,10 +180,10 @@ struct TwapRow: View {
             HStack {
                 Text(model.displayName(twap.coin)).font(.subheadline.bold())
                 SideBadge(isLong: twap.isBuy)
-                Text("TWAP \(twap.minutes) мин").font(.caption).foregroundStyle(Color.hlMuted)
+                Text(L("TWAP {0} min", twap.minutes)).font(.caption).foregroundStyle(Color.hlMuted)
                 Spacer()
                 if model.canTrade {
-                    Button("Стоп") { model.perform { try await model.cancelTwap(twap); return "TWAP остановлен" } }
+                    Button(L("Stop")) { model.perform { try await model.cancelTwap(twap); return L("TWAP stopped") } }
                         .buttonStyle(.bordered).controlSize(.small).tint(.hlRed)
                 }
             }
@@ -191,9 +191,9 @@ struct TwapRow: View {
             HStack {
                 Text("\(Fmt.num(twap.executedSz, 4)) / \(Fmt.num(twap.sz, 4))")
                 Spacer()
-                Text("Ср. цена \(Fmt.price(twap.avgPx))")
+                Text(L("Avg. price {0}", Fmt.price(twap.avgPx)))
                 Spacer()
-                Text("до \(Fmt.time(twap.endsAt))")
+                Text(L("until {0}", Fmt.time(twap.endsAt)))
             }
             .font(.system(size: 11, design: .monospaced))
         }
@@ -212,36 +212,36 @@ struct AccountPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("", selection: $tab) {
-                Text("Позиции (\(model.positions.count))").tag(0)
-                Text("Ордера (\(model.openOrders.count))").tag(1)
-                Text("Сделки").tag(2)
+                Text(L("Positions ({0})", model.positions.count)).tag(0)
+                Text(L("Orders ({0})", model.openOrders.count)).tag(1)
+                Text(L("Trades")).tag(2)
             }
             .pickerStyle(.segmented)
             HStack {
-                Toggle("Только \(model.displayName(coin))", isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)
+                Toggle(L("Only {0}", model.displayName(coin)), isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)
                 Spacer()
                 if tab == 1 && !orders.isEmpty && model.canTrade {
-                    Button("Отменить все") { model.perform { try await model.cancelAll(coin: onlyThisCoin ? coin : nil) } }
+                    Button(L("Cancel all")) { model.perform { try await model.cancelAll(coin: onlyThisCoin ? coin : nil) } }
                         .font(.caption.bold()).foregroundStyle(Color.hlRed)
                 }
                 if tab == 0 && !model.positions.isEmpty && model.canTrade && !onlyThisCoin {
-                    Button("Закрыть все") { model.perform { try await model.closeAll() } }
+                    Button(L("Close all")) { model.perform { try await model.closeAll() } }
                         .font(.caption.bold()).foregroundStyle(Color.hlRed)
                 }
             }
             if model.account == nil {
-                EmptyState(text: "Подключите аккаунт в Настройках, чтобы видеть позиции и торговать", icon: "person.crop.circle.badge.plus")
+                EmptyState(text: L("Connect an account in Settings to see positions and trade"), icon: "person.crop.circle.badge.plus")
             } else {
                 switch tab {
                 case 0:
-                    if positions.isEmpty { EmptyState(text: "Нет открытых позиций") }
+                    if positions.isEmpty { EmptyState(text: L("No open positions")) }
                     ForEach(positions) { PositionRow(position: $0) }
                 case 1:
-                    if orders.isEmpty { EmptyState(text: "Нет открытых ордеров") }
+                    if orders.isEmpty { EmptyState(text: L("No open orders")) }
                     ForEach(orders) { OrderRow(order: $0) }
                 default:
                     let f = fills
-                    if f.isEmpty { EmptyState(text: "Сделок пока нет") }
+                    if f.isEmpty { EmptyState(text: L("No trades yet")) }
                     ForEach(f.prefix(30)) { FillRow(fill: $0) }
                 }
             }

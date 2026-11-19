@@ -8,7 +8,7 @@ struct PortfolioView: View {
     @State private var transfer: TransferKind?
 
     enum Tab: String, CaseIterable, Identifiable {
-        case positions = "Позиции", orders = "Ордера", twap = "TWAP", fills = "Сделки", funding = "Фандинг", spot = "Спот", ledger = "Переводы"
+        case positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", funding = "Funding", spot = "Spot", ledger = "Transfers"
         var id: String { rawValue }
     }
 
@@ -17,8 +17,8 @@ struct PortfolioView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     if model.account == nil {
-                        EmptyState(text: "Нет подключённого аккаунта.\nДобавьте API-кошелёк или адрес для просмотра в Настройках.", icon: "person.crop.circle.badge.plus")
-                        Button("Открыть настройки") { model.tab = .settings }.buttonStyle(.borderedProminent).tint(.hlAccent)
+                        EmptyState(text: L("No account connected.\nAdd an API wallet or a watch address in Settings."), icon: "person.crop.circle.badge.plus")
+                        Button(L("Open Settings")) { model.tab = .settings }.buttonStyle(.borderedProminent).tint(.hlAccent)
                     } else {
                         summaryCard
                         if !model.portfolioHistory.isEmpty { equityChart }
@@ -35,7 +35,7 @@ struct PortfolioView: View {
                 await model.refreshOrders()
                 await model.refreshHistory()
             }
-            .navigationTitle("Портфель")
+            .navigationTitle(L("Portfolio"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) { AccountSwitcher() }
@@ -50,26 +50,26 @@ struct PortfolioView: View {
         return Card {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Стоимость аккаунта (перпы)").font(.caption).foregroundStyle(Color.hlMuted)
+                    Text(L("Account value (perps)")).font(.caption).foregroundStyle(Color.hlMuted)
                     Text(Fmt.usd(s.accountValue)).font(.system(size: 28, weight: .bold, design: .monospaced))
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Нереализ. PnL").font(.caption).foregroundStyle(Color.hlMuted)
+                    Text(L("Unrealized PnL")).font(.caption).foregroundStyle(Color.hlMuted)
                     Text(Fmt.signedUsd(model.unrealizedPnl)).font(.system(size: 17, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.pnl(model.unrealizedPnl))
                 }
             }
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                 GridRow {
-                    Stat(title: "Спот", value: Fmt.usd(spotValue))
-                    Stat(title: "Доступно к выводу", value: Fmt.usd(s.withdrawable))
-                    Stat(title: "Маржа", value: Fmt.usd(s.totalMarginUsed))
+                    Stat(title: L("Spot"), value: Fmt.usd(spotValue))
+                    Stat(title: L("Withdrawable"), value: Fmt.usd(s.withdrawable))
+                    Stat(title: L("Margin"), value: Fmt.usd(s.totalMarginUsed))
                 }
                 GridRow {
-                    Stat(title: "Позиции", value: Fmt.compactUsd(s.totalNtlPos))
-                    Stat(title: "Плечо аккаунта", value: Fmt.num(s.leverage, 2) + "x")
-                    Stat(title: "Маржин-рейт", value: Fmt.pct(s.marginRatio, 1, signed: false),
+                    Stat(title: L("Positions"), value: Fmt.compactUsd(s.totalNtlPos))
+                    Stat(title: L("Account leverage"), value: Fmt.num(s.leverage, 2) + "x")
+                    Stat(title: L("Margin ratio"), value: Fmt.pct(s.marginRatio, 1, signed: false),
                          color: s.marginRatio > 0.8 ? .hlRed : s.marginRatio > 0.5 ? .orange : .hlGreen)
                 }
             }
@@ -81,12 +81,12 @@ struct PortfolioView: View {
 
     private var equityChart: some View {
         Card {
-            Text("Стоимость аккаунта, 30 дней").font(.caption).foregroundStyle(Color.hlMuted)
+            Text(L("Account value, 30 days")).font(.caption).foregroundStyle(Color.hlMuted)
             let pts = model.portfolioHistory
             let first = pts.first?.1 ?? 0, last = pts.last?.1 ?? 0
             Chart {
                 ForEach(Array(pts.enumerated()), id: \.offset) { _, p in
-                    LineMark(x: .value("Дата", p.0), y: .value("USD", p.1))
+                    LineMark(x: .value(L("Date"), p.0), y: .value("USD", p.1))
                         .foregroundStyle(last >= first ? Color.hlGreen : Color.hlRed)
                         .interpolationMethod(.monotone)
                 }
@@ -99,10 +99,10 @@ struct PortfolioView: View {
 
     private var actions: some View {
         HStack(spacing: 8) {
-            actionTile("Перевод", "arrow.left.arrow.right") { transfer = .classTransfer }
-            actionTile("Вывод", "arrow.up.circle") { transfer = .withdraw }
-            actionTile("Отправить", "paperplane") { transfer = .send }
-            actionTile("Депозит", "arrow.down.circle") { transfer = .deposit }
+            actionTile(L("Transfer"), "arrow.left.arrow.right") { transfer = .classTransfer }
+            actionTile(L("Withdrawal"), "arrow.up.circle") { transfer = .withdraw }
+            actionTile(L("Send"), "paperplane") { transfer = .send }
+            actionTile(L("Deposit"), "arrow.down.circle") { transfer = .deposit }
         }
     }
 
@@ -137,10 +137,10 @@ struct PortfolioView: View {
 
     private func title(_ t: Tab) -> String {
         switch t {
-        case .positions: return "Позиции \(model.positions.count)"
-        case .orders: return "Ордера \(model.openOrders.count)"
+        case .positions: return L("Positions {0}", model.positions.count)
+        case .orders: return L("Orders {0}", model.openOrders.count)
         case .twap: return "TWAP \(model.twaps.count)"
-        default: return t.rawValue
+        default: return L(t.rawValue)
         }
     }
 
@@ -148,44 +148,44 @@ struct PortfolioView: View {
     private var content: some View {
         switch tab {
         case .positions:
-            if model.positions.isEmpty { EmptyState(text: "Нет открытых позиций") }
+            if model.positions.isEmpty { EmptyState(text: L("No open positions")) }
             else {
                 if model.canTrade {
                     HStack {
                         Spacer()
-                        Button("Закрыть все позиции") { model.perform { try await model.closeAll() } }
+                        Button(L("Close all positions")) { model.perform { try await model.closeAll() } }
                             .font(.caption.bold()).foregroundStyle(Color.hlRed)
                     }
                 }
                 ForEach(model.positions) { PositionRow(position: $0) }
             }
         case .orders:
-            if model.openOrders.isEmpty { EmptyState(text: "Нет открытых ордеров") }
+            if model.openOrders.isEmpty { EmptyState(text: L("No open orders")) }
             else {
                 if model.canTrade {
                     HStack {
                         Spacer()
-                        Button("Отменить все ордера") { model.perform { try await model.cancelAll() } }
+                        Button(L("Cancel all orders")) { model.perform { try await model.cancelAll() } }
                             .font(.caption.bold()).foregroundStyle(Color.hlRed)
                     }
                 }
                 ForEach(model.openOrders) { OrderRow(order: $0) }
             }
         case .twap:
-            if model.twaps.isEmpty { EmptyState(text: "Нет активных TWAP") }
+            if model.twaps.isEmpty { EmptyState(text: L("No active TWAPs")) }
             ForEach(model.twaps) { TwapRow(twap: $0) }
         case .fills:
             FillsSection()
         case .funding:
             FundingSection()
         case .spot:
-            if model.spotBalances.isEmpty { EmptyState(text: "Нет спотовых балансов") }
+            if model.spotBalances.isEmpty { EmptyState(text: L("No spot balances")) }
             ForEach(model.spotBalances) { b in
                 let px: Double = model.spotPrice(b.coin)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(b.coin).font(.subheadline.bold())
-                        if b.hold > 0 { Text("В ордерах: \(Fmt.num(b.hold, 4))").font(.caption2).foregroundStyle(Color.hlMuted) }
+                        if b.hold > 0 { Text(L("In orders: {0}", Fmt.num(b.hold, 4))).font(.caption2).foregroundStyle(Color.hlMuted) }
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
@@ -201,7 +201,7 @@ struct PortfolioView: View {
                 .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
             }
         case .ledger:
-            if model.ledger.isEmpty { EmptyState(text: "Нет депозитов и переводов") }
+            if model.ledger.isEmpty { EmptyState(text: L("No deposits or transfers")) }
             ForEach(model.ledger.prefix(100)) { e in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -232,24 +232,24 @@ struct FillsSection: View {
         let wins = closed.filter { $0.closedPnl > 0 }.count
         VStack(spacing: 8) {
             Picker("", selection: $period) {
-                Text("24ч").tag(0); Text("7д").tag(1); Text("30д").tag(2)
+                Text(L("24h")).tag(0); Text(L("7d")).tag(1); Text(L("30d")).tag(2)
             }
             .pickerStyle(.segmented)
             Card {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                     GridRow {
-                        Stat(title: "Реализ. PnL", value: Fmt.signedUsd(pnl), color: Color.pnl(pnl))
-                        Stat(title: "Комиссии", value: Fmt.usd(fees))
-                        Stat(title: "Чистый PnL", value: Fmt.signedUsd(pnl - fees), color: Color.pnl(pnl - fees))
+                        Stat(title: L("Realized PnL"), value: Fmt.signedUsd(pnl), color: Color.pnl(pnl))
+                        Stat(title: L("Fees"), value: Fmt.usd(fees))
+                        Stat(title: L("Net PnL"), value: Fmt.signedUsd(pnl - fees), color: Color.pnl(pnl - fees))
                     }
                     GridRow {
-                        Stat(title: "Объём", value: Fmt.compactUsd(volume))
-                        Stat(title: "Сделок", value: "\(fills.count)")
-                        Stat(title: "Винрейт", value: closed.isEmpty ? "—" : Fmt.pct(Double(wins) / Double(closed.count), 0, signed: false))
+                        Stat(title: L("Volume"), value: Fmt.compactUsd(volume))
+                        Stat(title: L("Trades count"), value: "\(fills.count)")
+                        Stat(title: L("Win rate"), value: closed.isEmpty ? "—" : Fmt.pct(Double(wins) / Double(closed.count), 0, signed: false))
                     }
                 }
             }
-            if fills.isEmpty { EmptyState(text: "Нет сделок за период") }
+            if fills.isEmpty { EmptyState(text: L("No trades in this period")) }
             ForEach(fills.prefix(150)) { FillRow(fill: $0) }
         }
     }
@@ -261,14 +261,14 @@ struct FundingSection: View {
         let total = model.fundingHistory.reduce(0) { $0 + $1.usdc }
         VStack(spacing: 8) {
             Card {
-                Stat(title: "Фандинг за 4 недели", value: Fmt.signedUsd(total, 4), color: Color.pnl(total))
+                Stat(title: L("Funding, 4 weeks"), value: Fmt.signedUsd(total, 4), color: Color.pnl(total))
             }
-            if model.fundingHistory.isEmpty { EmptyState(text: "Нет выплат фандинга") }
+            if model.fundingHistory.isEmpty { EmptyState(text: L("No funding payments")) }
             ForEach(model.fundingHistory.prefix(200)) { f in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.displayName(f.coin)).font(.subheadline.bold())
-                        Text("\(Fmt.dateTime(f.time)) · ставка \(Fmt.pct(f.rate, 4))").font(.caption2).foregroundStyle(Color.hlMuted)
+                        Text(L("{0} · rate {1}", Fmt.dateTime(f.time), Fmt.pct(f.rate, 4))).font(.caption2).foregroundStyle(Color.hlMuted)
                     }
                     Spacer()
                     Text(Fmt.signedUsd(f.usdc, 4)).font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.pnl(f.usdc))
@@ -293,11 +293,11 @@ struct AccountSwitcher: View {
                 }
             }
             Divider()
-            Button("Управление аккаунтами") { model.tab = .settings }
+            Button(L("Manage accounts")) { model.tab = .settings }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: model.account?.kind == .watch ? "eye" : "person.crop.circle")
-                Text(model.account?.name ?? "Аккаунт").font(.headline)
+                Text(model.account?.name ?? L("Account")).font(.headline)
                 Image(systemName: "chevron.down").font(.caption)
             }
             .foregroundStyle(.primary)

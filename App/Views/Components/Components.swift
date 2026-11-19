@@ -198,7 +198,7 @@ extension View {
         toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Готово") { hideKeyboard() }
+                Button(L("Done")) { hideKeyboard() }
             }
         }
     }

@@ -18,31 +18,38 @@ struct SettingsView: View {
                                     .foregroundStyle(a.id == model.activeAccountId ? Color.hlAccent : Color.hlMuted)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(a.name).foregroundStyle(.primary)
-                                    Text("\(Address.short(a.address)) · \(a.kind.title)\(a.vaultAddress.map { " · субакк. \(Address.short($0))" } ?? "")")
+                                    Text("\(Address.short(a.address)) · \(a.kind.title)\(a.vaultAddress.map { L(" · sub {0}", Address.short($0)) } ?? "")")
                                         .font(.caption).foregroundStyle(Color.hlMuted)
                                 }
                             }
                         }
                         .swipeActions {
-                            Button("Удалить", role: .destructive) { model.removeAccount(a) }
+                            Button(L("Delete"), role: .destructive) { model.removeAccount(a) }
                         }
                         .contextMenu {
-                            Button { UIPasteboard.general.string = Address.checksum(a.address) } label: { Label("Скопировать адрес", systemImage: "doc.on.doc") }
-                            Button(role: .destructive) { model.removeAccount(a) } label: { Label("Удалить", systemImage: "trash") }
+                            Button { UIPasteboard.general.string = Address.checksum(a.address) } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
+                            Button(role: .destructive) { model.removeAccount(a) } label: { Label(L("Delete"), systemImage: "trash") }
                         }
                     }
-                    Button { adding = true } label: { Label("Добавить аккаунт", systemImage: "plus.circle") }
+                    Button { adding = true } label: { Label(L("Add account"), systemImage: "plus.circle") }
                     if model.account?.kind == .privateKey {
-                        Button { creatingAgent = true } label: { Label("Создать API-кошелёк из этого аккаунта", systemImage: "key.viewfinder") }
+                        Button { creatingAgent = true } label: { Label(L("Create an API wallet from this account"), systemImage: "key.viewfinder") }
                     }
                 } header: {
-                    Text("Аккаунты")
+                    Text(L("Accounts"))
                 } footer: {
-                    Text("Рекомендуется API-кошелёк: он может только торговать и не может выводить средства. Ключи хранятся в Keychain только на этом устройстве.")
+                    Text(L("An API wallet is recommended: it can trade but cannot withdraw funds. Keys are stored in the Keychain on this device only."))
                 }
 
-                Section("Сеть") {
-                    Picker("Сеть", selection: $model.network) {
+                Section(L("Language")) {
+                    Picker(L("Language"), selection: $model.language) {
+                        ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section(L("Network")) {
+                    Picker(L("Network"), selection: $model.network) {
                         ForEach(HLNetwork.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
@@ -50,29 +57,29 @@ struct SettingsView: View {
                         Text("WebSocket")
                         Spacer()
                         ConnectionDot(connected: model.wsConnected)
-                        Text(model.wsConnected ? "подключён" : "нет связи").foregroundStyle(Color.hlMuted)
+                        Text(model.wsConnected ? L("connected") : L("offline")).foregroundStyle(Color.hlMuted)
                     }
                 }
 
                 Section {
                     VStack(alignment: .leading) {
-                        Text("Проскальзывание рыночных ордеров: \(Fmt.pct(model.slippage, 1, signed: false))")
+                        Text(L("Market order slippage: {0}", Fmt.pct(model.slippage, 1, signed: false)))
                         Slider(value: $model.slippage, in: 0.001...0.1, step: 0.001)
                     }
-                    Toggle("Подтверждать ордера", isOn: $model.confirmOrders)
-                    Toggle("Вибрация", isOn: $model.haptics)
+                    Toggle(L("Confirm orders"), isOn: $model.confirmOrders)
+                    Toggle(L("Haptics"), isOn: $model.haptics)
                 } header: {
-                    Text("Торговля")
+                    Text(L("Trade"))
                 } footer: {
-                    Text("Рыночный ордер на Hyperliquid — это IOC-лимит по цене лучшей заявки ± проскальзывание.")
+                    Text(L("A market order on Hyperliquid is an IOC limit at the best price ± slippage."))
                 }
 
-                Section("Безопасность") {
-                    Toggle("Блокировка \(Biometrics.name)", isOn: Binding(
+                Section(L("Security")) {
+                    Toggle(L("{0} lock", Biometrics.name), isOn: Binding(
                         get: { model.biometricLock },
                         set: { v in
                             Task {
-                                if await Biometrics.authenticate(reason: v ? "Включить блокировку" : "Отключить блокировку") {
+                                if await Biometrics.authenticate(reason: v ? L("Enable lock") : L("Disable lock")) {
                                     model.biometricLock = v
                                 }
                             }
@@ -80,14 +87,14 @@ struct SettingsView: View {
                     .disabled(!Biometrics.available)
                 }
 
-                Section("О приложении") {
-                    LabeledContent("Версия", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                Section(L("About")) {
+                    LabeledContent(L("Version"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                     Link("Hyperliquid API Docs", destination: URL(string: "https://hyperliquid.gitbook.io/hyperliquid-docs")!)
-                    Link("Создать API-кошелёк (app.hyperliquid.xyz/API)", destination: URL(string: "https://app.hyperliquid.xyz/API")!)
-                    Text("Неофициальный клиент. Торговля с плечом сопряжена с высоким риском.").font(.caption).foregroundStyle(Color.hlMuted)
+                    Link(L("Create an API wallet (app.hyperliquid.xyz/API)"), destination: URL(string: "https://app.hyperliquid.xyz/API")!)
+                    Text(L("Unofficial client. Leveraged trading carries high risk.")).font(.caption).foregroundStyle(Color.hlMuted)
                 }
             }
-            .navigationTitle("Настройки")
+            .navigationTitle(L("Settings"))
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $adding) { AddAccountView() }
             .sheet(isPresented: $creatingAgent) { CreateAgentView() }
@@ -111,17 +118,17 @@ struct AddAccountView: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Тип", selection: $kind) {
+                    Picker(L("Type"), selection: $kind) {
                         ForEach(Account.Kind.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 } footer: { Text(kindHelp) }
 
                 Section {
-                    TextField("Название (например, Основной)", text: $name)
+                    TextField(L("Name (e.g. Main)"), text: $name)
                     if kind != .privateKey {
                         HStack {
-                            TextField("Адрес основного кошелька 0x…", text: $address)
+                            TextField(L("Main wallet address 0x…"), text: $address)
                                 .font(.system(.body, design: .monospaced))
                                 .autocorrectionDisabled().textInputAutocapitalization(.never)
                             pasteButton { address = $0 }
@@ -129,13 +136,13 @@ struct AddAccountView: View {
                     }
                     if kind != .watch {
                         HStack {
-                            SecureField(kind == .agent ? "Приватный ключ API-кошелька" : "Приватный ключ кошелька", text: $key)
+                            SecureField(kind == .agent ? L("API wallet private key") : L("Wallet private key"), text: $key)
                                 .font(.system(.body, design: .monospaced))
                                 .autocorrectionDisabled().textInputAutocapitalization(.never)
                             pasteButton { key = $0 }
                         }
                         if let derived = derivedAddress {
-                            LabeledContent(kind == .agent ? "Адрес API-кошелька" : "Адрес", value: Address.short(derived))
+                            LabeledContent(kind == .agent ? L("API wallet address") : L("Address"), value: Address.short(derived))
                                 .font(.caption)
                         }
                     }
@@ -143,11 +150,11 @@ struct AddAccountView: View {
 
                 if kind != .watch {
                     Section {
-                        TextField("Адрес субаккаунта/vault (необязательно)", text: $vault)
+                        TextField(L("Sub-account/vault address (optional)"), text: $vault)
                             .font(.system(.body, design: .monospaced))
                             .autocorrectionDisabled().textInputAutocapitalization(.never)
                     } footer: {
-                        Text("Если указан — ордера будут отправляться от имени этого субаккаунта или vault (вы должны быть его владельцем/лидером).")
+                        Text(L("If set, orders are sent on behalf of this sub-account or vault (you must be its owner/leader)."))
                     }
                 }
 
@@ -156,24 +163,24 @@ struct AddAccountView: View {
                 }
 
                 Section {
-                    PrimaryButton(title: "Сохранить", busy: checking) { save() }
+                    PrimaryButton(title: L("Save"), busy: checking) { save() }
                         .listRowBackground(Color.clear)
                 }
             }
-            .navigationTitle("Новый аккаунт")
+            .navigationTitle(L("New account"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } } }
         }
     }
 
     private var kindHelp: String {
         switch kind {
         case .agent:
-            return "Создайте API-кошелёк на app.hyperliquid.xyz → «Ещё» → API, нажмите Authorize и скопируйте приватный ключ. Укажите здесь адрес вашего основного кошелька и ключ API-кошелька. API-кошелёк может торговать, но не может выводить средства."
+            return L("Create an API wallet at app.hyperliquid.xyz → More → API, tap Authorize and copy the private key. Enter your main wallet address and the API wallet key here. An API wallet can trade but cannot withdraw funds.")
         case .privateKey:
-            return "Полный доступ, включая выводы и переводы. Используйте только если понимаете риски: ключ хранится в Keychain на устройстве."
+            return L("Full access including withdrawals and transfers. Use only if you understand the risks: the key is stored in the Keychain on this device.")
         case .watch:
-            return "Просмотр позиций, ордеров и истории любого адреса без возможности торговать."
+            return L("View positions, orders and history of any address without trading.")
         }
     }
 
@@ -194,20 +201,20 @@ struct AddAccountView: View {
         let addr = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
         let v = vault.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !v.isEmpty && !Address.isValid(v) { warning = "Неверный адрес субаккаунта"; return }
+        if !v.isEmpty && !Address.isValid(v) { warning = L("Invalid sub-account address"); return }
         switch kind {
         case .watch:
-            guard Address.isValid(addr) else { warning = "Неверный адрес"; return }
-            finish(Account(name: name.isEmpty ? "Наблюдение" : name, address: addr, kind: .watch), key: nil)
+            guard Address.isValid(addr) else { warning = L("Invalid address"); return }
+            finish(Account(name: name.isEmpty ? L("Watch") : name, address: addr, kind: .watch), key: nil)
         case .privateKey:
-            guard let w = try? HLWallet(privateKeyHex: k) else { warning = "Неверный приватный ключ"; return }
-            finish(Account(name: name.isEmpty ? "Кошелёк" : name, address: w.address, kind: .privateKey,
+            guard let w = try? HLWallet(privateKeyHex: k) else { warning = L("Invalid private key"); return }
+            finish(Account(name: name.isEmpty ? L("Wallet") : name, address: w.address, kind: .privateKey,
                            signerAddress: w.address, vaultAddress: v.isEmpty ? nil : v), key: k)
         case .agent:
-            guard Address.isValid(addr) else { warning = "Неверный адрес основного кошелька"; return }
-            guard let w = try? HLWallet(privateKeyHex: k) else { warning = "Неверный приватный ключ API-кошелька"; return }
+            guard Address.isValid(addr) else { warning = L("Invalid main wallet address"); return }
+            guard let w = try? HLWallet(privateKeyHex: k) else { warning = L("Invalid API wallet private key"); return }
             if w.address == addr {
-                warning = "Это ключ самого основного кошелька. Выберите тип «Приватный ключ» или используйте ключ API-кошелька."
+                warning = L("This is the main wallet key itself. Choose the “Private key” type or use an API wallet key.")
                 return
             }
             checking = true
@@ -217,7 +224,7 @@ struct AddAccountView: View {
                 let acc = Account(name: name.isEmpty ? "API" : name, address: addr, kind: .agent,
                                   signerAddress: w.address, vaultAddress: v.isEmpty ? nil : v)
                 if approved == false && !forceSave {
-                    warning = "API-кошелёк \(Address.short(w.address)) не найден среди одобренных для \(Address.short(addr)) в сети \(model.network.title). Проверьте адрес и сеть. Нажмите «Сохранить» ещё раз, чтобы сохранить всё равно."
+                    warning = L("API wallet {0} is not approved for {1} on {2}. Check the address and network. Tap “Save” again to save anyway.", Address.short(w.address), Address.short(addr), model.network.title)
                     forceSave = true
                     return
                 }
@@ -228,7 +235,7 @@ struct AddAccountView: View {
 
     private func finish(_ a: Account, key: String?) {
         model.addAccount(a, key: key)
-        model.show(.success, "Аккаунт «\(a.name)» добавлен")
+        model.show(.success, L("Account “{0}” added", a.name))
         dismiss()
     }
 }
@@ -243,11 +250,11 @@ struct CreateAgentView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Имя API-кошелька", text: $name)
+                    TextField(L("API wallet name"), text: $name)
                 } footer: {
-                    Text("Будет создан новый ключ, одобрен подписью основного кошелька и сохранён как отдельный аккаунт «API». После этого основной ключ можно удалить из приложения — для торговли он не нужен.")
+                    Text(L("A new key will be generated, approved with the main wallet signature and saved as a separate “API” account. After that you can remove the main key from the app: it is not needed for trading."))
                 }
-                PrimaryButton(title: "Создать и одобрить", busy: busy) {
+                PrimaryButton(title: L("Create and approve"), busy: busy) {
                     guard let main = model.account else { return }
                     busy = true
                     Task {
@@ -255,7 +262,7 @@ struct CreateAgentView: View {
                             let (addr, key) = try await model.createAgent(name: name)
                             model.addAccount(Account(name: "\(main.name) API", address: main.address, kind: .agent,
                                                      signerAddress: addr, vaultAddress: main.vaultAddress), key: key)
-                            model.show(.success, "API-кошелёк \(Address.short(addr)) создан")
+                            model.show(.success, L("API wallet {0} created", Address.short(addr)))
                             dismiss()
                         } catch {
                             model.show(.error, error.localizedDescription)
@@ -265,9 +272,9 @@ struct CreateAgentView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            .navigationTitle("Новый API-кошелёк")
+            .navigationTitle(L("New API wallet"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } } }
         }
     }
 }

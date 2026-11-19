@@ -13,7 +13,7 @@ public struct HLSignature: Equatable {
 
 public enum WalletError: Error, LocalizedError {
     case invalidPrivateKey
-    public var errorDescription: String? { "Неверный приватный ключ (ожидается 64 hex-символа)" }
+    public var errorDescription: String? { "Invalid private key (expected 64 hex characters)" }
 }
 
 /// An Ethereum-style secp256k1 key (signing is done by libsecp256k1).

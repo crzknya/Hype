@@ -7,37 +7,37 @@ struct ToolsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Калькуляторы") {
+                Section(L("Calculators")) {
                     NavigationLink { PositionSizeCalculator() } label: {
-                        Label("Размер позиции по риску", systemImage: "scalemass")
+                        Label(L("Position size by risk"), systemImage: "scalemass")
                     }
                     NavigationLink { PnlCalculator() } label: {
-                        Label("PnL и ROE", systemImage: "function")
+                        Label(L("PnL & ROE"), systemImage: "function")
                     }
                     NavigationLink { LiquidationCalculator() } label: {
-                        Label("Цена ликвидации", systemImage: "exclamationmark.triangle")
+                        Label(L("Liquidation price"), systemImage: "exclamationmark.triangle")
                     }
                 }
-                Section("Мониторинг") {
+                Section(L("Monitoring")) {
                     NavigationLink { AlertsView() } label: {
-                        Label("Ценовые алерты (\(model.alerts.count))", systemImage: "bell.badge")
+                        Label(L("Price alerts ({0})", model.alerts.count), systemImage: "bell.badge")
                     }
                     NavigationLink { FundingScannerView() } label: {
-                        Label("Сканер фандинга", systemImage: "percent")
+                        Label(L("Funding scanner"), systemImage: "percent")
                     }
                     NavigationLink { MoversView() } label: {
-                        Label("Лидеры роста и падения", systemImage: "chart.line.uptrend.xyaxis")
+                        Label(L("Top gainers & losers"), systemImage: "chart.line.uptrend.xyaxis")
                     }
                 }
-                Section("Защита") {
+                Section(L("Protection")) {
                     NavigationLink { DeadMansSwitchView() } label: {
-                        Label("Авто-отмена ордеров", systemImage: "timer")
+                        Label(L("Auto-cancel orders"), systemImage: "timer")
                     }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Color.hlBg)
-            .navigationTitle("Инструменты")
+            .navigationTitle(L("Tools"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -65,33 +65,33 @@ struct PositionSizeCalculator: View {
         let target = Fmt.parse(targetText) ?? 0
         let reward = target > 0 ? abs(target - entry) * size : 0
         Form {
-            Section("Параметры") {
-                NumField(title: "Депозит $", text: $balanceText, placeholder: Fmt.input(model.summary.accountValue, 2))
-                NumField(title: "Риск %", text: $riskPctText)
-                NumField(title: "Вход", text: $entryText) {
+            Section(L("Parameters")) {
+                NumField(title: L("Balance $"), text: $balanceText, placeholder: Fmt.input(model.summary.accountValue, 2))
+                NumField(title: L("Risk %"), text: $riskPctText)
+                NumField(title: L("Entry"), text: $entryText) {
                     Button("Mid") { entryText = Fmt.input(model.mid(model.selectedCoin), 6) }.font(.caption.bold())
                 }
-                NumField(title: "Стоп", text: $stopText)
-                NumField(title: "Цель", text: $targetText, placeholder: "опц.")
-                NumField(title: "Плечо", text: $leverageText)
+                NumField(title: L("Stop"), text: $stopText)
+                NumField(title: L("Target"), text: $targetText, placeholder: L("opt."))
+                NumField(title: L("Leverage"), text: $leverageText)
             }
-            Section("Результат") {
-                LabeledContent("Направление", value: entry > 0 && stop > 0 ? (isLong ? "Лонг" : "Шорт") : "—")
-                LabeledContent("Риск", value: Fmt.usd(risk))
-                LabeledContent("Размер", value: Fmt.num(size, 4))
-                LabeledContent("Стоимость позиции", value: Fmt.usd(notional))
-                LabeledContent("Нужная маржа", value: Fmt.usd(notional / lev))
-                LabeledContent("Дистанция стопа", value: entry > 0 ? Fmt.pct(dist / entry, 2, signed: false) : "—")
+            Section(L("Result")) {
+                LabeledContent(L("Direction"), value: entry > 0 && stop > 0 ? (isLong ? L("Long") : L("Short")) : "—")
+                LabeledContent(L("Risk"), value: Fmt.usd(risk))
+                LabeledContent(L("Size"), value: Fmt.num(size, 4))
+                LabeledContent(L("Position value"), value: Fmt.usd(notional))
+                LabeledContent(L("Required margin"), value: Fmt.usd(notional / lev))
+                LabeledContent(L("Stop distance"), value: entry > 0 ? Fmt.pct(dist / entry, 2, signed: false) : "—")
                 if reward > 0 {
-                    LabeledContent("Прибыль по цели", value: Fmt.usd(reward))
+                    LabeledContent(L("Profit at target"), value: Fmt.usd(reward))
                     LabeledContent("R:R", value: risk > 0 ? "1 : " + Fmt.num(reward / risk, 2) : "—")
                 }
                 if notional / lev > balance && balance > 0 {
-                    Text("Недостаточно маржи — увеличьте плечо или уменьшите риск").font(.caption).foregroundStyle(Color.hlRed)
+                    Text(L("Not enough margin: increase leverage or reduce risk")).font(.caption).foregroundStyle(Color.hlRed)
                 }
             }
         }
-        .navigationTitle("Размер по риску")
+        .navigationTitle(L("Risk sizing"))
         .keyboardDoneToolbar()
     }
 }
@@ -111,20 +111,20 @@ struct PnlCalculator: View {
         let margin = entry * size / lev
         let fees = (entry + exit) * size * model.takerFee
         Form {
-            Picker("", selection: $isLong) { Text("Лонг").tag(true); Text("Шорт").tag(false) }.pickerStyle(.segmented)
-            NumField(title: "Вход", text: $entryText)
-            NumField(title: "Выход", text: $exitText)
-            NumField(title: "Размер (монет)", text: $sizeText)
-            NumField(title: "Плечо", text: $leverageText)
-            Section("Результат") {
+            Picker("", selection: $isLong) { Text(L("Long")).tag(true); Text(L("Short")).tag(false) }.pickerStyle(.segmented)
+            NumField(title: L("Entry"), text: $entryText)
+            NumField(title: L("Exit"), text: $exitText)
+            NumField(title: L("Size (coins)"), text: $sizeText)
+            NumField(title: L("Leverage"), text: $leverageText)
+            Section(L("Result")) {
                 LabeledContent("PnL") { Text(Fmt.signedUsd(pnl)).foregroundStyle(Color.pnl(pnl)) }
                 LabeledContent("ROE") { Text(margin > 0 ? Fmt.pct(pnl / margin) : "—").foregroundStyle(Color.pnl(pnl)) }
-                LabeledContent("Маржа", value: Fmt.usd(margin))
-                LabeledContent("Комиссии (тейкер) ≈", value: Fmt.usd(fees))
-                LabeledContent("PnL после комиссий") { Text(Fmt.signedUsd(pnl - fees)).foregroundStyle(Color.pnl(pnl - fees)) }
+                LabeledContent(L("Margin"), value: Fmt.usd(margin))
+                LabeledContent(L("Fees (taker) ≈"), value: Fmt.usd(fees))
+                LabeledContent(L("PnL after fees")) { Text(Fmt.signedUsd(pnl - fees)).foregroundStyle(Color.pnl(pnl - fees)) }
             }
         }
-        .navigationTitle("PnL калькулятор")
+        .navigationTitle(L("PnL calculator"))
         .keyboardDoneToolbar()
     }
 }
@@ -146,20 +146,20 @@ struct LiquidationCalculator: View {
         let liq = entry > 0 ? (entry - side * entry / lev) / (1 - side * mmr) : 0
         Form {
             Section {
-                Picker("", selection: $isLong) { Text("Лонг").tag(true); Text("Шорт").tag(false) }.pickerStyle(.segmented)
-                NumField(title: "Вход", text: $entryText) {
+                Picker("", selection: $isLong) { Text(L("Long")).tag(true); Text(L("Short")).tag(false) }.pickerStyle(.segmented)
+                NumField(title: L("Entry"), text: $entryText) {
                     Button("Mid") { entryText = Fmt.input(model.mid(model.selectedCoin), 6) }.font(.caption.bold())
                 }
-                NumField(title: "Плечо", text: $leverageText)
+                NumField(title: L("Leverage"), text: $leverageText)
             } footer: {
-                Text("Изолированная маржа, рынок \(m?.name ?? "—") (макс. плечо \(Int(maxLev))x, поддерживающая маржа \(Fmt.pct(mmr, 2, signed: false))).")
+                Text(L("Isolated margin, market {0} (max leverage {1}x, maintenance margin {2}).", m?.name ?? "—", Int(maxLev), Fmt.pct(mmr, 2, signed: false)))
             }
-            Section("Результат") {
-                LabeledContent("Цена ликвидации ≈") { Text(liq > 0 ? Fmt.price(liq) : "—").foregroundStyle(.orange) }
-                LabeledContent("Расстояние", value: entry > 0 && liq > 0 ? Fmt.pct(abs(liq - entry) / entry, 2, signed: false) : "—")
+            Section(L("Result")) {
+                LabeledContent(L("Liquidation price ≈")) { Text(liq > 0 ? Fmt.price(liq) : "—").foregroundStyle(.orange) }
+                LabeledContent(L("Distance"), value: entry > 0 && liq > 0 ? Fmt.pct(abs(liq - entry) / entry, 2, signed: false) : "—")
             }
         }
-        .navigationTitle("Ликвидация")
+        .navigationTitle(L("Liquidation"))
         .keyboardDoneToolbar()
     }
 }
@@ -177,19 +177,19 @@ struct AlertsView: View {
                             .foregroundStyle(a.above ? Color.hlGreen : Color.hlRed)
                         VStack(alignment: .leading) {
                             Text(a.name).font(.subheadline.bold())
-                            Text("\(a.above ? "выше" : "ниже") \(Fmt.price(a.price))\(a.repeating ? " · повтор" : "")").font(.caption)
+                            Text("\(a.above ? L("above") : L("below")) \(Fmt.price(a.price))\(a.repeating ? L(" · repeat") : "")").font(.caption)
                         }
                         Spacer()
                         Text(Fmt.price(model.mid(a.coin))).font(.caption.monospaced()).foregroundStyle(Color.hlMuted)
                     }
                 }
                 .onDelete { idx in model.alerts.remove(atOffsets: idx) }
-                if model.alerts.isEmpty { Text("Алертов нет").foregroundStyle(Color.hlMuted) }
+                if model.alerts.isEmpty { Text(L("No alerts")).foregroundStyle(Color.hlMuted) }
             } footer: {
-                Text("Алерты проверяются в реальном времени, пока приложение открыто, и периодически в фоне (как часто — решает iOS).")
+                Text(L("Alerts are checked in real time while the app is open and periodically in the background (iOS decides how often)."))
             }
         }
-        .navigationTitle("Ценовые алерты")
+        .navigationTitle(L("Price alerts"))
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .sheet(isPresented: $adding) { AddAlertSheet(coin: model.selectedCoin) }
         .onAppear { Notifier.requestPermission() }
@@ -208,10 +208,10 @@ struct AddAlertSheet: View {
         NavigationStack {
             Form {
                 Button { picking = true } label: {
-                    LabeledContent("Рынок", value: model.displayName(coin))
+                    LabeledContent(L("Market"), value: model.displayName(coin))
                 }
-                LabeledContent("Текущая цена", value: Fmt.price(model.mid(coin)))
-                NumField(title: "Цена алерта", text: $priceText)
+                LabeledContent(L("Current price"), value: Fmt.price(model.mid(coin)))
+                NumField(title: L("Alert price"), text: $priceText)
                 HStack {
                     ForEach([-5.0, -2, 2, 5], id: \.self) { p in
                         Button("\(p > 0 ? "+" : "")\(Int(p))%") {
@@ -221,20 +221,20 @@ struct AddAlertSheet: View {
                         .buttonStyle(.bordered).controlSize(.small)
                     }
                 }
-                Toggle("Повторять", isOn: $repeating)
-                PrimaryButton(title: "Создать алерт") {
+                Toggle(L("Repeat"), isOn: $repeating)
+                PrimaryButton(title: L("Create alert")) {
                     guard let px = Fmt.parse(priceText), px > 0 else { return }
                     let above = px > model.mid(coin)
                     model.alerts.append(PriceAlert(coin: coin, name: model.displayName(coin), price: px, above: above, repeating: repeating))
                     Notifier.requestPermission()
-                    model.show(.success, "Алерт: \(model.displayName(coin)) \(above ? "выше" : "ниже") \(Fmt.price(px))")
+                    model.show(.success, L("Alert: {0} {1} {2}", model.displayName(coin), above ? L("above") : L("below"), Fmt.price(px)))
                     dismiss()
                 }
                 .listRowBackground(Color.clear)
             }
-            .navigationTitle("Новый алерт")
+            .navigationTitle(L("New alert"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } } }
             .sheet(isPresented: $picking) {
                 CoinPicker { coin = $0; picking = false }
             }
@@ -261,7 +261,7 @@ struct CoinPicker: View {
                 }
             }
             .searchable(text: $search)
-            .navigationTitle("Рынок")
+            .navigationTitle(L("Market"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -286,8 +286,8 @@ struct FundingScannerView: View {
     var body: some View {
         List {
             Picker("", selection: $positive) {
-                Text("Высокий +").tag(true)
-                Text("Отрицательный").tag(false)
+                Text(L("Highest +")).tag(true)
+                Text(L("Negative")).tag(false)
             }
             .pickerStyle(.segmented)
             Section {
@@ -300,17 +300,17 @@ struct FundingScannerView: View {
                         Spacer()
                         VStack(alignment: .trailing) {
                             Text(Fmt.pct(m.funding, 4)).font(.caption.monospaced()).foregroundStyle(Color.pnl(m.funding))
-                            Text(Fmt.pct(m.fundingAnnual, 1) + " год.").font(.caption2.monospaced()).foregroundStyle(Color.hlMuted)
+                            Text(Fmt.pct(m.fundingAnnual, 1) + L(" APR")).font(.caption2.monospaced()).foregroundStyle(Color.hlMuted)
                         }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { model.select(m.id) }
                 }
             } footer: {
-                Text("Положительный фандинг платят лонги шортам, отрицательный — наоборот. Выплаты каждый час. Рынки с объёмом > $100K.")
+                Text(L("Positive funding is paid by longs to shorts, negative the other way round. Paid every hour. Markets with volume > $100K."))
             }
         }
-        .navigationTitle("Сканер фандинга")
+        .navigationTitle(L("Funding scanner"))
     }
 }
 
@@ -321,10 +321,10 @@ struct MoversView: View {
         let gainers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h > b.change24h }.prefix(10))
         let losers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h < b.change24h }.prefix(10))
         List {
-            Section("Рост за 24ч") { ForEach(gainers) { row($0) } }
-            Section("Падение за 24ч") { ForEach(losers) { row($0) } }
+            Section(L("24h gainers")) { ForEach(gainers) { row($0) } }
+            Section(L("24h losers")) { ForEach(losers) { row($0) } }
         }
-        .navigationTitle("Лидеры")
+        .navigationTitle(L("Movers"))
     }
     private func row(_ m: Market) -> some View {
         HStack {
@@ -346,29 +346,29 @@ struct DeadMansSwitchView: View {
     var body: some View {
         Form {
             Section {
-                Stepper("Через \(minutes) мин", value: $minutes, in: 1...1440, step: minutes < 30 ? 1 : 15)
-                PrimaryButton(title: "Включить авто-отмену", disabled: !model.canTrade) {
+                Stepper(L("In {0} min", minutes), value: $minutes, in: 1...1440, step: minutes < 30 ? 1 : 15)
+                PrimaryButton(title: L("Enable auto-cancel"), disabled: !model.canTrade) {
                     let m = minutes
                     model.perform {
                         try await model.scheduleCancel(minutes: m)
                         activeUntil = Date().addingTimeInterval(Double(m) * 60)
-                        return "Все ордера будут отменены в \(Fmt.time(Date().addingTimeInterval(Double(m) * 60)))"
+                        return L("All orders will be cancelled at {0}", Fmt.time(Date().addingTimeInterval(Double(m) * 60)))
                     }
                 }
                 .listRowBackground(Color.clear)
-                Button("Отключить", role: .destructive) {
+                Button(L("Disable"), role: .destructive) {
                     model.perform {
                         try await model.scheduleCancel(minutes: nil)
                         activeUntil = nil
-                        return "Авто-отмена отключена"
+                        return L("Auto-cancel disabled")
                     }
                 }
                 .disabled(!model.canTrade)
-                if let a = activeUntil { LabeledContent("Сработает", value: Fmt.time(a)) }
+                if let a = activeUntil { LabeledContent(L("Fires at"), value: Fmt.time(a)) }
             } footer: {
-                Text("«Dead man's switch» Hyperliquid: если вы не продлите таймер, биржа отменит все ваши открытые ордера в указанное время. Полезно при потере связи. Требует торгового объёма на аккаунте; число срабатываний в день ограничено биржей.")
+                Text(L("Hyperliquid “dead man's switch”: unless you extend the timer, the exchange cancels all your open orders at the set time. Useful if you lose connection. Requires trading volume on the account; the number of triggers per day is limited by the exchange."))
             }
         }
-        .navigationTitle("Авто-отмена")
+        .navigationTitle(L("Auto-cancel"))
     }
 }

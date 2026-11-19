@@ -55,7 +55,7 @@ enum Biometrics {
         switch c.biometryType {
         case .faceID: return "Face ID"
         case .touchID: return "Touch ID"
-        default: return "код-пароль"
+        default: return L("passcode")
         }
     }
 
@@ -97,7 +97,7 @@ enum BackgroundAlerts {
         for var a in alerts {
             guard let px = mids[a.coin].double else { remaining.append(a); continue }
             if (a.above && px >= a.price) || (!a.above && px <= a.price) {
-                Notifier.notify(title: "Ценовой алерт", body: "\(a.name) \(a.above ? "выше" : "ниже") \(Fmt.price(a.price)) — сейчас \(Fmt.price(px))")
+                Notifier.notify(title: L("Price alert"), body: L("{0} {1} {2} — now {3}", a.name, a.above ? L("above") : L("below"), Fmt.price(a.price), Fmt.price(px)))
                 if a.repeating { a.above.toggle(); remaining.append(a) }
             } else {
                 remaining.append(a)

@@ -38,6 +38,7 @@ final class AppModel {
     var interval: CandleInterval = .h1 { didSet { save(); if oldValue != interval { intervalChanged(old: oldValue) } } }
     var bookSigFigs: Int? = nil { didSet { if oldValue != bookSigFigs { bookAggChanged(old: oldValue) } } }
     var showChart = true { didSet { save() } }
+    var language: AppLanguage = Loc.lang { didSet { Loc.lang = language; save() } }
 
     // MARK: Market data
     var perps: [Market] = []
@@ -120,6 +121,7 @@ final class AppModel {
         d.set(showChart, forKey: "showChart")
         d.set(selectedCoin, forKey: "selectedCoin")
         d.set(interval.rawValue, forKey: "interval")
+        d.set(language.rawValue, forKey: "language")
     }
 
     // MARK: Derived
@@ -309,7 +311,7 @@ final class AppModel {
             metaLoaded = true
             if marketById[selectedCoin] == nil, let first = perps.first { selectedCoin = first.id }
         } catch {
-            if !metaLoaded { show(.error, "Не удалось загрузить рынки: \(error.localizedDescription)") }
+            if !metaLoaded { show(.error, L("Failed to load markets: {0}", error.localizedDescription)) }
         }
     }
 
@@ -506,7 +508,7 @@ final class AppModel {
             fills = (new + fills).sorted { $0.time > $1.time }
             let f = new[0]
             let total = new.reduce(0) { $0 + $1.sz }
-            show(.success, "Исполнено: \(f.isBuy ? "покупка" : "продажа") \(Fmt.num(total, market(f.coin)?.szDecimals ?? 4)) \(displayName(f.coin)) по \(Fmt.price(f.px))")
+            show(.success, L("Filled: {0} {1} {2} at {3}", f.isBuy ? L("buy") : L("sell"), Fmt.num(total, market(f.coin)?.szDecimals ?? 4), displayName(f.coin), Fmt.price(f.px)))
             Haptics.success(enabled: haptics)
             Task { await refreshAccount(); await refreshOrders() }
         case "orderUpdates":
@@ -531,8 +533,8 @@ final class AppModel {
         }
         guard !fired.isEmpty else { return }
         for a in fired {
-            let text = "\(a.name) \(a.above ? "выше" : "ниже") \(Fmt.price(a.price)) — сейчас \(Fmt.price(mids[a.coin] ?? 0))"
-            Notifier.notify(title: "Ценовой алерт", body: text)
+            let text = L("{0} {1} {2} — now {3}", a.name, a.above ? L("above") : L("below"), Fmt.price(a.price), Fmt.price(mids[a.coin] ?? 0))
+            Notifier.notify(title: L("Price alert"), body: text)
             show(.info, "🔔 " + text)
         }
         let firedIds = Set(fired.filter { !$0.repeating }.map(\.id))
@@ -563,9 +565,9 @@ final class AppModel {
     }
 
     func wallet() throws -> HLWallet {
-        guard let acc = account else { throw HLError("Добавьте аккаунт в настройках") }
-        guard acc.kind.canTrade else { throw HLError("Аккаунт в режиме «только просмотр»") }
-        guard let key = acc.privateKey else { throw HLError("Ключ не найден в Keychain") }
+        guard let acc = account else { throw HLError(L("Add an account in Settings")) }
+        guard acc.kind.canTrade else { throw HLError(L("Account is watch-only")) }
+        guard let key = acc.privateKey else { throw HLError(L("Key not found in Keychain")) }
         return try HLWallet(privateKeyHex: key)
     }
 
@@ -589,7 +591,7 @@ final class AppModel {
     @discardableResult
     func submitUser(_ a: UserSignedAction) async throws -> JSON {
         guard account?.kind == .privateKey else {
-            throw HLError("Переводы и выводы требуют приватный ключ основного кошелька (API-кошелёк не может их подписывать)")
+            throw HLError(L("Transfers and withdrawals require the main wallet private key (an API wallet cannot sign them)"))
         }
         let w = try wallet()
         let sig = w.sign(digest: HLSigning.userSignedDigest(a))
@@ -599,7 +601,7 @@ final class AppModel {
 
     private func checkResponse(_ res: JSON) throws -> JSON {
         guard res["status"].str == "ok" else {
-            let msg = res["response"].string ?? res["error"].string ?? "Неизвестная ошибка"
+            let msg = res["response"].string ?? res["error"].string ?? L("Unknown error")
             throw HLError(translate(msg))
         }
         let data = res["response"]["data"]
@@ -615,14 +617,14 @@ final class AppModel {
 
     func translate(_ msg: String) -> String {
         let map: [(String, String)] = [
-            ("Insufficient margin", "Недостаточно маржи"),
-            ("Order must have minimum value", "Минимальная стоимость ордера — $10"),
-            ("Post only order would have immediately matched", "Post-only ордер исполнился бы сразу"),
-            ("Order could not immediately match", "Ордер не смог исполниться сразу (IOC) — нет ликвидности в пределах проскальзывания"),
-            ("Reduce only order would increase position", "Reduce-only ордер увеличил бы позицию"),
-            ("Price must be divisible by tick size", "Цена не кратна шагу цены"),
-            ("does not exist", "Пользователь/агент не найден. Проверьте, что API-кошелёк одобрен на app.hyperliquid.xyz/API"),
-            ("Too many cumulative requests", "Слишком много запросов для объёма торгов аккаунта"),
+            ("Insufficient margin", L("Insufficient margin")),
+            ("Order must have minimum value", L("Minimum order value is $10")),
+            ("Post only order would have immediately matched", L("Post-only order would have matched immediately")),
+            ("Order could not immediately match", L("Order could not fill immediately (IOC): no liquidity within slippage")),
+            ("Reduce only order would increase position", L("Reduce-only order would increase the position")),
+            ("Price must be divisible by tick size", L("Price is not a multiple of the tick size")),
+            ("does not exist", L("User/agent not found. Make sure the API wallet is approved at app.hyperliquid.xyz/API")),
+            ("Too many cumulative requests", L("Too many requests for the account's trading volume")),
         ]
         for (k, v) in map where msg.contains(k) { return "\(v)\n(\(msg))" }
         return msg

@@ -18,8 +18,8 @@ struct TradeView: View {
                                 .frame(maxWidth: .infinity)
                             VStack(spacing: 6) {
                                 Picker("", selection: $rightPanel) {
-                                    Text("Стакан").tag(0)
-                                    Text("Сделки").tag(1)
+                                    Text(L("Order book")).tag(0)
+                                    Text(L("Trades")).tag(1)
                                 }
                                 .pickerStyle(.segmented)
                                 .controlSize(.mini)
@@ -101,8 +101,8 @@ struct TradeView: View {
         var lines: [PriceLine] = []
         if let p = model.position(m.id) {
             lines.append(PriceLine(price: p.entryPx, color: p.isLong ? .hlGreen : .hlRed,
-                                   label: "\(p.isLong ? "Лонг" : "Шорт") \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))"))
-            if let liq = p.liquidationPx { lines.append(PriceLine(price: liq, color: .orange, label: "Ликвидация")) }
+                                   label: "\(p.isLong ? L("Long") : L("Short")) \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))"))
+            if let liq = p.liquidationPx { lines.append(PriceLine(price: liq, color: .orange, label: L("Liquidation"))) }
         }
         for o in model.orders(for: m.id) {
             let px = o.isTrigger ? o.triggerPx : o.limitPx
@@ -140,15 +140,15 @@ struct TradeHeader: View {
                     if !market.isSpot {
                         Stat(title: "Mark", value: Fmt.price(market.markPx))
                         Stat(title: "Oracle", value: Fmt.price(market.oraclePx))
-                        Stat(title: "Фандинг / до выплаты",
+                        Stat(title: L("Funding / countdown"),
                              value: "\(Fmt.pct(market.funding, 4)) · \(Fmt.countdown(secondsToFunding))",
                              color: Color.pnl(market.funding))
-                        Stat(title: "Фандинг годовых", value: Fmt.pct(market.fundingAnnual, 1), color: Color.pnl(market.funding))
-                        Stat(title: "Открытый интерес", value: Fmt.compactUsd(market.openInterestUsd))
+                        Stat(title: L("Funding APR"), value: Fmt.pct(market.fundingAnnual, 1), color: Color.pnl(market.funding))
+                        Stat(title: L("Open interest"), value: Fmt.compactUsd(market.openInterestUsd))
                     }
-                    Stat(title: "Объём 24ч", value: Fmt.compactUsd(market.dayNtlVlm))
+                    Stat(title: L("24h volume"), value: Fmt.compactUsd(market.dayNtlVlm))
                     if let s = model.book.spread, let mid = model.book.mid, mid > 0 {
-                        Stat(title: "Спред", value: Fmt.pct(s / mid, 3, signed: false))
+                        Stat(title: L("Spread"), value: Fmt.pct(s / mid, 3, signed: false))
                     }
                 }
             }

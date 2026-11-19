@@ -57,14 +57,14 @@ final class HLAPI {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             let text = String(data: data, encoding: .utf8) ?? ""
-            if code == 429 { throw HLError("Превышен лимит запросов (429). Подождите немного.") }
+            if code == 429 { throw HLError(L("Rate limit exceeded (429). Please wait a moment.")) }
             throw HLError("HTTP \(code): \(text.prefix(300))")
         }
         do {
             return try JSON.parse(data)
         } catch {
             let text = String(data: data, encoding: .utf8) ?? ""
-            throw HLError("Неожиданный ответ: \(text.prefix(300))")
+            throw HLError(L("Unexpected response: {0}", text.prefix(300)))
         }
     }
 }

@@ -8,22 +8,23 @@ struct RootView: View {
         ZStack(alignment: .top) {
             TabView(selection: $model.tab) {
                 MarketsView()
-                    .tabItem { Label("Рынки", systemImage: "chart.bar.xaxis") }
+                    .tabItem { Label(L("Markets"), systemImage: "chart.bar.xaxis") }
                     .tag(AppTab.markets)
                 TradeView()
-                    .tabItem { Label("Торговля", systemImage: "arrow.left.arrow.right") }
+                    .tabItem { Label(L("Trade"), systemImage: "arrow.left.arrow.right") }
                     .tag(AppTab.trade)
                 PortfolioView()
-                    .tabItem { Label("Портфель", systemImage: "briefcase") }
+                    .tabItem { Label(L("Portfolio"), systemImage: "briefcase") }
                     .tag(AppTab.portfolio)
                 ToolsView()
-                    .tabItem { Label("Инструменты", systemImage: "wrench.and.screwdriver") }
+                    .tabItem { Label(L("Tools"), systemImage: "wrench.and.screwdriver") }
                     .tag(AppTab.tools)
                 SettingsView()
-                    .tabItem { Label("Настройки", systemImage: "gearshape") }
+                    .tabItem { Label(L("Settings"), systemImage: "gearshape") }
                     .tag(AppTab.settings)
             }
             .tint(.hlAccent)
+            .id(model.language)
 
             if let t = model.toast {
                 ToastView(toast: t)
@@ -53,11 +54,11 @@ struct LockView: View {
                 Image(systemName: "lock.shield")
                     .font(.system(size: 56))
                     .foregroundStyle(Color.hlAccent)
-                Text("Hype заблокирован").font(.title3.bold())
+                Text(L("Hype is locked")).font(.title3.bold())
                 Button {
                     unlock()
                 } label: {
-                    Label("Разблокировать (\(Biometrics.name))", systemImage: "faceid")
+                    Label(L("Unlock ({0})", Biometrics.name), systemImage: "faceid")
                         .padding(.horizontal, 20).padding(.vertical, 12)
                         .background(Color.hlAccent.opacity(0.15), in: Capsule())
                 }
@@ -68,7 +69,7 @@ struct LockView: View {
 
     private func unlock() {
         Task {
-            if await Biometrics.authenticate(reason: "Разблокировать Hype") { model.locked = false }
+            if await Biometrics.authenticate(reason: L("Unlock Hype")) { model.locked = false }
         }
     }
 }

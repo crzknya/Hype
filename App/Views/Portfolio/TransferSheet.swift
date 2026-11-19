@@ -28,7 +28,7 @@ struct TransferSheet: View {
                 }
                 if kind != .deposit && model.account?.kind != .privateKey {
                     Section {
-                        Label("Эта операция подписывается основным кошельком. API-кошелёк может только торговать. Добавьте аккаунт с приватным ключом или выполните операцию на app.hyperliquid.xyz.",
+                        Label(L("This operation is signed by the main wallet. An API wallet can only trade. Add an account with a private key or do it on app.hyperliquid.xyz."),
                               systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(.orange)
                     }
@@ -36,37 +36,37 @@ struct TransferSheet: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
             .keyboardDoneToolbar()
         }
     }
 
     private var title: String {
         switch kind {
-        case .classTransfer: return "Перевод Перп ⇄ Спот"
-        case .withdraw: return "Вывод в Arbitrum"
-        case .send: return "Отправить"
-        case .deposit: return "Депозит"
+        case .classTransfer: return L("Transfer Perp ⇄ Spot")
+        case .withdraw: return L("Withdraw to Arbitrum")
+        case .send: return L("Send")
+        case .deposit: return L("Deposit")
         }
     }
 
     @ViewBuilder private var classTransfer: some View {
         Section {
-            Picker("Направление", selection: $toPerp) {
-                Text("Спот → Перп").tag(true)
-                Text("Перп → Спот").tag(false)
+            Picker(L("Direction"), selection: $toPerp) {
+                Text(L("Spot → Perp")).tag(true)
+                Text(L("Perp → Spot")).tag(false)
             }
             .pickerStyle(.segmented)
             NumField(title: "USDC", text: $amountText) {
                 Button("MAX") { amountText = Fmt.input(maxClass, 2) }.font(.caption.bold())
             }
-            LabeledContent("Доступно", value: Fmt.usd(maxClass))
+            LabeledContent(L("Available"), value: Fmt.usd(maxClass))
         }
         Section {
-            submitButton("Перевести") {
-                guard let a = Fmt.parse(amountText), a > 0 else { throw HLError("Укажите сумму") }
+            submitButton(L("Transfer funds")) {
+                guard let a = Fmt.parse(amountText), a > 0 else { throw HLError(L("Enter an amount")) }
                 try await model.usdClassTransfer(amount: a, toPerp: toPerp)
-                return "Переведено \(Fmt.usd(a))"
+                return L("Transferred {0}", Fmt.usd(a))
             }
         }
     }
@@ -75,52 +75,52 @@ struct TransferSheet: View {
 
     @ViewBuilder private var withdraw: some View {
         Section {
-            TextField("Адрес получателя (0x…)", text: $destination)
+            TextField(L("Recipient address (0x…)"), text: $destination)
                 .font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never)
-            Button("Мой адрес") { destination = model.account?.address ?? "" }.font(.caption)
+            Button(L("My address")) { destination = model.account?.address ?? "" }.font(.caption)
             NumField(title: "USDC", text: $amountText) {
                 Button("MAX") { amountText = Fmt.input(model.summary.withdrawable, 2) }.font(.caption.bold())
             }
-            LabeledContent("Доступно", value: Fmt.usd(model.summary.withdrawable))
+            LabeledContent(L("Available"), value: Fmt.usd(model.summary.withdrawable))
         } footer: {
-            Text("Вывод USDC в сеть Arbitrum. Комиссия сети Hyperliquid — $1. Обычно занимает несколько минут.")
+            Text(L("Withdraws USDC to Arbitrum. Hyperliquid network fee is $1. Usually takes a few minutes."))
         }
         Section {
-            submitButton("Вывести") {
-                guard Address.isValid(destination) else { throw HLError("Неверный адрес") }
-                guard let a = Fmt.parse(amountText), a > 1 else { throw HLError("Сумма должна быть больше $1") }
+            submitButton(L("Withdraw")) {
+                guard Address.isValid(destination) else { throw HLError(L("Invalid address")) }
+                guard let a = Fmt.parse(amountText), a > 1 else { throw HLError(L("Amount must be greater than $1")) }
                 try await model.withdraw(amount: a, destination: destination)
-                return "Вывод \(Fmt.usd(a)) отправлен"
+                return L("Withdrawal of {0} sent", Fmt.usd(a))
             }
         }
     }
 
     @ViewBuilder private var send: some View {
         Section {
-            Picker("Актив", selection: $tokenIndex) {
-                Text("USDC (перп-баланс)").tag(-1)
-                ForEach(model.spotBalances) { b in Text("\(b.coin) (спот)").tag(b.token) }
+            Picker(L("Asset"), selection: $tokenIndex) {
+                Text(L("USDC (perp balance)")).tag(-1)
+                ForEach(model.spotBalances) { b in Text(L("{0} (spot)", b.coin)).tag(b.token) }
             }
-            TextField("Адрес получателя (0x…)", text: $destination)
+            TextField(L("Recipient address (0x…)"), text: $destination)
                 .font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never)
-            NumField(title: "Сумма", text: $amountText) {
+            NumField(title: L("Amount"), text: $amountText) {
                 Button("MAX") { amountText = Fmt.input(maxSend, 6) }.font(.caption.bold())
             }
-            LabeledContent("Доступно", value: Fmt.num(maxSend, 4))
+            LabeledContent(L("Available"), value: Fmt.num(maxSend, 4))
         } footer: {
-            Text("Мгновенный перевод внутри Hyperliquid без комиссии. Проверьте адрес — перевод необратим.")
+            Text(L("Instant transfer inside Hyperliquid with no fee. Double-check the address: transfers are irreversible."))
         }
         Section {
-            submitButton("Отправить") {
-                guard Address.isValid(destination) else { throw HLError("Неверный адрес") }
-                guard let a = Fmt.parse(amountText), a > 0 else { throw HLError("Укажите сумму") }
+            submitButton(L("Send")) {
+                guard Address.isValid(destination) else { throw HLError(L("Invalid address")) }
+                guard let a = Fmt.parse(amountText), a > 0 else { throw HLError(L("Enter an amount")) }
                 if tokenIndex == -1 {
                     try await model.sendUsd(amount: a, destination: destination)
                 } else {
-                    guard let t = model.spotTokens[tokenIndex] else { throw HLError("Токен не найден") }
+                    guard let t = model.spotTokens[tokenIndex] else { throw HLError(L("Token not found")) }
                     try await model.sendSpot(token: t, amount: a, destination: destination)
                 }
-                return "Отправлено"
+                return L("Sent")
             }
         }
     }
@@ -131,22 +131,22 @@ struct TransferSheet: View {
 
     @ViewBuilder private var deposit: some View {
         Section {
-            Text("Пополнение выполняется переводом USDC в сети Arbitrum через мост Hyperliquid. Удобнее всего сделать это на app.hyperliquid.xyz, подключив кошелёк, или отправив USDC (Arbitrum) на ваш адрес в Hyperliquid с биржи, которая поддерживает такой вывод.")
+            Text(L("Deposits are made by sending USDC on Arbitrum through the Hyperliquid bridge. The easiest way is app.hyperliquid.xyz with a connected wallet, or sending USDC (Arbitrum) to your Hyperliquid address from an exchange that supports it."))
                 .font(.subheadline)
             if let a = model.account {
-                LabeledContent("Ваш адрес") {
+                LabeledContent(L("Your address")) {
                     Text(Address.short(a.address)).font(.system(.body, design: .monospaced))
                 }
                 Button {
                     UIPasteboard.general.string = Address.checksum(a.address)
-                    model.show(.success, "Адрес скопирован")
-                } label: { Label("Скопировать адрес", systemImage: "doc.on.doc") }
+                    model.show(.success, L("Address copied"))
+                } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
             }
             Link(destination: URL(string: "https://app.hyperliquid.xyz/trade")!) {
-                Label("Открыть app.hyperliquid.xyz", systemImage: "safari")
+                Label(L("Open app.hyperliquid.xyz"), systemImage: "safari")
             }
         } footer: {
-            Text("Минимальный депозит через мост — 5 USDC. Депозит меньше минимума будет потерян.")
+            Text(L("Minimum bridge deposit is 5 USDC. Deposits below the minimum are lost."))
         }
     }
 

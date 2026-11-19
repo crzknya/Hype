@@ -8,12 +8,12 @@ struct MarketsView: View {
     @State private var descending = true
 
     enum Segment: String, CaseIterable, Identifiable {
-        case favorites = "★", perps = "Перпы", spot = "Спот"
+        case favorites = "★", perps = "Perps", spot = "Spot"
         var id: String { rawValue }
     }
 
     enum SortKey: String, CaseIterable, Identifiable {
-        case volume = "Объём 24ч", change = "Изменение", funding = "Фандинг", oi = "Открытый интерес", name = "Название", price = "Цена"
+        case volume = "24h Volume", change = "Change", funding = "Funding", oi = "Open Interest", name = "Name", price = "Price"
         var id: String { rawValue }
     }
 
@@ -21,7 +21,7 @@ struct MarketsView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("", selection: $segment) {
-                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Segment.allCases) { Text(L($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -30,8 +30,8 @@ struct MarketsView: View {
                 MarketList(markets: list, onSelect: { model.select($0.id) })
             }
             .background(Color.hlBg)
-            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Поиск монеты")
-            .navigationTitle("Рынки")
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Search coin"))
+            .navigationTitle(L("Markets"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -42,10 +42,10 @@ struct MarketsView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Picker("Сортировка", selection: $sort) {
-                            ForEach(SortKey.allCases) { Text($0.rawValue).tag($0) }
+                        Picker(L("Sort"), selection: $sort) {
+                            ForEach(SortKey.allCases) { Text(L($0.rawValue)).tag($0) }
                         }
-                        Toggle("По убыванию", isOn: $descending)
+                        Toggle(L("Descending"), isOn: $descending)
                     } label: {
                         Image(systemName: "arrow.up.arrow.down.circle")
                     }
@@ -53,7 +53,7 @@ struct MarketsView: View {
             }
             .refreshable { await model.refreshMarkets() }
             .overlay {
-                if !model.metaLoaded { ProgressView("Загрузка рынков…") }
+                if !model.metaLoaded { ProgressView(L("Loading markets…")) }
             }
         }
     }
@@ -88,9 +88,9 @@ struct MarketList: View {
     var body: some View {
         List {
             HStack {
-                Text("Монета / Объём").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Цена").frame(width: 100, alignment: .trailing)
-                Text("24ч").frame(width: 76, alignment: .trailing)
+                Text(L("Coin / Volume")).frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("Price")).frame(width: 100, alignment: .trailing)
+                Text(L("24h")).frame(width: 76, alignment: .trailing)
             }
             .font(.caption2)
             .foregroundStyle(Color.hlMuted)
@@ -109,7 +109,7 @@ struct MarketList: View {
                     }
             }
             if markets.isEmpty && model.metaLoaded {
-                EmptyState(text: "Ничего не найдено", icon: "magnifyingglass").listRowBackground(Color.hlBg)
+                EmptyState(text: L("Nothing found"), icon: "magnifyingglass").listRowBackground(Color.hlBg)
             }
         }
         .listStyle(.plain)
@@ -166,8 +166,8 @@ struct MarketPickerSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("", selection: $spot) {
-                    Text("Перпы").tag(false)
-                    Text("Спот").tag(true)
+                    Text(L("Perps")).tag(false)
+                    Text(L("Spot")).tag(true)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal).padding(.vertical, 8)
@@ -177,10 +177,10 @@ struct MarketPickerSheet: View {
                 }
             }
             .background(Color.hlBg)
-            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Поиск")
-            .navigationTitle("Выбор рынка")
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Search"))
+            .navigationTitle(L("Select market"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
         }
     }
 
