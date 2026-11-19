@@ -291,6 +291,50 @@ extension AppModel {
         try await submit(HLAction.scheduleCancel(time: time))
     }
 
+    // MARK: Deposit (Arbitrum USDC → Hyperliquid bridge, signed in the connected wallet)
+
+    /// USDC balance of the account on Arbitrum One, via a public RPC.
+    func arbitrumUSDCBalance() async -> Double? {
+        guard let addr = account?.address else { return nil }
+        let body = MP.map([("jsonrpc", .str("2.0")), ("id", .int(1)), ("method", .str("eth_call")),
+                           ("params", .arr([.map([("to", .str(HLBridge.arbitrumUSDC)), ("data", .str(ERC20.balanceOfData(owner: addr)))]),
+                                            .str("latest")]))])
+        var req = URLRequest(url: URL(string: "https://arb1.arbitrum.io/rpc")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data(body.json().utf8)
+        req.timeoutInterval = 10
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let j = try? JSON.parse(data), let hex = j["result"].string else { return nil }
+        let digits = hex.replacingOccurrences(of: "0x", with: "").drop { $0 == "0" }
+        if digits.isEmpty { return 0 }
+        guard digits.count <= 16, let units = UInt64(digits, radix: 16) else { return nil }
+        return Double(units) / 1_000_000
+    }
+
+    /// Sends USDC from the connected wallet to the Hyperliquid bridge. Returns the Arbitrum tx hash.
+    func deposit(amount: Double) async throws -> String {
+        guard network.isMainnet else { throw HLError(L("Deposits from the app are available on Mainnet only")) }
+        guard let acc = account, acc.kind == .wallet, let topic = acc.wcTopic else {
+            throw HLError(L("Connect a wallet in Settings to deposit"))
+        }
+        guard amount >= HLBridge.minDeposit else { throw HLError(L("Minimum deposit is 5 USDC")) }
+        let units = ERC20.baseUnits(amount, decimals: HLBridge.usdcDecimals)
+        let data = ERC20.transferData(to: HLBridge.mainnetBridge, amount: units)
+        let hash = try await WalletConnectService.shared.sendTransaction(
+            topic: topic, from: acc.address, chainId: HLBridge.arbitrumChainId, to: HLBridge.arbitrumUSDC,
+            data: data, wallet: acc.walletApp.flatMap(WalletApp.init(rawValue:)))
+        Task {
+            // The bridge credits within about a minute; refresh a few times.
+            for _ in 0..<6 {
+                try? await Task.sleep(for: .seconds(20))
+                await refreshAccount()
+            }
+            await refreshHistory()
+        }
+        return hash
+    }
+
     // MARK: Referral
 
     /// Current referral state: (code the account was referred with, cumulative volume).

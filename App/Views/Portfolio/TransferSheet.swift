@@ -17,6 +17,8 @@ struct TransferSheet: View {
     @State private var tokenIndex = -1    // -1 = USDC (perp balance), otherwise spot token index
     @State private var fromSpot = false
     @State private var busy = false
+    @State private var arbBalance: Double?
+    @State private var depositHash: String?
 
     var body: some View {
         NavigationStack {
@@ -164,23 +166,69 @@ struct TransferSheet: View {
     }
 
     @ViewBuilder private var deposit: some View {
-        Section {
-            Text(L("Deposits are made by sending USDC on Arbitrum through the Hyperliquid bridge. The easiest way is app.hyperliquid.xyz with a connected wallet, or sending USDC (Arbitrum) to your Hyperliquid address from an exchange that supports it."))
-                .font(.subheadline)
-            if let a = model.account {
-                LabeledContent(L("Your address")) {
-                    Text(Address.short(a.address)).font(.system(.body, design: .monospaced))
+        if model.account?.kind == .wallet && model.network.isMainnet {
+            Section {
+                LabeledContent(L("From"), value: "\(model.account?.walletApp.flatMap(WalletApp.init(rawValue:))?.title ?? L("Wallet")) · Arbitrum")
+                NumField(title: "USDC", text: $amountText) {
+                    if let b = arbBalance {
+                        Button("MAX") { amountText = Fmt.input(floor(b * 100) / 100, 2) }.font(.caption.bold())
+                    }
                 }
-                Button {
-                    UIPasteboard.general.string = Address.checksum(a.address)
-                    model.show(.success, L("Address copied"))
-                } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
+                LabeledContent(L("USDC on Arbitrum")) {
+                    if let b = arbBalance { Text(Fmt.num(b, 2)) } else { ProgressView().controlSize(.small) }
+                }
+                if let a = Fmt.parse(amountText), a > 0, a < HLBridge.minDeposit {
+                    Text(L("Minimum deposit is 5 USDC")).font(.caption).foregroundStyle(Color.hlRed)
+                }
+                if let hash = depositHash {
+                    Link(destination: URL(string: "https://arbiscan.io/tx/\(hash)")!) {
+                        Label(L("Transaction sent: {0}", Address.short(hash)), systemImage: "checkmark.seal")
+                    }
+                }
+            } footer: {
+                Text(L("Sends USDC on Arbitrum from your wallet to the Hyperliquid bridge; confirm it in the wallet. Funds arrive in about a minute. You need a little ETH on Arbitrum for gas. Deposits below 5 USDC are lost."))
             }
-            Link(destination: URL(string: "https://app.hyperliquid.xyz/trade")!) {
-                Label(L("Open app.hyperliquid.xyz"), systemImage: "safari")
+            .task { arbBalance = await model.arbitrumUSDCBalance() }
+            Section {
+                PrimaryButton(title: L("Deposit"), busy: busy,
+                              disabled: (Fmt.parse(amountText) ?? 0) < HLBridge.minDeposit) {
+                    hideKeyboard()
+                    guard let a = Fmt.parse(amountText) else { return }
+                    busy = true
+                    Task {
+                        do {
+                            depositHash = try await model.deposit(amount: a)
+                            model.show(.success, L("Deposit sent. It will be credited in about a minute."))
+                            Haptics.success(enabled: model.haptics)
+                            amountText = ""
+                        } catch {
+                            model.show(.error, error.localizedDescription)
+                            Haptics.error(enabled: model.haptics)
+                        }
+                        busy = false
+                    }
+                }
+                .listRowBackground(Color.clear)
             }
-        } footer: {
-            Text(L("Minimum bridge deposit is 5 USDC. Deposits below the minimum are lost."))
+        } else {
+            Section {
+                Text(L("To deposit from the app, connect a wallet in Settings (Connect wallet). Otherwise deposit on app.hyperliquid.xyz. Note: sending USDC to your own address on Arbitrum does not deposit it to Hyperliquid."))
+                    .font(.subheadline)
+                if let a = model.account {
+                    LabeledContent(L("Your address")) {
+                        Text(Address.short(a.address)).font(.system(.body, design: .monospaced))
+                    }
+                    Button {
+                        UIPasteboard.general.string = Address.checksum(a.address)
+                        model.show(.success, L("Address copied"))
+                    } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
+                }
+                Link(destination: URL(string: "https://app.hyperliquid.xyz/trade")!) {
+                    Label(L("Open app.hyperliquid.xyz"), systemImage: "safari")
+                }
+            } footer: {
+                Text(L("Minimum bridge deposit is 5 USDC. Deposits below the minimum are lost."))
+            }
         }
     }
 

@@ -10,6 +10,7 @@ import HyperCore
 final class WalletConnectService {
     static let shared = WalletConnectService()
     static let projectId = "48bed0afd888a9b5ad0e86913d4c50f0"
+    static let requiredMethods: Set<String> = ["eth_signTypedData_v4", "personal_sign", "eth_sendTransaction"]
 
     private var configured = false
     private var bag = Set<AnyCancellable>()
@@ -92,7 +93,7 @@ final class WalletConnectService {
     /// Creates a pairing and returns the wc: link to open in the wallet.
     func startPairing() async throws -> PairingLink {
         configure()
-        let methods: Set<String> = ["eth_signTypedData_v4", "personal_sign"]
+        let methods: Set<String> = Self.requiredMethods
         let events: Set<String> = ["accountsChanged", "chainChanged"]
         let chains = [42161, 1, 8453, 10, 137, 56].compactMap { Blockchain("eip155:\($0)") }
         let ns = ["eip155": ProposalNamespace(chains: chains, methods: methods, events: events)]
@@ -118,6 +119,14 @@ final class WalletConnectService {
     func hasSession(topic: String) -> Bool {
         configure()
         return Sign.instance.getSessions().contains { $0.topic == topic }
+    }
+
+    /// Whether the session was approved with all methods this app needs (older sessions lack eth_sendTransaction).
+    func sessionSupportsAll(topic: String) -> Bool {
+        configure()
+        guard let session = Sign.instance.getSessions().first(where: { $0.topic == topic }),
+              let methods = session.namespaces["eip155"]?.methods else { return false }
+        return Self.requiredMethods.isSubset(of: methods)
     }
 
     func disconnect(topic: String) {
@@ -207,6 +216,31 @@ enum WalletApp: String, CaseIterable, Identifiable, Codable {
         guard let first = urls.first, let url = URL(string: first) else { return }
         UIApplication.shared.open(url, options: [:]) { ok in
             if !ok { openFirst(Array(urls.dropFirst())) }
+        }
+    }
+}
+
+extension WalletConnectService {
+    /// Asks the wallet to send a transaction; returns the transaction hash.
+    func sendTransaction(topic: String, from: String, chainId: UInt64, to: String, data: String,
+                         wallet: WalletApp?) async throws -> String {
+        configure()
+        guard sessionSupportsAll(topic: topic) else {
+            throw HLError(L("Reconnect the wallet in Settings to allow deposits (Renew trading key)."))
+        }
+        guard let chain = Blockchain("eip155:\(chainId)") else { throw HLError(L("Unsupported chain")) }
+        let tx: [String: String] = ["from": from, "to": to, "data": data, "value": "0x0"]
+        let request = try Request(topic: topic, method: "eth_sendTransaction", params: AnyCodable([tx]), chainId: chain)
+        return try await withCheckedThrowingContinuation { cont in
+            requestWaiters["\(request.id)"] = cont
+            Task {
+                do {
+                    try await Sign.instance.request(params: request)
+                    wallet?.open()
+                } catch {
+                    if let w = requestWaiters.removeValue(forKey: "\(request.id)") { w.resume(throwing: error) }
+                }
+            }
         }
     }
 }

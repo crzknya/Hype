@@ -123,6 +123,15 @@ final class HyperCoreTests: XCTestCase {
         XCTAssertEqual(MP.int(-100).pack(), [0xd0, 0x9c])
     }
 
+    func testDepositCalldata() {
+        XCTAssertEqual(Hex.encode(ERC20.transferSelector), "0xa9059cbb")
+        XCTAssertEqual(Hex.encode(ERC20.balanceOfSelector), "0x70a08231")
+        XCTAssertEqual(ERC20.baseUnits(12.5, decimals: 6), 12_500_000)
+        XCTAssertEqual(ERC20.baseUnits(5.1234567, decimals: 6), 5_123_456)
+        XCTAssertEqual(ERC20.transferData(to: HLBridge.mainnetBridge, amount: 12_500_000),
+                       "0xa9059cbb0000000000000000000000002df1c51e09aecf9cacb7bc98cb1742757f163df70000000000000000000000000000000000000000000000000000000000bebc20")
+    }
+
     func testJSONEncoding() {
         let m = MP.map([("a", .int(1)), ("b", .str("x\"y")), ("c", .arr([.bool(true), .null]))])
         XCTAssertEqual(m.json(), "{\"a\":1,\"b\":\"x\\\"y\",\"c\":[true,null]}")

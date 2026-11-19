@@ -114,7 +114,7 @@ struct ConnectWalletView: View {
             let topic: String
             let addr: String
             let chainId: UInt64
-            if let r = renew, let t = r.wcTopic, wc.hasSession(topic: t) {
+            if let r = renew, let t = r.wcTopic, wc.sessionSupportsAll(topic: t) {
                 topic = t; addr = r.address; chainId = r.wcChainId ?? 42161
                 address = addr
             } else {
@@ -144,6 +144,7 @@ struct ConnectWalletView: View {
             }
 
             if let r = renew, let i = model.accounts.firstIndex(where: { $0.id == r.id }) {
+                if let old = r.wcTopic, old != topic { wc.disconnect(topic: old) }
                 Keychain.set(agentKey, for: r.keychainKey)
                 model.accounts[i].signerAddress = agent.address
                 model.accounts[i].wcTopic = topic
