@@ -36,6 +36,7 @@ final class HyperCoreTests: XCTestCase {
         case "spotCloid":
             return HLAction.order([OrderWire(asset: 10107, isBuy: false, limitPx: "0.00012345", sz: "100000", reduceOnly: false,
                                              kind: .limit(tif: .ioc), cloid: "0x00000000000000000000000000000001")])
+        case "setReferrer": return HLAction.setReferrer(code: "HYPEIOS")
         default: fatalError("unknown case \(name)")
         }
     }

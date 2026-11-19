@@ -291,6 +291,24 @@ extension AppModel {
         try await submit(HLAction.scheduleCancel(time: time))
     }
 
+    // MARK: Referral
+
+    /// Current referral state: (code the account was referred with, cumulative volume).
+    func fetchReferral() async -> (referredBy: String?, volume: Double)? {
+        guard let user = account?.address.lowercased(),
+              let j = try? await api.info(type: "referral", [("user", .str(user))]) else { return nil }
+        let rb = j["referredBy"]
+        let code = rb["code"].string ?? rb["referrer"].string
+        return (code, j["cumVlm"].dbl)
+    }
+
+    /// Sends setReferrer. Signed like an order (API wallet works), without vault address.
+    func setReferrer(code: String) async throws {
+        let c = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !c.isEmpty else { throw HLError(L("Enter a referral code")) }
+        try await submit(HLAction.setReferrer(code: c), vault: .some(nil))
+    }
+
     // MARK: Transfers (main key only)
 
     func usdClassTransfer(amount: Double, toPerp: Bool) async throws {

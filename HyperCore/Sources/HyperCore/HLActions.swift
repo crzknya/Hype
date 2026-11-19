@@ -101,6 +101,11 @@ public enum HLAction {
         return .map(kv)
     }
 
+    /// Sets a referral code for the account (the exchange may reject it, e.g. after the volume threshold).
+    public static func setReferrer(code: String) -> MP {
+        .map([("type", .str("setReferrer")), ("code", .str(code))])
+    }
+
     public static func vaultTransfer(vault: String, isDeposit: Bool, usdMicros: Int64) -> MP {
         .map([("type", .str("vaultTransfer")), ("vaultAddress", .str(vault.lowercased())), ("isDeposit", .bool(isDeposit)), ("usd", .int(usdMicros))])
     }

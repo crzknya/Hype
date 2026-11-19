@@ -39,6 +39,7 @@ twap = {"type":"twapOrder","twap":{"a":1,"b":True,"s":"1.5","r":False,"m":30,"t"
 l1("twap", twap, None, None, True)
 cl = {"type":"order","orders":[{"a":10107,"b":False,"p":"0.00012345","s":"100000","r":False,"t":{"limit":{"tif":"Ioc"}},"c":"0x00000000000000000000000000000001"}],"grouping":"na"}
 l1("spotCloid", cl, None, None, True)
+l1("setReferrer", {"type":"setReferrer","code":"HYPEIOS"}, None, None, True)
 out["l1"] = cases
 
 users = []

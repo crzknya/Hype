@@ -41,6 +41,8 @@ struct SettingsView: View {
                     Text(L("An API wallet is recommended: it can trade but cannot withdraw funds. Keys are stored in the Keychain on this device only."))
                 }
 
+                if model.account != nil { ReferralSection() }
+
                 Section(L("Language")) {
                     Picker(L("Language"), selection: $model.language) {
                         ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
@@ -275,6 +277,78 @@ struct CreateAgentView: View {
             .navigationTitle(L("New API wallet"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } } }
+        }
+    }
+}
+
+struct ReferralSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var code = ""
+    @State private var busy = false
+    @State private var referredBy: String?
+    @State private var volume: Double?
+    @State private var result: String?
+    @State private var failed = false
+
+    var body: some View {
+        Section {
+            if let referredBy {
+                LabeledContent(L("Referred by"), value: referredBy)
+            } else {
+                HStack {
+                    TextField(L("Referral code"), text: $code)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                    Button {
+                        if let s = UIPasteboard.general.string { code = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    } label: { Image(systemName: "doc.on.clipboard") }
+                    .buttonStyle(.borderless)
+                }
+                Button {
+                    apply()
+                } label: {
+                    if busy { ProgressView() } else { Text(L("Apply code")) }
+                }
+                .disabled(busy || code.isEmpty || !model.canTrade)
+            }
+            if let volume {
+                LabeledContent(L("Trading volume"), value: Fmt.usd(volume, 0))
+            }
+            if let result {
+                Text(result).font(.caption).foregroundStyle(failed ? Color.hlRed : Color.hlGreen)
+            }
+        } header: {
+            Text(L("Referral"))
+        } footer: {
+            Text(L("Sends the setReferrer action to the exchange and shows its reply. The exchange may reject codes after the account's volume threshold."))
+        }
+        .task(id: model.activeAccountId) { await load() }
+    }
+
+    private func load() async {
+        result = nil
+        guard let r = await model.fetchReferral() else { return }
+        referredBy = r.referredBy
+        volume = r.volume
+    }
+
+    private func apply() {
+        hideKeyboard()
+        busy = true
+        Task {
+            do {
+                try await model.setReferrer(code: code)
+                failed = false
+                result = L("Code applied")
+                Haptics.success(enabled: model.haptics)
+                await load()
+                result = L("Code applied")
+            } catch {
+                failed = true
+                result = L("Exchange reply: {0}", error.localizedDescription)
+                Haptics.error(enabled: model.haptics)
+            }
+            busy = false
         }
     }
 }

@@ -94,6 +94,19 @@
    "r": "7b94ef544ab0b5a6fd2c70326fb2d814671a714a128f077042f32fa9305c15f3",
    "s": "5bc7821b531a6fdbdd4f7887595dcc65acc80e7bdac4b2f7598181d1aa9c8ef7",
    "v": "28"
+  },
+  {
+   "name": "setReferrer",
+   "msgpack": "82a474797065ab7365745265666572726572a4636f6465a748595045494f53",
+   "actionHash": "b46a970ccc262e7f4ada396fd2af80badb675c239ae2e8327d33d3351959d861",
+   "digest": "eab2a73aedf2ae3954524b6aea39095229e3731710ccebad71e066d0a0d02b76",
+   "vault": null,
+   "expiresAfter": null,
+   "mainnet": true,
+   "nonce": 1700000000000,
+   "r": "5dbdef8400a63fc856dd8b3285a5e3ddc3d4480cbd93b7395f228c631912f381",
+   "s": "22d0d78b3b54451c8efe7f3e4279f8382973ac0dc83443eac9f9192be3b64450",
+   "v": "27"
   }
  ],
  "user": [
