@@ -132,6 +132,10 @@ struct ChartScreen: View {
 struct IndicatorsSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var editMode: EditMode = .inactive
+    @State private var editing: UUID?
+
+    private var isEditing: Bool { editMode.isEditing }
 
     var body: some View {
         @Bindable var model = model
@@ -139,48 +143,87 @@ struct IndicatorsSheet: View {
             List {
                 Section {
                     Toggle(L("Volume"), isOn: $model.showVolume)
+                }
+                Section {
                     ForEach($model.indicators) { $cfg in
-                        NavigationLink {
-                            IndicatorEditor(config: $cfg)
-                        } label: {
-                            HStack(spacing: 10) {
-                                Circle().fill(IndicatorPalette.color(cfg.color)).frame(width: 10, height: 10)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(cfg.label)
-                                    Text(cfg.kind.isPane ? L("Separate pane") : L("On price chart"))
-                                        .font(.caption2).foregroundStyle(Color.hlMuted)
-                                }
-                                Spacer()
-                                Toggle("", isOn: $cfg.visible).labelsHidden()
-                            }
-                        }
+                        IndicatorRow(config: $cfg, showToggle: !isEditing) { editing = cfg.id }
                     }
                     .onDelete { model.indicators.remove(atOffsets: $0) }
                     .onMove { model.indicators.move(fromOffsets: $0, toOffset: $1) }
+                    if model.indicators.isEmpty {
+                        Text(L("No indicators")).foregroundStyle(Color.hlMuted)
+                    }
+                } header: {
+                    Text(L("Indicators"))
                 } footer: {
                     Text(L("Tap an indicator to change its settings. Swipe left to delete."))
                 }
-                Section {
-                    Menu {
-                        ForEach(IndicatorKind.allCases) { k in
-                            Button(k.title) {
-                                model.indicators.append(IndicatorConfig.make(k, color: model.indicators.count))
+                if !isEditing {
+                    Section {
+                        Menu {
+                            ForEach(IndicatorKind.allCases) { k in
+                                Button(k.title) {
+                                    let cfg = IndicatorConfig.make(k, color: model.indicators.count)
+                                    model.indicators.append(cfg)
+                                    editing = cfg.id
+                                }
                             }
+                        } label: {
+                            Label(L("Add indicator"), systemImage: "plus.circle")
                         }
-                    } label: {
-                        Label(L("Add indicator"), systemImage: "plus.circle")
-                    }
-                    Button(L("Reset to defaults"), role: .destructive) {
-                        model.indicators = IndicatorConfig.defaults
-                        model.showVolume = true
+                        Button(L("Reset to defaults"), role: .destructive) {
+                            model.indicators = IndicatorConfig.defaults
+                            model.showVolume = true
+                        }
                     }
                 }
             }
+            .environment(\.editMode, $editMode)
             .navigationTitle(L("Indicators"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $editing) { id in
+                if let i = model.indicators.firstIndex(where: { $0.id == id }) {
+                    IndicatorEditor(config: $model.indicators[i])
+                }
+            }
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } }
-                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(isEditing ? L("Finish") : L("Reorder")) {
+                        withAnimation { editMode = isEditing ? .inactive : .active }
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L("Close")) { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+/// Indicator row: tapping the text opens the editor, the switch only toggles visibility.
+private struct IndicatorRow: View {
+    @Binding var config: IndicatorConfig
+    let showToggle: Bool
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Circle().fill(IndicatorPalette.color(config.color)).frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(config.label).foregroundStyle(config.visible ? .primary : Color.hlMuted)
+                    Text(config.kind.isPane ? L("Separate pane") : L("On price chart"))
+                        .font(.caption2).foregroundStyle(Color.hlMuted)
+                }
+                Spacer(minLength: 0)
+                if showToggle {
+                    Image(systemName: "slider.horizontal.3").font(.caption).foregroundStyle(Color.hlMuted)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { if showToggle { onOpen() } }
+            if showToggle {
+                Toggle("", isOn: $config.visible).labelsHidden()
             }
         }
     }
