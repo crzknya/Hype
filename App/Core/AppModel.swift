@@ -39,6 +39,8 @@ final class AppModel {
     var bookSigFigs: Int? = nil { didSet { if oldValue != bookSigFigs { bookAggChanged(old: oldValue) } } }
     var showChart = true { didSet { save() } }
     var minTradeUsd: Double = 0 { didSet { save() } }
+    var indicators: [IndicatorConfig] = IndicatorConfig.defaults { didSet { save() } }
+    var showVolume = true { didSet { save() } }
     var language: AppLanguage = Loc.lang { didSet { Loc.lang = language; save() } }
 
     // MARK: Market data
@@ -105,6 +107,8 @@ final class AppModel {
         biometricLock = d.bool(forKey: "biometricLock")
         if d.object(forKey: "showChart") != nil { showChart = d.bool(forKey: "showChart") }
         minTradeUsd = d.double(forKey: "minTradeUsd")
+        if let data = d.data(forKey: "indicators"), let ind = try? JSONDecoder().decode([IndicatorConfig].self, from: data) { indicators = ind }
+        if d.object(forKey: "showVolume") != nil { showVolume = d.bool(forKey: "showVolume") }
         selectedCoin = d.string(forKey: "selectedCoin") ?? "BTC"
         interval = CandleInterval(rawValue: d.string(forKey: "interval") ?? "") ?? .h1
         locked = biometricLock
@@ -136,6 +140,8 @@ final class AppModel {
         d.set(interval.rawValue, forKey: "interval")
         d.set(language.rawValue, forKey: "language")
         d.set(minTradeUsd, forKey: "minTradeUsd")
+        d.set(try? JSONEncoder().encode(indicators), forKey: "indicators")
+        d.set(showVolume, forKey: "showVolume")
     }
 
     // MARK: Derived

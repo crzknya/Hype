@@ -5,6 +5,8 @@ struct TradeView: View {
     @State private var showPicker = false
     @State private var rightPanel = 0   // 0 book, 1 trades
     @State private var depthFullScreen = false
+    @State private var chartFullScreen = false
+    @State private var showIndicators = false
 
     var body: some View {
         @Bindable var model = model
@@ -75,6 +77,10 @@ struct TradeView: View {
             }
             .keyboardDoneToolbar()
             .sheet(isPresented: $showPicker) { MarketPickerSheet() }
+            .fullScreenCover(isPresented: $chartFullScreen) {
+                if let m = model.selectedMarket { ChartScreen(market: m) }
+            }
+            .sheet(isPresented: $showIndicators) { IndicatorsSheet() }
             .fullScreenCover(isPresented: $depthFullScreen) {
                 if let m = model.selectedMarket { MarketDepthScreen(market: m, tab: rightPanel) }
             }
@@ -83,50 +89,14 @@ struct TradeView: View {
 
     @ViewBuilder
     private func chartSection(_ m: Market) -> some View {
-        @Bindable var model = model
         VStack(spacing: 6) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(CandleInterval.allCases) { iv in
-                        Button { model.interval = iv } label: {
-                            Text(iv.rawValue)
-                                .font(.system(size: 12, weight: .semibold))
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(model.interval == iv ? Color.hlAccent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                .foregroundStyle(model.interval == iv ? Color.hlAccent : Color.hlMuted)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10)
-            }
-            ZStack {
-                CandleChart(candles: model.candles, lines: chartLines(m), decimals: nil)
-                    .id("\(m.id)-\(model.interval.rawValue)")
-                if model.candlesLoading && model.candles.isEmpty { ProgressView() }
-            }
-            .frame(height: 250)
-            .padding(.horizontal, 6)
+            ChartToolbar(onFullScreen: { chartFullScreen = true }, onIndicators: { showIndicators = true })
+            PriceChartView(market: m)
+                .frame(height: 250)
+                .padding(.horizontal, 6)
         }
     }
 
-    private func chartLines(_ m: Market) -> [PriceLine] {
-        var lines: [PriceLine] = []
-        if let p = model.position(m.id) {
-            lines.append(PriceLine(price: p.entryPx, color: p.isLong ? .hlGreen : .hlRed,
-                                   label: "\(p.isLong ? L("Long") : L("Short")) \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))"))
-            if let liq = p.liquidationPx { lines.append(PriceLine(price: liq, color: .orange, label: L("Liquidation"))) }
-        }
-        for o in model.orders(for: m.id) {
-            let px = o.isTrigger ? o.triggerPx : o.limitPx
-            lines.append(PriceLine(price: px, color: o.isBuy ? .hlGreen.opacity(0.8) : .hlRed.opacity(0.8),
-                                   label: "\(o.typeTitle) \(Fmt.num(o.sz, m.szDecimals))"))
-        }
-        for a in model.alerts where a.coin == m.id {
-            lines.append(PriceLine(price: a.price, color: .yellow, label: "🔔"))
-        }
-        return lines
-    }
 }
 
 struct TradeHeader: View {
@@ -174,5 +144,25 @@ struct TradeHeader: View {
     private var secondsToFunding: Int {
         let s = Int(now.timeIntervalSince1970)
         return 3600 - s % 3600
+    }
+}
+
+extension AppModel {
+    func chartLines(_ m: Market) -> [PriceLine] {
+        var lines: [PriceLine] = []
+        if let p = position(m.id) {
+            lines.append(PriceLine(price: p.entryPx, color: p.isLong ? .hlGreen : .hlRed,
+                                   label: "\(p.isLong ? L("Long") : L("Short")) \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))"))
+            if let liq = p.liquidationPx { lines.append(PriceLine(price: liq, color: .orange, label: L("Liquidation"))) }
+        }
+        for o in orders(for: m.id) {
+            let px = o.isTrigger ? o.triggerPx : o.limitPx
+            lines.append(PriceLine(price: px, color: o.isBuy ? .hlGreen.opacity(0.8) : .hlRed.opacity(0.8),
+                                   label: "\(o.typeTitle) \(Fmt.num(o.sz, m.szDecimals))"))
+        }
+        for a in alerts where a.coin == m.id {
+            lines.append(PriceLine(price: a.price, color: .yellow, label: "🔔"))
+        }
+        return lines
     }
 }
