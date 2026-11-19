@@ -4,6 +4,11 @@ on:
   push:
   workflow_dispatch:
 
+# A newer push to the same branch cancels builds that are still queued or running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core-tests:
     runs-on: macos-15
