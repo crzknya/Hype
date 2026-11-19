@@ -22,23 +22,59 @@ struct ChartToolbar: View {
     var onFullScreen: (() -> Void)? = nil
     var onIndicators: () -> Void
 
+    /// User-chosen intervals plus the active one (if it is hidden).
+    private var shownIntervals: [CandleInterval] {
+        var list = model.visibleIntervals
+        if !list.contains(model.interval) {
+            list.append(model.interval)
+            list.sort { $0.seconds < $1.seconds }
+        }
+        return list
+    }
+
     var body: some View {
         HStack(spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(CandleInterval.allCases) { iv in
-                        Button { model.interval = iv } label: {
-                            Text(iv.rawValue)
-                                .font(.system(size: 12, weight: .semibold))
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(model.interval == iv ? Color.hlAccent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                .foregroundStyle(model.interval == iv ? Color.hlAccent : Color.hlMuted)
-                        }
-                        .buttonStyle(.plain)
+            HStack(spacing: 2) {
+                ForEach(shownIntervals) { iv in
+                    Button { model.interval = iv } label: {
+                        Text(iv.rawValue)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                            .background(model.interval == iv ? Color.hlAccent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(model.interval == iv ? Color.hlAccent : Color.hlMuted)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.leading, 10)
+                Menu {
+                    Section(L("Timeframe")) {
+                        ForEach(CandleInterval.allCases) { iv in
+                            Button {
+                                model.interval = iv
+                            } label: {
+                                if model.interval == iv { Label(iv.rawValue, systemImage: "checkmark") } else { Text(iv.rawValue) }
+                            }
+                        }
+                    }
+                    Menu(L("Show in toolbar")) {
+                        ForEach(CandleInterval.allCases) { iv in
+                            Button {
+                                model.toggleIntervalVisibility(iv)
+                            } label: {
+                                if model.visibleIntervals.contains(iv) { Label(iv.rawValue, systemImage: "checkmark") } else { Text(iv.rawValue) }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 26)
+                        .foregroundStyle(Color.hlMuted)
+                }
             }
+            .padding(.leading, 10)
             Button(action: onIndicators) {
                 Image(systemName: "function").font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 28)

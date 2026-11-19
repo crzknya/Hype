@@ -404,6 +404,8 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
+        "Timeframe": "Таймфрейм",
+        "Show in toolbar": "Показывать на панели",
         "Bollinger Bands": "Полосы Боллинджера",
         "Stochastic": "Стохастик",
         "Separate pane": "Отдельная панель",

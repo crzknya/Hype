@@ -18,7 +18,7 @@ struct OrderBookPanel: View {
         let dec = decimals
 
         VStack(spacing: 1) {
-            HStack {
+            HStack(spacing: 8) {
                 Menu {
                     Picker(L("Grouping"), selection: $model.bookSigFigs) {
                         Text(L("No grouping")).tag(Int?.none)
@@ -33,12 +33,15 @@ struct OrderBookPanel: View {
                         Image(systemName: "line.3.horizontal.decrease").font(.system(size: 8))
                     }
                 }
-                Spacer()
+                .frame(maxWidth: wide ? .infinity : nil, alignment: .leading)
+                if !wide { Spacer() }
                 Button { showUsd.toggle() } label: { Text(showUsd ? "USD" : market.base) }
+                    .frame(maxWidth: wide ? .infinity : nil, alignment: .trailing)
                 if wide {
-                    Text(L("Total")).frame(width: 90, alignment: .trailing)
+                    Text(L("Total")).frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
+            .padding(.horizontal, wide ? 6 : 0)
             .font(.system(size: wide ? 12 : 10))
             .foregroundStyle(Color.hlMuted)
             .padding(.bottom, 2)
@@ -83,20 +86,26 @@ struct OrderBookPanel: View {
         return GeometryReader { g in
             ZStack(alignment: .trailing) {
                 Rectangle().fill(color.opacity(0.14)).frame(width: g.size.width * CGFloat(cum / maxCum))
-                HStack {
-                    Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color)
-                    Spacer()
-                    Text(amount(l.sz, l.px))
-                    if wide {
-                        Text(amount(cum, l.px)).foregroundStyle(Color.hlMuted).frame(width: 90, alignment: .trailing)
+                if wide {
+                    HStack(spacing: 8) {
+                        Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(amount(l.sz, l.px)).frame(maxWidth: .infinity, alignment: .trailing)
+                        Text(amount(cum, l.px)).foregroundStyle(Color.hlMuted).frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 6)
+                } else {
+                    HStack {
+                        Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color)
+                        Spacer()
+                        Text(amount(l.sz, l.px))
                     }
                 }
-                .font(.system(size: wide ? 13 : 11, design: .monospaced))
+                .font(.system(size: wide ? 14 : 11, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             }
         }
-        .frame(height: wide ? 22 : 17)
+        .frame(height: wide ? 26 : 17)
         .contentShape(Rectangle())
         .onTapGesture {
             model.pendingPrice = l.px
@@ -109,7 +118,7 @@ struct OrderBookPanel: View {
 /// Menu for the minimum trade size shown in the trades feed.
 struct TradeFilterMenu: View {
     @Environment(AppModel.self) private var model
-    static let presets: [Double] = [0, 1_000, 10_000, 50_000, 100_000, 500_000]
+    static let presets: [Double] = [0, 500, 1_000, 5_000, 10_000, 50_000, 100_000]
 
     var body: some View {
         Menu {
@@ -117,18 +126,26 @@ struct TradeFilterMenu: View {
                 Button {
                     model.minTradeUsd = v
                 } label: {
-                    let title = v == 0 ? L("All trades") : "≥ " + Fmt.compactUsd(v)
+                    let title = v == 0 ? L("All trades") : "> " + Self.label(v)
                     if model.minTradeUsd == v { Label(title, systemImage: "checkmark") } else { Text(title) }
                 }
             }
         } label: {
             HStack(spacing: 2) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                if model.minTradeUsd > 0 { Text("≥" + Fmt.compactUsd(model.minTradeUsd)) }
+                if model.minTradeUsd > 0 { Text(">" + Self.label(model.minTradeUsd)) }
             }
             .font(.system(size: 11))
             .foregroundStyle(model.minTradeUsd > 0 ? Color.hlAccent : Color.hlMuted)
         }
+    }
+}
+
+extension TradeFilterMenu {
+    /// "$500", "$1K", "$50K" — short labels without trailing ".0".
+    static func label(_ v: Double) -> String {
+        if v >= 1_000 { return "$" + Fmt.input(v / 1_000, 1) + "K" }
+        return "$" + Fmt.input(v, 0)
     }
 }
 
@@ -141,39 +158,70 @@ struct TradesPanel: View {
     var body: some View {
         let trades = model.trades.filter { $0.px * $0.sz >= model.minTradeUsd }
         VStack(spacing: 1) {
-            HStack {
-                Text(L("Price")); Spacer()
-                if wide { Text("USD").frame(width: 80, alignment: .trailing) }
-                Text(L("Size"))
-                Text(L("Time")).frame(width: wide ? 64 : 40, alignment: .trailing)
-            }
-            .font(.system(size: wide ? 12 : 9)).foregroundStyle(Color.hlMuted)
+            if wide { wideHeader } else { compactHeader }
             ForEach(trades.prefix(limit)) { t in
-                let usd = t.px * t.sz
-                HStack(spacing: 4) {
-                    Text(Fmt.price(t.px)).foregroundStyle(t.isBuy ? Color.hlGreen : Color.hlRed)
-                    Spacer()
-                    if wide {
-                        Text(Fmt.compactUsd(usd)).frame(width: 80, alignment: .trailing)
-                            .fontWeight(usd >= 100_000 ? .bold : .regular)
-                    }
-                    Text(Fmt.compact(t.sz))
-                    Text(wide ? Fmt.time(t.time) : String(Fmt.time(t.time).suffix(5)))
-                        .foregroundStyle(Color.hlMuted).frame(width: wide ? 64 : 40, alignment: .trailing)
-                }
-                .font(.system(size: wide ? 13 : 10, design: .monospaced))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(height: wide ? 22 : 16)
-                .background((t.isBuy ? Color.hlGreen : Color.hlRed).opacity(wide && usd >= 100_000 ? 0.12 : 0))
+                if wide { wideRow(t) } else { compactRow(t) }
             }
             if model.trades.isEmpty {
                 ProgressView().padding()
             } else if trades.isEmpty {
-                Text(L("No trades above {0} yet", Fmt.compactUsd(model.minTradeUsd)))
-                    .font(.system(size: 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
+                Text(L("No trades above {0} yet", TradeFilterMenu.label(model.minTradeUsd)))
+                    .font(.system(size: wide ? 13 : 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
             }
         }
+    }
+
+    private var compactHeader: some View {
+        HStack {
+            Text(L("Price")); Spacer(); Text(L("Size"))
+            Text(L("Time")).frame(width: 40, alignment: .trailing)
+        }
+        .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+    }
+
+    private func compactRow(_ t: PublicTrade) -> some View {
+        HStack(spacing: 4) {
+            Text(Fmt.price(t.px)).foregroundStyle(t.isBuy ? Color.hlGreen : Color.hlRed)
+            Spacer()
+            Text(Fmt.compact(t.sz))
+            Text(String(Fmt.time(t.time).suffix(5))).foregroundStyle(Color.hlMuted).frame(width: 40, alignment: .trailing)
+        }
+        .font(.system(size: 10, design: .monospaced))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(height: 16)
+    }
+
+    /// Full-screen: four evenly spread columns.
+    private var wideHeader: some View {
+        HStack(spacing: 8) {
+            Text(L("Price")).frame(maxWidth: .infinity, alignment: .leading)
+            Text(L("Size") + " " + market.base).frame(maxWidth: .infinity, alignment: .trailing)
+            Text("USD").frame(maxWidth: .infinity, alignment: .trailing)
+            Text(L("Time")).frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .font(.system(size: 12)).foregroundStyle(Color.hlMuted)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 4)
+    }
+
+    private func wideRow(_ t: PublicTrade) -> some View {
+        let usd = t.px * t.sz
+        let big = usd >= 100_000
+        let color = t.isBuy ? Color.hlGreen : Color.hlRed
+        return HStack(spacing: 8) {
+            Text(Fmt.price(t.px)).foregroundStyle(color).frame(maxWidth: .infinity, alignment: .leading)
+            Text(Fmt.num(t.sz, min(market.szDecimals, 4))).frame(maxWidth: .infinity, alignment: .trailing)
+            Text(Fmt.compactUsd(usd)).fontWeight(big ? .bold : .regular).foregroundStyle(big ? color : .primary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            Text(Fmt.time(t.time)).foregroundStyle(Color.hlMuted).frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .font(.system(size: 14, design: .monospaced))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .padding(.horizontal, 6)
+        .frame(height: 26)
+        .background(color.opacity(big ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
