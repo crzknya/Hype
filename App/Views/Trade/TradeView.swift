@@ -4,6 +4,7 @@ struct TradeView: View {
     @Environment(AppModel.self) private var model
     @State private var showPicker = false
     @State private var rightPanel = 0   // 0 book, 1 trades
+    @State private var depthFullScreen = false
 
     var body: some View {
         @Bindable var model = model
@@ -23,6 +24,14 @@ struct TradeView: View {
                                 }
                                 .pickerStyle(.segmented)
                                 .controlSize(.mini)
+                                HStack {
+                                    if rightPanel == 1 { TradeFilterMenu() }
+                                    Spacer()
+                                    Button { depthFullScreen = true } label: {
+                                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
+                                    }
+                                    .foregroundStyle(Color.hlMuted)
+                                }
                                 if rightPanel == 0 { OrderBookPanel(market: m) } else { TradesPanel(market: m) }
                             }
                             .frame(width: 148)
@@ -66,6 +75,9 @@ struct TradeView: View {
             }
             .keyboardDoneToolbar()
             .sheet(isPresented: $showPicker) { MarketPickerSheet() }
+            .fullScreenCover(isPresented: $depthFullScreen) {
+                if let m = model.selectedMarket { MarketDepthScreen(market: m, tab: rightPanel) }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ import HyperCore
 final class HLSocket {
     var onMessage: ((String, JSON) -> Void)?
     var onStatus: ((Bool) -> Void)?
+    var onError: ((String) -> Void)?
 
     private var url: URL
     private var task: URLSessionWebSocketTask?
@@ -98,7 +99,8 @@ final class HLSocket {
             Task { @MainActor in
                 guard let self, gen == self.generation else { return }
                 switch result {
-                case .failure:
+                case .failure(let error):
+                    self.onError?(error.localizedDescription)
                     self.reconnect()
                 case .success(let msg):
                     self.setConnected(true)

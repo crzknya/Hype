@@ -38,6 +38,7 @@ final class AppModel {
     var interval: CandleInterval = .h1 { didSet { save(); if oldValue != interval { intervalChanged(old: oldValue) } } }
     var bookSigFigs: Int? = nil { didSet { if oldValue != bookSigFigs { bookAggChanged(old: oldValue) } } }
     var showChart = true { didSet { save() } }
+    var minTradeUsd: Double = 0 { didSet { save() } }
     var language: AppLanguage = Loc.lang { didSet { Loc.lang = language; save() } }
 
     // MARK: Market data
@@ -53,6 +54,7 @@ final class AppModel {
     var candles: [Candle] = []
     var candlesLoading = false
     var wsConnected = false
+    var wsError: String?
     var metaLoaded = false
 
     // MARK: Account
@@ -102,13 +104,18 @@ final class AppModel {
         if d.object(forKey: "haptics") != nil { haptics = d.bool(forKey: "haptics") }
         biometricLock = d.bool(forKey: "biometricLock")
         if d.object(forKey: "showChart") != nil { showChart = d.bool(forKey: "showChart") }
+        minTradeUsd = d.double(forKey: "minTradeUsd")
         selectedCoin = d.string(forKey: "selectedCoin") ?? "BTC"
         interval = CandleInterval(rawValue: d.string(forKey: "interval") ?? "") ?? .h1
         locked = biometricLock
         if activeAccountId == nil { activeAccountId = accounts.first?.id }
 
         socket.onMessage = { [weak self] ch, data in self?.handle(channel: ch, data: data) }
-        socket.onStatus = { [weak self] c in self?.wsConnected = c }
+        socket.onStatus = { [weak self] c in
+            self?.wsConnected = c
+            if c { self?.wsError = nil }
+        }
+        socket.onError = { [weak self] e in self?.wsError = e }
     }
 
     @ObservationIgnored private var loading = true
@@ -128,6 +135,7 @@ final class AppModel {
         d.set(selectedCoin, forKey: "selectedCoin")
         d.set(interval.rawValue, forKey: "interval")
         d.set(language.rawValue, forKey: "language")
+        d.set(minTradeUsd, forKey: "minTradeUsd")
     }
 
     // MARK: Derived
@@ -292,6 +300,11 @@ final class AppModel {
         socket.unsubscribe(l2Sub(selectedCoin, old))
         book = OrderBook()
         socket.subscribe(l2Sub(selectedCoin, bookSigFigs))
+    }
+
+    func reconnectSocket() {
+        socket.disconnect()
+        socket.connect()
     }
 
     func sceneActive(_ active: Bool) {
@@ -571,7 +584,7 @@ final class AppModel {
             guard !new.isEmpty else { return }
             var seen = Set(trades.map(\.tid))
             let fresh = new.reversed().filter { seen.insert($0.tid).inserted }
-            trades = Array((fresh + trades).prefix(60))
+            trades = Array((fresh + trades).prefix(500))
         case "candle":
             guard data["s"].str == selectedCoin, data["i"].str == interval.rawValue else { return }
             let c = Candle(data)

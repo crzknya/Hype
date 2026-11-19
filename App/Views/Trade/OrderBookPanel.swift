@@ -3,8 +3,10 @@ import SwiftUI
 struct OrderBookPanel: View {
     @Environment(AppModel.self) private var model
     let market: Market
+    var rows = 10
+    var wide = false                 // full-screen layout: extra Total column, larger font
+    var onPick: (() -> Void)? = nil  // called after a price is tapped
     @State private var showUsd = false
-    private let rows = 10
 
     var body: some View {
         @Bindable var model = model
@@ -33,8 +35,11 @@ struct OrderBookPanel: View {
                 }
                 Spacer()
                 Button { showUsd.toggle() } label: { Text(showUsd ? "USD" : market.base) }
+                if wide {
+                    Text(L("Total")).frame(width: 90, alignment: .trailing)
+                }
             }
-            .font(.system(size: 10))
+            .font(.system(size: wide ? 12 : 10))
             .foregroundStyle(Color.hlMuted)
             .padding(.bottom, 2)
 
@@ -43,10 +48,11 @@ struct OrderBookPanel: View {
             }
             HStack {
                 Text(model.book.mid.map { Fmt.price($0, decimals: dec) } ?? "—")
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .font(.system(size: wide ? 16 : 13, weight: .bold, design: .monospaced))
                 Spacer()
                 if let s = model.book.spread, let mid = model.book.mid, mid > 0 {
-                    Text(Fmt.pct(s / mid, 3, signed: false)).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+                    Text(L("Spread") + " " + Fmt.pct(s / mid, 3, signed: false))
+                        .font(.system(size: wide ? 11 : 9)).foregroundStyle(Color.hlMuted)
                 }
             }
             .padding(.vertical, 4)
@@ -60,13 +66,16 @@ struct OrderBookPanel: View {
     }
 
     private var decimals: Int {
-        let px = model.mid(market.id)
-        return market.priceDecimals(px)
+        market.priceDecimals(model.mid(market.id))
     }
 
     private func cumulative(_ levels: [BookLevel]) -> [Double] {
         var acc = 0.0
         return levels.map { acc += $0.sz; return acc }
+    }
+
+    private func amount(_ sz: Double, _ px: Double) -> String {
+        showUsd ? Fmt.compact(sz * px) : Fmt.num(sz, min(market.szDecimals, 4))
     }
 
     private func row(_ l: BookLevel, cum: Double, maxCum: Double, isBid: Bool, dec: Int) -> some View {
@@ -77,18 +86,48 @@ struct OrderBookPanel: View {
                 HStack {
                     Text(Fmt.price(l.px, decimals: dec)).foregroundStyle(color)
                     Spacer()
-                    Text(showUsd ? Fmt.compact(l.sz * l.px) : Fmt.num(l.sz, min(market.szDecimals, 4)))
+                    Text(amount(l.sz, l.px))
+                    if wide {
+                        Text(amount(cum, l.px)).foregroundStyle(Color.hlMuted).frame(width: 90, alignment: .trailing)
+                    }
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: wide ? 13 : 11, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             }
         }
-        .frame(height: 17)
+        .frame(height: wide ? 22 : 17)
         .contentShape(Rectangle())
         .onTapGesture {
             model.pendingPrice = l.px
             Haptics.tap(enabled: model.haptics)
+            onPick?()
+        }
+    }
+}
+
+/// Menu for the minimum trade size shown in the trades feed.
+struct TradeFilterMenu: View {
+    @Environment(AppModel.self) private var model
+    static let presets: [Double] = [0, 1_000, 10_000, 50_000, 100_000, 500_000]
+
+    var body: some View {
+        Menu {
+            ForEach(Self.presets, id: \.self) { v in
+                Button {
+                    model.minTradeUsd = v
+                } label: {
+                    let title = v == 0 ? L("All trades") : "≥ " + Fmt.compactUsd(v)
+                    if model.minTradeUsd == v { Label(title, systemImage: "checkmark") } else { Text(title) }
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                if model.minTradeUsd > 0 { Text("≥" + Fmt.compactUsd(model.minTradeUsd)) }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(model.minTradeUsd > 0 ? Color.hlAccent : Color.hlMuted)
         }
     }
 }
@@ -96,26 +135,81 @@ struct OrderBookPanel: View {
 struct TradesPanel: View {
     @Environment(AppModel.self) private var model
     let market: Market
+    var limit = 22
+    var wide = false
 
     var body: some View {
+        let trades = model.trades.filter { $0.px * $0.sz >= model.minTradeUsd }
         VStack(spacing: 1) {
             HStack {
-                Text(L("Price")); Spacer(); Text(L("Size")); Text(L("Time")).frame(width: 40, alignment: .trailing)
+                Text(L("Price")); Spacer()
+                if wide { Text("USD").frame(width: 80, alignment: .trailing) }
+                Text(L("Size"))
+                Text(L("Time")).frame(width: wide ? 64 : 40, alignment: .trailing)
             }
-            .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
-            ForEach(model.trades.prefix(22)) { t in
+            .font(.system(size: wide ? 12 : 9)).foregroundStyle(Color.hlMuted)
+            ForEach(trades.prefix(limit)) { t in
+                let usd = t.px * t.sz
                 HStack(spacing: 4) {
                     Text(Fmt.price(t.px)).foregroundStyle(t.isBuy ? Color.hlGreen : Color.hlRed)
                     Spacer()
+                    if wide {
+                        Text(Fmt.compactUsd(usd)).frame(width: 80, alignment: .trailing)
+                            .fontWeight(usd >= 100_000 ? .bold : .regular)
+                    }
                     Text(Fmt.compact(t.sz))
-                    Text(Fmt.time(t.time).suffix(5)).foregroundStyle(Color.hlMuted).frame(width: 40, alignment: .trailing)
+                    Text(wide ? Fmt.time(t.time) : String(Fmt.time(t.time).suffix(5)))
+                        .foregroundStyle(Color.hlMuted).frame(width: wide ? 64 : 40, alignment: .trailing)
                 }
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: wide ? 13 : 10, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(height: 16)
+                .frame(height: wide ? 22 : 16)
+                .background((t.isBuy ? Color.hlGreen : Color.hlRed).opacity(wide && usd >= 100_000 ? 0.12 : 0))
             }
-            if model.trades.isEmpty { ProgressView().padding() }
+            if model.trades.isEmpty {
+                ProgressView().padding()
+            } else if trades.isEmpty {
+                Text(L("No trades above {0} yet", Fmt.compactUsd(model.minTradeUsd)))
+                    .font(.system(size: 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
+            }
+        }
+    }
+}
+
+/// Full-screen order book and trades feed.
+struct MarketDepthScreen: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let market: Market
+    @State var tab: Int
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 8) {
+                Picker("", selection: $tab) {
+                    Text(L("Order book")).tag(0)
+                    Text(L("Trades")).tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                ScrollView {
+                    if tab == 0 {
+                        OrderBookPanel(market: market, rows: 30, wide: true, onPick: { dismiss() })
+                            .padding(.horizontal)
+                    } else {
+                        TradesPanel(market: market, limit: 500, wide: true)
+                            .padding(.horizontal)
+                    }
+                }
+            }
+            .background(Color.hlBg)
+            .navigationTitle(market.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
+                if tab == 1 { ToolbarItem(placement: .topBarTrailing) { TradeFilterMenu() } }
+            }
         }
     }
 }

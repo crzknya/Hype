@@ -41,7 +41,7 @@ struct SettingsView: View {
                     Text(L("An API wallet is recommended: it can trade but cannot withdraw funds. Keys are stored in the Keychain on this device only."))
                 }
 
-                if model.account != nil { ReferralSection() }
+                ReferralSection()
 
                 Section(L("Language")) {
                     Picker(L("Language"), selection: $model.language) {
@@ -61,6 +61,10 @@ struct SettingsView: View {
                         ConnectionDot(connected: model.wsConnected)
                         Text(model.wsConnected ? L("connected") : L("offline")).foregroundStyle(Color.hlMuted)
                     }
+                    if !model.wsConnected, let e = model.wsError {
+                        Text(e).font(.caption).foregroundStyle(Color.hlRed)
+                    }
+                    Button(L("Reconnect")) { model.reconnectSocket() }
                 }
 
                 Section {
@@ -292,7 +296,9 @@ struct ReferralSection: View {
 
     var body: some View {
         Section {
-            if let referredBy {
+            if model.account == nil {
+                Text(L("Add an account first: the code is applied to a specific wallet.")).font(.caption).foregroundStyle(Color.hlMuted)
+            } else if let referredBy {
                 LabeledContent(L("Referred by"), value: referredBy)
             } else {
                 HStack {
