@@ -6,6 +6,7 @@ struct PortfolioView: View {
     @Environment(AppModel.self) private var model
     @State private var tab: Tab = .positions
     @State private var transfer: TransferKind?
+    @State private var pending: PendingConfirm?
 
     enum Tab: String, CaseIterable, Identifiable {
         case positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", funding = "Funding", spot = "Spot", ledger = "Transfers"
@@ -40,6 +41,7 @@ struct PortfolioView: View {
                 ToolbarItem(placement: .principal) { AccountSwitcher() }
             }
             .sheet(item: $transfer) { TransferSheet(kind: $0) }
+            .confirmDialog($pending)
         }
     }
 
@@ -160,7 +162,11 @@ struct PortfolioView: View {
                 if model.canTrade {
                     HStack {
                         Spacer()
-                        Button(L("Close all positions")) { model.perform { try await model.closeAll() } }
+                        Button(L("Close all positions")) {
+                            pending = PendingConfirm(title: L("Close all positions"),
+                                                     message: L("Market close of all positions: {0}", model.positions.count),
+                                                     button: L("Close all")) { model.perform { try await model.closeAll() } }
+                        }
                             .font(.caption.bold()).foregroundStyle(Color.hlRed)
                     }
                 }
@@ -172,7 +178,11 @@ struct PortfolioView: View {
                 if model.canTrade {
                     HStack {
                         Spacer()
-                        Button(L("Cancel all orders")) { model.perform { try await model.cancelAll() } }
+                        Button(L("Cancel all orders")) {
+                            pending = PendingConfirm(title: L("Cancel all orders"),
+                                                     message: L("Orders to cancel: {0}", model.openOrders.count),
+                                                     button: L("Cancel all")) { model.perform { try await model.cancelAll() } }
+                        }
                             .font(.caption.bold()).foregroundStyle(Color.hlRed)
                     }
                 }

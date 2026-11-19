@@ -92,6 +92,14 @@ struct OrderFormView: View {
         }
         .onChange(of: market.id) { _, _ in reset() }
         .onChange(of: riskOn) { _, on in if on { tpslOn = true } }
+        .onChange(of: tpslOn) { _, on in if !on { riskOn = false } }
+        .onChange(of: type) { _, t in
+            // TP/SL and risk sizing only exist for plain market/limit orders.
+            if t.isTrigger || t == .scale || t == .twap { riskOn = false }
+            if pct > 0 { applyPct(pct) }
+        }
+        .onChange(of: isBuy) { _, _ in if pct > 0 { applyPct(pct) } }
+        .onChange(of: reduceOnly) { _, _ in if pct > 0 { applyPct(pct) } }
         .sheet(isPresented: $showLeverage) { LeverageSheet(market: market) }
         .sheet(item: $confirm) { d in
             OrderConfirmSheet(draft: d.draft, summary: summaryLines(d.draft)) { send(d.draft) }

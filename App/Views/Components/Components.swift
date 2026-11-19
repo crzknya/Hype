@@ -203,3 +203,27 @@ extension View {
         }
     }
 }
+
+
+/// A pending destructive action waiting for user confirmation.
+struct PendingConfirm: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let button: String
+    let action: () -> Void
+}
+
+extension View {
+    /// Shows a confirmation dialog while `item` is set.
+    func confirmDialog(_ item: Binding<PendingConfirm?>) -> some View {
+        confirmationDialog(item.wrappedValue?.title ?? "",
+                           isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } }),
+                           titleVisibility: .visible, presenting: item.wrappedValue) { c in
+            Button(c.button, role: .destructive) { c.action() }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: { c in
+            Text(c.message)
+        }
+    }
+}

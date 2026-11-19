@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var adding = false
     @State private var creatingAgent = false
     @State private var connectingWallet = false
+    @State private var pending: PendingConfirm?
     @State private var renewingAgent = false
 
     var body: some View {
@@ -26,11 +27,11 @@ struct SettingsView: View {
                             }
                         }
                         .swipeActions {
-                            Button(L("Delete"), role: .destructive) { model.removeAccount(a) }
+                            Button(L("Delete"), role: .destructive) { askRemove(a) }
                         }
                         .contextMenu {
                             Button { UIPasteboard.general.string = Address.checksum(a.address) } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
-                            Button(role: .destructive) { model.removeAccount(a) } label: { Label(L("Delete"), systemImage: "trash") }
+                            Button(role: .destructive) { askRemove(a) } label: { Label(L("Delete"), systemImage: "trash") }
                         }
                     }
                     Button { connectingWallet = true } label: {
@@ -115,7 +116,16 @@ struct SettingsView: View {
             .sheet(isPresented: $adding) { AddAccountView() }
             .sheet(isPresented: $creatingAgent) { CreateAgentView() }
             .sheet(isPresented: $connectingWallet) { ConnectWalletView(renew: nil) }
+            .confirmDialog($pending)
             .sheet(isPresented: $renewingAgent) { ConnectWalletView(renew: model.account) }
+        }
+    }
+
+    private func askRemove(_ a: Account) {
+        let msg = a.kind == .watch ? L("The account will be removed from the app.")
+                                   : L("The account and its key will be deleted from this device. Make sure you have a backup of the key if you need it.")
+        pending = PendingConfirm(title: L("Delete account “{0}”?", a.name), message: msg, button: L("Delete")) {
+            model.removeAccount(a)
         }
     }
 }
@@ -359,12 +369,19 @@ struct ReferralSection: View {
         busy = true
         Task {
             do {
-                try await model.setReferrer(code: code)
-                failed = false
-                result = L("Code applied")
-                Haptics.success(enabled: model.haptics)
+                let entered = code.trimmingCharacters(in: .whitespacesAndNewlines)
+                try await model.setReferrer(code: entered)
                 await load()
-                result = L("Code applied")
+                // The exchange may accept the request but record no code (e.g. above the volume threshold).
+                if let rb = referredBy, rb.caseInsensitiveCompare(entered) == .orderedSame {
+                    failed = false
+                    result = L("Code applied")
+                    Haptics.success(enabled: model.haptics)
+                } else {
+                    failed = true
+                    result = L("The exchange accepted the request but did not apply the code (recorded: {0}).", referredBy ?? "—")
+                    Haptics.error(enabled: model.haptics)
+                }
             } catch {
                 failed = true
                 result = L("Exchange reply: {0}", error.localizedDescription)

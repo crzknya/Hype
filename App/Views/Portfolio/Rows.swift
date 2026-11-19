@@ -5,6 +5,7 @@ struct PositionRow: View {
     @Environment(AppModel.self) private var model
     let position: Position
     @State private var sheet: PositionSheet?
+    @State private var pending: PendingConfirm?
 
     enum PositionSheet: String, Identifiable {
         case close, tpsl, margin
@@ -54,7 +55,13 @@ struct PositionRow: View {
                     Menu {
                         Button(L("Close 25%")) { confirmClose(0.25) }
                         Button(L("Reverse position")) {
-                            model.perform { try await model.reverse(p) }
+                            pending = PendingConfirm(
+                                title: L("Reverse position"),
+                                message: L("Market order for {0} {1}: closes the {2} and opens the opposite position of the same size.",
+                                           Fmt.num(p.size * 2, m?.szDecimals ?? 4), model.displayName(p.coin), p.isLong ? L("Long") : L("Short")),
+                                button: L("Reverse")) {
+                                model.perform { try await model.reverse(p) }
+                            }
                         }
                         if p.leverageType == "isolated" { Button(L("Adjust margin")) { sheet = .margin } }
                         Button(L("Open chart")) { model.select(p.coin) }
@@ -67,6 +74,7 @@ struct PositionRow: View {
         }
         .padding(12)
         .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 12))
+        .confirmDialog($pending)
         .sheet(item: $sheet) { s in
             switch s {
             case .close: ClosePositionSheet(position: p)
@@ -77,7 +85,15 @@ struct PositionRow: View {
     }
 
     private func confirmClose(_ fraction: Double) {
-        model.perform { try await model.closePosition(position, fraction: fraction) }
+        let p = position
+        let run = { model.perform { try await model.closePosition(p, fraction: fraction) } }
+        guard model.confirmOrders else { run(); return }
+        let dec = model.market(p.coin)?.szDecimals ?? 4
+        pending = PendingConfirm(
+            title: fraction >= 1 ? L("Close position") : L("Close {0}%", Int(fraction * 100)),
+            message: L("Market close {0} {1} · PnL ≈ {2}", Fmt.num(p.size * fraction, dec), model.displayName(p.coin),
+                       Fmt.signedUsd(p.unrealizedPnl * fraction)),
+            button: L("Close at market"), action: run)
     }
 
     private func actionButton(_ title: String, color: Color = .primary, action: @escaping () -> Void) -> some View {
@@ -175,6 +191,7 @@ struct FillRow: View {
 struct TwapRow: View {
     @Environment(AppModel.self) private var model
     let twap: TwapState
+    @State private var pending: PendingConfirm?
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -183,7 +200,11 @@ struct TwapRow: View {
                 Text(L("TWAP {0} min", twap.minutes)).font(.caption).foregroundStyle(Color.hlMuted)
                 Spacer()
                 if model.canTrade {
-                    Button(L("Stop")) { model.perform { try await model.cancelTwap(twap); return L("TWAP stopped") } }
+                    Button(L("Stop")) {
+                        pending = PendingConfirm(title: L("Stop TWAP"), message: model.displayName(twap.coin), button: L("Stop")) {
+                            model.perform { try await model.cancelTwap(twap); return L("TWAP stopped") }
+                        }
+                    }
                         .buttonStyle(.bordered).controlSize(.small).tint(.hlRed)
                 }
             }
@@ -199,6 +220,7 @@ struct TwapRow: View {
         }
         .padding(10)
         .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+        .confirmDialog($pending)
     }
 }
 
@@ -208,6 +230,7 @@ struct AccountPanel: View {
     let coin: String
     @State private var tab = 0
     @State private var onlyThisCoin = false
+    @State private var pending: PendingConfirm?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -221,11 +244,23 @@ struct AccountPanel: View {
                 Toggle(L("Only {0}", model.displayName(coin)), isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)
                 Spacer()
                 if tab == 1 && !orders.isEmpty && model.canTrade {
-                    Button(L("Cancel all")) { model.perform { try await model.cancelAll(coin: onlyThisCoin ? coin : nil) } }
+                    Button(L("Cancel all")) {
+                        let c: String? = onlyThisCoin ? coin : nil
+                        pending = PendingConfirm(title: L("Cancel all orders"), message: L("Orders to cancel: {0}", orders.count),
+                                                 button: L("Cancel all")) {
+                            model.perform { try await model.cancelAll(coin: c) }
+                        }
+                    }
                         .font(.caption.bold()).foregroundStyle(Color.hlRed)
                 }
                 if tab == 0 && !model.positions.isEmpty && model.canTrade && !onlyThisCoin {
-                    Button(L("Close all")) { model.perform { try await model.closeAll() } }
+                    Button(L("Close all")) {
+                        pending = PendingConfirm(title: L("Close all positions"),
+                                                 message: L("Market close of all positions: {0}", model.positions.count),
+                                                 button: L("Close all")) {
+                            model.perform { try await model.closeAll() }
+                        }
+                    }
                         .font(.caption.bold()).foregroundStyle(Color.hlRed)
                 }
             }
@@ -246,6 +281,7 @@ struct AccountPanel: View {
                 }
             }
         }
+        .confirmDialog($pending)
     }
 
     private var positions: [Position] { onlyThisCoin ? model.positions.filter { $0.coin == coin } : model.positions }
