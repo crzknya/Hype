@@ -135,7 +135,7 @@ struct TradeHeader: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        let px = model.mid(market.id)
+        let px = model.lastPrice(market.id)
         let change = market.prevDayPx > 0 && px > 0 ? px / market.prevDayPx - 1 : market.change24h
         VStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline) {

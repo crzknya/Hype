@@ -174,6 +174,16 @@ final class AppModel {
         if let m = mids[coin], m > 0 { return m }
         return marketById[coin]?.midPx ?? marketById[coin]?.markPx ?? 0
     }
+    /// Freshest price for display: last trade (same source as the chart's last candle) for the
+    /// selected market, then the order-book mid, then allMids.
+    func lastPrice(_ coin: String) -> Double {
+        if coin == selectedCoin {
+            if let t = trades.first { return t.px }
+            if let m = book.mid { return m }
+        }
+        return mid(coin)
+    }
+
     func position(_ coin: String) -> Position? { positions.first { $0.coin == coin } }
     func orders(for coin: String) -> [OpenOrder] { openOrders.filter { $0.coin == coin } }
 

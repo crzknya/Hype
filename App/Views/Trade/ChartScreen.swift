@@ -155,7 +155,7 @@ struct ChartScreen: View {
     @State private var showIndicators = false
 
     var body: some View {
-        let px = model.mid(market.id)
+        let px = model.lastPrice(market.id)
         let change = market.prevDayPx > 0 && px > 0 ? px / market.prevDayPx - 1 : market.change24h
         NavigationStack {
             VStack(spacing: 8) {

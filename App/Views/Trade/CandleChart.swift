@@ -33,6 +33,8 @@ struct CandleChart: View {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Canvas { ctx, sz in draw(ctx: &ctx, size: sz, now: timeline.date) }
                 }
+                // No cross-fade between redraws (it made the countdown text look doubled).
+                .transaction { $0.animation = nil }
                 if let info = crosshairInfo(size: size) {
                     Text(info)
                         .font(.system(size: 10, design: .monospaced))
@@ -214,7 +216,8 @@ struct CandleChart: View {
                 let remaining = Int(last.t / 1000 + intervalSeconds - now.timeIntervalSince1970)
                 if remaining > 0 {
                     let text = remaining >= 3600 ? Fmt.countdown(remaining) : String(format: "%02d:%02d", remaining / 60, remaining % 60)
-                    let ty = min(yy + 16, mainH - 7)
+                    // Below the price tag, or above it near the bottom edge.
+                    let ty = yy + 16 <= mainH - 7 ? yy + 16 : yy - 16
                     ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: ty - 7, width: axisW - 2, height: 14), cornerRadius: 3),
                              with: .color(color.opacity(0.3)))
                     ctx.draw(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(.white),
