@@ -165,7 +165,7 @@ struct ChartScreen: View {
                     .font(.caption2).foregroundStyle(Color.hlMuted)
                     .padding(.bottom, 4)
             }
-            .background(Color.hlBg)
+            .themedBackground()
             .navigationTitle(market.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

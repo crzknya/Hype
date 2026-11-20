@@ -253,7 +253,7 @@ struct MarketDepthScreen: View {
                     }
                 }
             }
-            .background(Color.hlBg)
+            .themedBackground()
             .navigationTitle(market.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

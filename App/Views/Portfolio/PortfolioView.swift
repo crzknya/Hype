@@ -30,7 +30,7 @@ struct PortfolioView: View {
                 }
                 .padding(12)
             }
-            .background(Color.hlBg)
+            .themedBackground()
             .refreshable {
                 await model.refreshAllAccounts()
                 await model.refreshHistory()
@@ -122,7 +122,7 @@ struct PortfolioView: View {
                 Text(title).font(.caption)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 10)
-            .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+            .themedCard()
         }
         .buttonStyle(.plain)
     }
@@ -215,7 +215,7 @@ struct PortfolioView: View {
                     }
                 }
                 .padding(10)
-                .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+                .themedCard()
             }
         case .ledger:
             if model.ledger.isEmpty { EmptyState(text: L("No deposits or transfers")) }
@@ -229,7 +229,7 @@ struct PortfolioView: View {
                     Text(Fmt.signedUsd(e.usdc)).font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.pnl(e.usdc))
                 }
                 .padding(10)
-                .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+                .themedCard()
             }
         }
     }
@@ -291,7 +291,7 @@ struct FundingSection: View {
                     Text(Fmt.signedUsd(f.usdc, 4)).font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.pnl(f.usdc))
                 }
                 .padding(10)
-                .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+                .themedCard()
             }
         }
     }

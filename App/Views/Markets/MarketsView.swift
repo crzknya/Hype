@@ -29,7 +29,7 @@ struct MarketsView: View {
 
                 MarketList(markets: list, onSelect: { model.select($0.id) })
             }
-            .background(Color.hlBg)
+            .themedBackground()
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Search coin"))
             .navigationTitle(L("Markets"))
             .navigationBarTitleDisplayMode(.inline)
@@ -184,7 +184,7 @@ struct MarketPickerSheet: View {
                     dismiss()
                 }
             }
-            .background(Color.hlBg)
+            .themedBackground()
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Search"))
             .navigationTitle(L("Select market"))
             .navigationBarTitleDisplayMode(.inline)

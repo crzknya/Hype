@@ -94,9 +94,9 @@ struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 10) { content }
-            .padding(12)
+            .padding(AppTheme.current == .neon ? 16 : 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 12))
+            .themedCard()
     }
 }
 
@@ -139,12 +139,20 @@ struct PrimaryButton: View {
         Button(action: action) {
             ZStack {
                 if busy { ProgressView().tint(.black) } else {
-                    Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(.black)
+                    Text(title).font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(AppTheme.current == .neon && color == .hlAccent ? .white : .black)
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 46)
-            .background(color.opacity(disabled ? 0.4 : 1), in: RoundedRectangle(cornerRadius: 10))
+            .background {
+                // Neon: the default accent button becomes a purple→cyan gradient.
+                if AppTheme.current == .neon && color == .hlAccent {
+                    RoundedRectangle(cornerRadius: 14).fill(LinearGradient.hlAccent).opacity(disabled ? 0.4 : 1)
+                } else {
+                    RoundedRectangle(cornerRadius: AppTheme.current == .neon ? 14 : 10).fill(color.opacity(disabled ? 0.4 : 1))
+                }
+            }
         }
         .disabled(disabled || busy)
     }
@@ -225,5 +233,20 @@ extension View {
         } message: { c in
             Text(c.message)
         }
+    }
+}
+
+
+extension View {
+    /// Card surface: flat in Classic; larger radius with a hairline border in Neon.
+    func themedCard(_ fill: Color = .hlCard) -> some View {
+        let r = AppTheme.current.cardRadius
+        return self
+            .background(fill, in: RoundedRectangle(cornerRadius: r, style: .continuous))
+            .overlay {
+                if AppTheme.current == .neon {
+                    RoundedRectangle(cornerRadius: r, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 1)
+                }
+            }
     }
 }

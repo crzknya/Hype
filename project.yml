@@ -2,7 +2,7 @@ name: Hype
 options:
   bundleIdPrefix: com.hype
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 packages:
   HyperCore:

@@ -73,7 +73,7 @@ struct PositionRow: View {
             }
         }
         .padding(12)
-        .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 12))
+        .themedCard()
         .confirmDialog($pending)
         .sheet(item: $sheet) { s in
             switch s {
@@ -154,7 +154,7 @@ struct OrderRow: View {
             }
         }
         .padding(10)
-        .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+        .themedCard()
         .sheet(isPresented: $editing) { ModifyOrderSheet(order: o) }
     }
 }
@@ -184,7 +184,7 @@ struct FillRow: View {
             }
         }
         .padding(10)
-        .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+        .themedCard()
     }
 }
 
@@ -219,7 +219,7 @@ struct TwapRow: View {
             .font(.system(size: 11, design: .monospaced))
         }
         .padding(10)
-        .background(Color.hlCard, in: RoundedRectangle(cornerRadius: 10))
+        .themedCard()
         .confirmDialog($pending)
     }
 }

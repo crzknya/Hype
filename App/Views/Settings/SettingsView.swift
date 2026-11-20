@@ -61,6 +61,13 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
+                Section(L("Theme")) {
+                    Picker(L("Theme"), selection: $model.theme) {
+                        ForEach(AppTheme.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section(L("Network")) {
                     Picker(L("Network"), selection: $model.network) {
                         ForEach(HLNetwork.allCases) { Text($0.title).tag($0) }
@@ -111,6 +118,8 @@ struct SettingsView: View {
                     Text(L("Unofficial client. Leveraged trading carries high risk.")).font(.caption).foregroundStyle(Color.hlMuted)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .themedBackground()
             .navigationTitle(L("Settings"))
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $adding) { AddAccountView() }

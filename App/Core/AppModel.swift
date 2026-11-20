@@ -42,6 +42,9 @@ final class AppModel {
     var indicators: [IndicatorConfig] = IndicatorConfig.defaults { didSet { save() } }
     var showVolume = true { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }
+    var theme: AppTheme = AppTheme.current {
+        didSet { AppTheme.current = theme; save(); ThemeAppearance.apply() }
+    }
     var language: AppLanguage = Loc.lang { didSet { Loc.lang = language; save() } }
 
     // MARK: Market data
@@ -144,6 +147,7 @@ final class AppModel {
         d.set(selectedCoin, forKey: "selectedCoin")
         d.set(interval.rawValue, forKey: "interval")
         d.set(language.rawValue, forKey: "language")
+        d.set(theme.rawValue, forKey: "theme")
         d.set(minTradeUsd, forKey: "minTradeUsd")
         d.set(try? JSONEncoder().encode(indicators), forKey: "indicators")
         d.set(showVolume, forKey: "showVolume")

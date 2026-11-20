@@ -36,7 +36,7 @@ struct ToolsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.hlBg)
+            .themedBackground()
             .navigationTitle(L("Tools"))
             .navigationBarTitleDisplayMode(.inline)
         }

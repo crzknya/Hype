@@ -9,16 +9,7 @@ struct HypeApp: App {
     init() {
         BackgroundAlerts.register()
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Color.hlBg)
-        UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
-        let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = UIColor(Color.hlBg)
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
+        ThemeAppearance.apply()
     }
 
     var body: some Scene {
@@ -32,5 +23,18 @@ struct HypeApp: App {
                     if p == .background { BackgroundAlerts.schedule() }
                 }
         }
+    }
+}
+
+/// Bars use the system iOS 26 Liquid Glass look; only the title colors are themed.
+enum ThemeAppearance {
+    static func apply() {
+        let nav = UINavigationBarAppearance()
+        nav.configureWithDefaultBackground()
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
+        let edge = UINavigationBarAppearance()
+        edge.configureWithTransparentBackground()
+        UINavigationBar.appearance().scrollEdgeAppearance = edge
     }
 }

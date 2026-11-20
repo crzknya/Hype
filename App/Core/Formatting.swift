@@ -109,14 +109,66 @@ enum Fmt {
     }
 }
 
+/// Visual themes. Classic is the original Hyperliquid-like look; Neon is a purple/cyan
+/// glassy style (inspired by Straddle).
+enum AppTheme: String, CaseIterable, Identifiable, Codable {
+    case classic, neon
+    var id: String { rawValue }
+    var title: String { self == .classic ? L("Classic") : L("Neon") }
+
+    /// Read by the color palette below; set from AppModel.theme.
+    static var current: AppTheme = AppTheme(rawValue: UserDefaults.standard.string(forKey: "theme") ?? "") ?? .classic
+
+    var cardRadius: CGFloat { self == .neon ? 18 : 12 }
+}
+
 extension Color {
-    static let hlGreen = Color(red: 0.16, green: 0.83, blue: 0.62)
-    static let hlRed = Color(red: 0.94, green: 0.29, blue: 0.36)
-    static let hlAccent = Color(red: 0.34, green: 0.92, blue: 0.80)
-    static let hlBg = Color(red: 0.04, green: 0.08, blue: 0.09)
-    static let hlCard = Color(red: 0.08, green: 0.13, blue: 0.14)
-    static let hlCard2 = Color(red: 0.11, green: 0.17, blue: 0.18)
-    static let hlMuted = Color(white: 0.55)
+    private static var neon: Bool { AppTheme.current == .neon }
+
+    static var hlGreen: Color { neon ? Color(red: 0.20, green: 0.90, blue: 0.68) : Color(red: 0.16, green: 0.83, blue: 0.62) }
+    static var hlRed: Color { neon ? Color(red: 1.0, green: 0.35, blue: 0.48) : Color(red: 0.94, green: 0.29, blue: 0.36) }
+    static var hlAccent: Color { neon ? Color(red: 0.62, green: 0.30, blue: 1.0) : Color(red: 0.34, green: 0.92, blue: 0.80) }
+    /// Secondary accent (cyan in Neon).
+    static var hlAccent2: Color { neon ? Color(red: 0.14, green: 0.87, blue: 0.96) : Color(red: 0.34, green: 0.92, blue: 0.80) }
+    static var hlBg: Color { neon ? Color(red: 0.025, green: 0.025, blue: 0.045) : Color(red: 0.04, green: 0.08, blue: 0.09) }
+    static var hlCard: Color { neon ? Color(red: 0.075, green: 0.07, blue: 0.11) : Color(red: 0.08, green: 0.13, blue: 0.14) }
+    static var hlCard2: Color { neon ? Color(red: 0.11, green: 0.10, blue: 0.15) : Color(red: 0.11, green: 0.17, blue: 0.18) }
+    static var hlMuted: Color { neon ? Color.white.opacity(0.62) : Color(white: 0.55) }
 
     static func pnl(_ x: Double) -> Color { x > 0 ? .hlGreen : x < 0 ? .hlRed : .primary }
+}
+
+extension LinearGradient {
+    /// Accent gradient (purple → cyan in Neon, flat accent in Classic).
+    static var hlAccent: LinearGradient {
+        LinearGradient(colors: [.hlAccent, .hlAccent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+/// Screen background: flat in Classic; dark with soft purple/teal glows in Neon.
+struct ThemedBackground: View {
+    var body: some View {
+        ZStack {
+            Color.hlBg
+            if AppTheme.current == .neon {
+                GeometryReader { g in
+                    Circle()
+                        .fill(Color.hlAccent.opacity(0.22))
+                        .frame(width: g.size.width * 0.9)
+                        .blur(radius: 90)
+                        .offset(x: g.size.width * 0.35, y: -g.size.width * 0.35)
+                    Circle()
+                        .fill(Color.hlAccent2.opacity(0.10))
+                        .frame(width: g.size.width * 0.8)
+                        .blur(radius: 100)
+                        .offset(x: -g.size.width * 0.3, y: g.size.height * 0.75)
+                }
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+extension View {
+    func themedBackground() -> some View { background(ThemedBackground()) }
 }

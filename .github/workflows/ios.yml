@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   core-tests:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Xcode version
@@ -21,12 +21,14 @@ jobs:
         run: swift test
 
   build-ipa:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: core-tests
     steps:
       - uses: actions/checkout@v4
       - name: Check localization keys
         run: python3 tools/check_localization.py
+      - name: Xcode version
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project

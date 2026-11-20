@@ -24,7 +24,7 @@ struct RootView: View {
                     .tag(AppTab.settings)
             }
             .tint(.hlAccent)
-            .id(model.language)
+            .id("\(model.language.rawValue)-\(model.theme.rawValue)")
 
             if let t = model.toast {
                 ToastView(toast: t)
@@ -40,7 +40,7 @@ struct RootView: View {
             }
         }
         .animation(.spring(duration: 0.3), value: model.toast)
-        .background(Color.hlBg.ignoresSafeArea())
+        .themedBackground()
     }
 }
 
