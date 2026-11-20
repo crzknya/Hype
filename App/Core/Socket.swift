@@ -34,7 +34,7 @@ final class HLSocket {
         t.maximumMessageSize = 16 * 1024 * 1024
         task = t
         t.resume()
-        receive(gen)
+        HLSocket.receiveLoop(t, gen: gen, inbox: inbox, owner: WeakSocketRef(self))
         for (_, s) in subs { send(.map([("method", .str("subscribe")), ("subscription", s)])) }
         pingTimer?.invalidate()
         pingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -94,11 +94,25 @@ final class HLSocket {
         task.send(.string(m.json())) { _ in }
     }
 
-    private func receive(_ gen: Int) {
-        task?.receive { [weak self] result in
-            // Parse JSON on the socket's background queue; only dispatch to the main actor.
-            var parsed: (String, JSON)?
-            if case .success(let msg) = result {
+    /// Messages waiting for the main actor. Read on a background queue so the socket is drained
+    /// continuously even while the UI is busy; snapshot-style channels keep only their newest message.
+    private let inbox = SocketInbox()
+
+    /// Per-channel message counts for the diagnostics line in Settings.
+    private(set) var channelCounts: [String: Int] = [:]
+
+    nonisolated private static func receiveLoop(_ t: URLSessionWebSocketTask, gen: Int, inbox: SocketInbox, owner: WeakSocketRef) {
+        t.receive { result in
+            switch result {
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let o = owner.value, gen == o.generation else { return }
+                        o.onError?(error.localizedDescription)
+                        o.reconnect()
+                    }
+                }
+            case .success(let msg):
                 var data: Data?
                 switch msg {
                 case .string(let s): data = Data(s.utf8)
@@ -106,26 +120,74 @@ final class HLSocket {
                 @unknown default: break
                 }
                 if let data, let json = try? JSON.parse(data) {
-                    parsed = (json["channel"].str, json["data"])
-                }
-            }
-            let message = parsed
-            Task { @MainActor in
-                guard let self, gen == self.generation else { return }
-                switch result {
-                case .failure(let error):
-                    self.onError?(error.localizedDescription)
-                    self.reconnect()
-                case .success:
-                    self.setConnected(true)
-                    self.reconnectDelay = 1
-                    // Ask for the next frame first so the socket keeps draining while we update the UI.
-                    self.receive(gen)
-                    if let (channel, data) = message, channel != "pong", channel != "subscriptionResponse" {
-                        self.onMessage?(channel, data)
+                    let channel = json["channel"].str
+                    if channel != "pong" && channel != "subscriptionResponse",
+                       inbox.push(channel, json["data"], gen: gen) {
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated { owner.value?.drain(gen) }
+                        }
                     }
                 }
+                // Keep reading immediately, independent of the main thread (stops if the socket object is gone).
+                if owner.value != nil { receiveLoop(t, gen: gen, inbox: inbox, owner: owner) }
             }
         }
+    }
+
+    private func drain(_ gen: Int) {
+        let batch = inbox.take()
+        guard gen == generation else { return }
+        setConnected(true)
+        reconnectDelay = 1
+        for (channel, data) in batch {
+            channelCounts[channel, default: 0] += 1
+            onMessage?(channel, data)
+        }
+    }
+}
+
+/// Immutable holder of a weak reference, safe to capture in @Sendable callbacks.
+final class WeakSocketRef: @unchecked Sendable {
+    weak var value: HLSocket?
+    init(_ v: HLSocket) { value = v }
+}
+
+/// Thread-safe buffer between the socket's background queue and the main actor.
+final class SocketInbox: @unchecked Sendable {
+    /// Channels where only the newest message matters (full snapshots / latest values).
+    private static let coalesced: Set<String> = ["l2Book", "bbo", "activeAssetCtx", "activeSpotAssetCtx", "activeAssetData"]
+    private let lock = NSLock()
+    private var queue: [(String, JSON)] = []
+    private var latest: [String: JSON] = [:]
+    private var latestOrder: [String] = []
+    private var scheduled = false
+
+    /// Adds a message; returns true when the caller should schedule a drain on the main thread.
+    func push(_ channel: String, _ data: JSON, gen: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if Self.coalesced.contains(channel) {
+            // l2Book/bbo/etc. are per-coin; key by coin so different coins don't overwrite each other.
+            let key = channel + "|" + data["coin"].str
+            if latest[key] == nil { latestOrder.append(key) }
+            latest[key] = data
+        } else {
+            queue.append((channel, data))
+        }
+        if scheduled { return false }
+        scheduled = true
+        return true
+    }
+
+    func take() -> [(String, JSON)] {
+        lock.lock(); defer { lock.unlock() }
+        var out = queue
+        for key in latestOrder {
+            if let d = latest[key] { out.append((String(key.split(separator: "|", maxSplits: 1)[0]), d)) }
+        }
+        queue.removeAll(keepingCapacity: true)
+        latest.removeAll(keepingCapacity: true)
+        latestOrder.removeAll(keepingCapacity: true)
+        scheduled = false
+        return out
     }
 }

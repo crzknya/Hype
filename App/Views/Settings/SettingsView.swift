@@ -83,6 +83,7 @@ struct SettingsView: View {
                         Text(e).font(.caption).foregroundStyle(Color.hlRed)
                     }
                     Button(L("Reconnect")) { model.reconnectSocket() }
+                    SocketRatesRow()
                 }
 
                 Section {
@@ -402,5 +403,27 @@ struct ReferralSection: View {
             }
             busy = false
         }
+    }
+}
+
+
+/// Live WebSocket message rates per channel (to compare with app.hyperliquid.xyz).
+struct SocketRatesRow: View {
+    @Environment(AppModel.self) private var model
+    @State private var previous: [String: Int] = [:]
+    @State private var text = "…"
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.monospaced())
+            .foregroundStyle(Color.hlMuted)
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(3))
+                    let (now, line) = model.socketRates(previous: previous, seconds: 3)
+                    previous = now
+                    text = line
+                }
+            }
     }
 }

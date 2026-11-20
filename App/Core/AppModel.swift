@@ -404,6 +404,16 @@ final class AppModel {
         }
     }
 
+    /// Messages per second by channel over the last few seconds (diagnostics in Settings).
+    func socketRates(previous: [String: Int], seconds: Double) -> ([String: Int], String) {
+        let now = socket.channelCounts
+        let parts = ["l2Book", "bbo", "trades", "allMids"].map { ch -> String in
+            let r = Double((now[ch] ?? 0) - (previous[ch] ?? 0)) / max(seconds, 0.1)
+            return "\(ch) \(Fmt.num(r, 1))/s"
+        }
+        return (now, parts.joined(separator: " · "))
+    }
+
     func reconnectSocket() {
         socket.disconnect()
         socket.connect()
