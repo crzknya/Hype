@@ -404,6 +404,8 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
+        "Default": "По умолчанию",
+        "Tap to add or remove timeframes from the toolbar. At least one stays.": "Нажимайте, чтобы добавить или убрать таймфреймы с панели. Хотя бы один остаётся.",
         "Close position": "Закрыть позицию",
         "Close {0}%": "Закрыть {0}%",
         "Delete account “{0}”?": "Удалить аккаунт «{0}»?",

@@ -21,6 +21,7 @@ struct ChartToolbar: View {
     @Environment(AppModel.self) private var model
     var onFullScreen: (() -> Void)? = nil
     var onIndicators: () -> Void
+    @State private var showTimeframes = false
 
     /// User-chosen intervals plus the active one (if it is hidden).
     private var shownIntervals: [CandleInterval] {
@@ -48,26 +49,7 @@ struct ChartToolbar: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Menu {
-                    Section(L("Timeframe")) {
-                        ForEach(CandleInterval.allCases) { iv in
-                            Button {
-                                model.interval = iv
-                            } label: {
-                                if model.interval == iv { Label(iv.rawValue, systemImage: "checkmark") } else { Text(iv.rawValue) }
-                            }
-                        }
-                    }
-                    Menu(L("Show in toolbar")) {
-                        ForEach(CandleInterval.allCases) { iv in
-                            Button {
-                                model.toggleIntervalVisibility(iv)
-                            } label: {
-                                if model.visibleIntervals.contains(iv) { Label(iv.rawValue, systemImage: "checkmark") } else { Text(iv.rawValue) }
-                            }
-                        }
-                    }
-                } label: {
+                Button { showTimeframes = true } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
                         .frame(width: 24, height: 26)
@@ -90,6 +72,71 @@ struct ChartToolbar: View {
         }
         .padding(.trailing, 10)
         .foregroundStyle(Color.hlAccent)
+        .sheet(isPresented: $showTimeframes) {
+            TimeframeSheet()
+                .presentationDetents([.height(430), .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+/// Timeframe picker: choose the active timeframe and which ones live in the toolbar.
+struct TimeframeSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 5)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L("Timeframe")).font(.headline)
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(CandleInterval.allCases) { iv in
+                    chip(iv.rawValue, selected: model.interval == iv, check: false) {
+                        model.interval = iv
+                        dismiss()
+                    }
+                }
+            }
+
+            HStack {
+                Text(L("Show in toolbar")).font(.headline)
+                Spacer()
+                Button(L("Default")) { model.visibleIntervals = CandleInterval.quick }
+                    .font(.caption.bold())
+            }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(CandleInterval.allCases) { iv in
+                    chip(iv.rawValue, selected: model.visibleIntervals.contains(iv), check: true) {
+                        model.toggleIntervalVisibility(iv)
+                        Haptics.tap(enabled: model.haptics)
+                    }
+                }
+            }
+            Text(L("Tap to add or remove timeframes from the toolbar. At least one stays."))
+                .font(.caption).foregroundStyle(Color.hlMuted)
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hlBg.ignoresSafeArea())
+    }
+
+    private func chip(_ title: String, selected: Bool, check: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                if check {
+                    Image(systemName: selected ? "checkmark" : "plus")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                Text(title).font(.system(size: 14, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .foregroundStyle(selected ? Color.hlAccent : Color.hlMuted)
+            .background(selected ? Color.hlAccent.opacity(0.18) : Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.hlAccent.opacity(0.6) : .clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 
