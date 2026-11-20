@@ -297,6 +297,7 @@ final class AppModel {
             .map([("type", .str("trades")), ("coin", .str(coin))]),
             .map([("type", .str("candle")), ("coin", .str(coin)), ("interval", .str(interval.rawValue))]),
             .map([("type", .str("activeAssetCtx")), ("coin", .str(coin))]),
+            .map([("type", .str("bbo")), ("coin", .str(coin))]),
         ]
         if let u = userAddress, marketById[coin]?.isSpot != true {
             subs.append(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(coin))]))
@@ -319,6 +320,7 @@ final class AppModel {
         socket.unsubscribe(.map([("type", .str("trades")), ("coin", .str(old))]))
         socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(old)), ("interval", .str(oldInterval.rawValue))]))
         socket.unsubscribe(.map([("type", .str("activeAssetCtx")), ("coin", .str(old))]))
+        socket.unsubscribe(.map([("type", .str("bbo")), ("coin", .str(old))]))
         if let u = userAddress { socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(old))])) }
         book = OrderBook(); trades = []; candles = []; activeAsset = ActiveAssetData()
         pendingPrice = nil
@@ -618,6 +620,21 @@ final class AppModel {
         case "allMids":
             for (k, v) in data["mids"].object { if let d = v.double { mids[k] = d } }
             checkAlerts()
+        case "bbo":
+            // Best bid/ask arrive on every change, between the (throttled) full l2Book snapshots.
+            guard data["coin"].str == selectedCoin else { return }
+            let pair = data["bbo"]
+            var b = book
+            if let px = pair[0]["px"].double, let sz = pair[0]["sz"].double {
+                b.bids.removeAll { $0.px >= px }
+                b.bids.insert(BookLevel(px: px, sz: sz, n: pair[0]["n"].int ?? 0), at: 0)
+            }
+            if let px = pair[1]["px"].double, let sz = pair[1]["sz"].double {
+                b.asks.removeAll { $0.px <= px }
+                b.asks.insert(BookLevel(px: px, sz: sz, n: pair[1]["n"].int ?? 0), at: 0)
+            }
+            // With price grouping (nSigFigs) the top level is aggregated, so raw bbo levels don't apply.
+            if bookSigFigs == nil { book = b }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
             let lv = data["levels"]

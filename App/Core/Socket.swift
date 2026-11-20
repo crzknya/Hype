@@ -96,28 +96,34 @@ final class HLSocket {
 
     private func receive(_ gen: Int) {
         task?.receive { [weak self] result in
+            // Parse JSON on the socket's background queue; only dispatch to the main actor.
+            var parsed: (String, JSON)?
+            if case .success(let msg) = result {
+                var data: Data?
+                switch msg {
+                case .string(let s): data = Data(s.utf8)
+                case .data(let d): data = d
+                @unknown default: break
+                }
+                if let data, let json = try? JSON.parse(data) {
+                    parsed = (json["channel"].str, json["data"])
+                }
+            }
+            let message = parsed
             Task { @MainActor in
                 guard let self, gen == self.generation else { return }
                 switch result {
                 case .failure(let error):
                     self.onError?(error.localizedDescription)
                     self.reconnect()
-                case .success(let msg):
+                case .success:
                     self.setConnected(true)
                     self.reconnectDelay = 1
-                    var data: Data?
-                    switch msg {
-                    case .string(let s): data = Data(s.utf8)
-                    case .data(let d): data = d
-                    @unknown default: break
-                    }
-                    if let data, let json = try? JSON.parse(data) {
-                        let channel = json["channel"].str
-                        if channel != "pong" && channel != "subscriptionResponse" {
-                            self.onMessage?(channel, json["data"])
-                        }
-                    }
+                    // Ask for the next frame first so the socket keeps draining while we update the UI.
                     self.receive(gen)
+                    if let (channel, data) = message, channel != "pong", channel != "subscriptionResponse" {
+                        self.onMessage?(channel, data)
+                    }
                 }
             }
         }
