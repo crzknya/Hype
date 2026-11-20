@@ -34,7 +34,7 @@ final class HLSocket {
         t.maximumMessageSize = 16 * 1024 * 1024
         task = t
         t.resume()
-        HLSocket.receiveLoop(t, gen: gen, inbox: inbox, owner: WeakSocketRef(self))
+        HLSocket.receiveLoop(t, gen: gen, inbox: inbox, l2: L2Assembler(), owner: WeakSocketRef(self))
         for (_, s) in subs { send(.map([("method", .str("subscribe")), ("subscription", s)])) }
         pingTimer?.invalidate()
         pingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -101,7 +101,7 @@ final class HLSocket {
     /// Per-channel message counts for the diagnostics line in Settings.
     private(set) var channelCounts: [String: Int] = [:]
 
-    nonisolated private static func receiveLoop(_ t: URLSessionWebSocketTask, gen: Int, inbox: SocketInbox, owner: WeakSocketRef) {
+    nonisolated private static func receiveLoop(_ t: URLSessionWebSocketTask, gen: Int, inbox: SocketInbox, l2: L2Assembler, owner: WeakSocketRef) {
         t.receive { result in
             switch result {
             case .failure(let error):
@@ -120,16 +120,22 @@ final class HLSocket {
                 @unknown default: break
                 }
                 if let data, let json = try? JSON.parse(data) {
-                    let channel = json["channel"].str
-                    if channel != "pong" && channel != "subscriptionResponse",
-                       inbox.push(channel, json["data"], gen: gen) {
+                    var channel = json["channel"].str
+                    var payload = json["data"]
+                    // The "l2" stream (what app.hyperliquid.xyz uses, ~2 updates/s) sends a snapshot and then
+                    // compressed deltas; assemble them here and hand the UI a ready "l2Book" snapshot.
+                    if channel == "l2" {
+                        if let book = l2.handle(payload) { channel = "l2Book"; payload = book } else { channel = "" }
+                    }
+                    if !channel.isEmpty, channel != "pong", channel != "subscriptionResponse",
+                       inbox.push(channel, payload, gen: gen) {
                         DispatchQueue.main.async {
                             MainActor.assumeIsolated { owner.value?.drain(gen) }
                         }
                     }
                 }
                 // Keep reading immediately, independent of the main thread (stops if the socket object is gone).
-                if owner.value != nil { receiveLoop(t, gen: gen, inbox: inbox, owner: owner) }
+                if owner.value != nil { receiveLoop(t, gen: gen, inbox: inbox, l2: l2, owner: owner) }
             }
         }
     }
@@ -143,6 +149,58 @@ final class HLSocket {
             channelCounts[channel, default: 0] += 1
             onMessage?(channel, data)
         }
+    }
+}
+
+/// Rebuilds order books from the "l2" stream: {"s": snapshot} or {"c": base64(raw DEFLATE(update))},
+/// update = {"c": coin, "t": time, "l": [bidUpserts, askUpserts], "r": [removedBidIndexes, removedAskIndexes]}.
+/// Removed indexes refer to the previous level arrays; upserts are {"p": px, "s": sz}. Same algorithm as the web app.
+/// Used only from the socket's serial receive callbacks.
+final class L2Assembler: @unchecked Sendable {
+    private struct Level { let px: String; let sz: String; let n: Int; let pxValue: Double }
+    private var books: [String: (bids: [Level], asks: [Level])] = [:]
+
+    func handle(_ data: JSON) -> JSON? {
+        let snap = data["s"]
+        if !snap.isNull {
+            let coin = snap["coin"].str
+            let lv = snap["levels"]
+            let bids = lv[0].array.map(Self.level), asks = lv[1].array.map(Self.level)
+            books[coin] = (bids, asks)
+            return Self.json(coin: coin, time: snap["time"], bids: bids, asks: asks)
+        }
+        guard let b64 = data["c"].string, let raw = Data(base64Encoded: b64),
+              let inflated = try? (raw as NSData).decompressed(using: .zlib) as Data,
+              let u = try? JSON.parse(inflated) else { return nil }
+        let coin = u["c"].str
+        guard let book = books[coin] else { return nil }
+        let bids = Self.apply(book.bids, upserts: u["l"][0], removed: u["r"][0], descending: true)
+        let asks = Self.apply(book.asks, upserts: u["l"][1], removed: u["r"][1], descending: false)
+        books[coin] = (bids, asks)
+        return Self.json(coin: coin, time: u["t"], bids: bids, asks: asks)
+    }
+
+    private static func level(_ j: JSON) -> Level {
+        let px = j["px"].str
+        return Level(px: px, sz: j["sz"].str, n: j["n"].int ?? 0, pxValue: Double(px) ?? 0)
+    }
+
+    private static func apply(_ levels: [Level], upserts: JSON, removed: JSON, descending: Bool) -> [Level] {
+        let gone = Set(removed.array.compactMap(\.int))
+        var byPx: [String: Level] = [:]
+        for (i, l) in levels.enumerated() where !gone.contains(i) { byPx[l.px] = l }
+        for u in upserts.array {
+            let px = u["p"].str
+            byPx[px] = Level(px: px, sz: u["s"].str, n: byPx[px]?.n ?? 0, pxValue: Double(px) ?? 0)
+        }
+        return byPx.values.sorted { descending ? $0.pxValue > $1.pxValue : $0.pxValue < $1.pxValue }
+    }
+
+    private static func json(coin: String, time: JSON, bids: [Level], asks: [Level]) -> JSON {
+        func side(_ ls: [Level]) -> JSON {
+            .array(ls.map { .object(["px": .string($0.px), "sz": .string($0.sz), "n": .number(Double($0.n))]) })
+        }
+        return .object(["coin": .string(coin), "time": time, "levels": .array([side(bids), side(asks)])])
     }
 }
 

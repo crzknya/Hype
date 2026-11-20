@@ -358,9 +358,11 @@ final class AppModel {
         applyBookSnapshot(j, fromSocket: false)
     }
 
+    /// Order-book subscription. "l2" is the stream app.hyperliquid.xyz uses (snapshot + compressed deltas,
+    /// ~2 updates/s); the documented "l2Book" stream only pushes a snapshot every ~10 s.
     private func l2Sub(_ coin: String, _ sig: Int?) -> MP {
-        var kv: [(String, MP)] = [("type", .str("l2Book")), ("coin", .str(coin))]
-        if let sig { kv.append(("nSigFigs", .int(Int64(sig)))) }
+        var kv: [(String, MP)] = [("type", .str("l2")), ("c", .str(coin))]
+        if let sig { kv.append(("s", .int(Int64(sig)))) }
         return .map(kv)
     }
 
