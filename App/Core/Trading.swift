@@ -48,7 +48,10 @@ extension AppModel {
     /// Aggressive IOC price for "market" execution.
     func marketPx(_ m: Market, isBuy: Bool, slippage s: Double? = nil) -> Decimal {
         var ref = mid(m.id)
-        if let b = book.bestBid, let a = book.bestAsk, m.id == selectedCoin { ref = isBuy ? a : b }
+        if m.id == selectedCoin {
+            if let q = bbo { ref = isBuy ? q.ask : q.bid }
+            else if let b = book.bestBid, let a = book.bestAsk { ref = isBuy ? a : b }
+        }
         return HLNum.marketPrice(mid: ref, isBuy: isBuy, slippage: s ?? slippage, szDecimals: m.szDecimals, isSpot: m.isSpot)
     }
 

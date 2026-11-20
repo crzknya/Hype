@@ -46,14 +46,16 @@ struct OrderBookPanel: View {
             .foregroundStyle(Color.hlMuted)
             .padding(.bottom, 2)
 
+            // Fixed row count so the panel never changes height when a side is thin.
+            ForEach(0..<max(0, rows - asks.count), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
             ForEach(Array(asks.enumerated().reversed()), id: \.element.id) { i, l in
                 row(l, cum: askCum[i], maxCum: maxCum, isBid: false, dec: dec)
             }
             HStack {
-                Text(model.book.mid.map { Fmt.price($0, decimals: dec) } ?? "—")
+                Text(model.topMid.map { Fmt.price($0, decimals: dec) } ?? "—")
                     .font(.system(size: wide ? 16 : 13, weight: .bold, design: .monospaced))
                 Spacer()
-                if let s = model.book.spread, let mid = model.book.mid, mid > 0 {
+                if let s = model.topSpread, let mid = model.topMid, mid > 0 {
                     Text(L("Spread") + " " + Fmt.pct(s / mid, 3, signed: false))
                         .font(.system(size: wide ? 11 : 9)).foregroundStyle(Color.hlMuted)
                 }
@@ -62,6 +64,7 @@ struct OrderBookPanel: View {
             ForEach(Array(bids.enumerated()), id: \.element.id) { i, l in
                 row(l, cum: bidCum[i], maxCum: maxCum, isBid: true, dec: dec)
             }
+            ForEach(0..<max(0, rows - bids.count), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
             if model.book.bids.isEmpty && model.book.asks.isEmpty {
                 ProgressView().padding()
             }

@@ -60,6 +60,8 @@ final class AppModel {
     var spotTokens: [Int: SpotToken] = [:]
     var mids: [String: Double] = [:]
     var book = OrderBook()
+    /// Live best bid/ask (bbo stream), fresher than the order-book snapshot.
+    var bbo: BestBidAsk?
     var trades: [PublicTrade] = []
     var candles: [Candle] = []
     var candlesLoading = false
@@ -180,12 +182,16 @@ final class AppModel {
         if let m = mids[coin], m > 0 { return m }
         return marketById[coin]?.midPx ?? marketById[coin]?.markPx ?? 0
     }
+    /// Mid and spread from the live bbo, falling back to the order-book snapshot.
+    var topMid: Double? { bbo.map { ($0.bid + $0.ask) / 2 } ?? book.mid }
+    var topSpread: Double? { bbo.map { $0.ask - $0.bid } ?? book.spread }
+
     /// Freshest price for display: last trade (same source as the chart's last candle) for the
     /// selected market, then the order-book mid, then allMids.
     func lastPrice(_ coin: String) -> Double {
         if coin == selectedCoin {
             if let t = trades.first { return t.px }
-            if let m = book.mid { return m }
+            if let m = topMid { return m }
         }
         return mid(coin)
     }
@@ -322,7 +328,7 @@ final class AppModel {
         socket.unsubscribe(.map([("type", .str("activeAssetCtx")), ("coin", .str(old))]))
         socket.unsubscribe(.map([("type", .str("bbo")), ("coin", .str(old))]))
         if let u = userAddress { socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(old))])) }
-        book = OrderBook(); trades = []; candles = []; activeAsset = ActiveAssetData()
+        book = OrderBook(); bbo = nil; trades = []; candles = []; activeAsset = ActiveAssetData()
         pendingPrice = nil
         subscribeCoin(selectedCoin)
         Task { await loadCandles() }
@@ -621,20 +627,11 @@ final class AppModel {
             for (k, v) in data["mids"].object { if let d = v.double { mids[k] = d } }
             checkAlerts()
         case "bbo":
-            // Best bid/ask arrive on every change, between the (throttled) full l2Book snapshots.
+            // Best bid/ask arrive on every change; used for the mid/spread line only. The ladder itself
+            // always comes from the latest consistent l2Book snapshot (patching it made levels vanish).
             guard data["coin"].str == selectedCoin else { return }
             let pair = data["bbo"]
-            var b = book
-            if let px = pair[0]["px"].double, let sz = pair[0]["sz"].double {
-                b.bids.removeAll { $0.px >= px }
-                b.bids.insert(BookLevel(px: px, sz: sz, n: pair[0]["n"].int ?? 0), at: 0)
-            }
-            if let px = pair[1]["px"].double, let sz = pair[1]["sz"].double {
-                b.asks.removeAll { $0.px <= px }
-                b.asks.insert(BookLevel(px: px, sz: sz, n: pair[1]["n"].int ?? 0), at: 0)
-            }
-            // With price grouping (nSigFigs) the top level is aggregated, so raw bbo levels don't apply.
-            if bookSigFigs == nil { book = b }
+            if let b = pair[0]["px"].double, let a = pair[1]["px"].double, a >= b { bbo = BestBidAsk(bid: b, ask: a) }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
             let lv = data["levels"]

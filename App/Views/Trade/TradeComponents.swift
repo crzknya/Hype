@@ -80,9 +80,9 @@ struct SideBySideBook: View {
                         .frame(width: 28, height: 22)
                 }
                 Spacer()
-                if let mid = model.book.mid {
+                if let mid = model.topMid {
                     Text(Fmt.price(mid, decimals: dec)).font(.system(size: 14, weight: .bold, design: .monospaced))
-                    if let s = model.book.spread, mid > 0 {
+                    if let s = model.topSpread, mid > 0 {
                         Text(Fmt.pct(s / mid, 3, signed: false)).font(.system(size: 10)).foregroundStyle(Color.hlMuted)
                     }
                 }
@@ -103,11 +103,13 @@ struct SideBySideBook: View {
                     ForEach(Array(bids.enumerated()), id: \.element.id) { i, l in
                         row(l, cum: bidCum[i], maxCum: maxCum, isBid: true, dec: dec)
                     }
+                    ForEach(0..<max(0, rows - bids.count), id: \.self) { _ in Color.clear.frame(height: 20) }
                 }
                 VStack(spacing: 1) {
                     ForEach(Array(asks.enumerated()), id: \.element.id) { i, l in
                         row(l, cum: askCum[i], maxCum: maxCum, isBid: false, dec: dec)
                     }
+                    ForEach(0..<max(0, rows - asks.count), id: \.self) { _ in Color.clear.frame(height: 20) }
                 }
             }
             if bids.isEmpty && asks.isEmpty { ProgressView().padding() }

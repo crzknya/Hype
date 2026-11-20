@@ -265,7 +265,7 @@ struct TradeHeader: View {
                         Stat(title: L("Open interest"), value: Fmt.compactUsd(market.openInterestUsd))
                     }
                     Stat(title: L("24h volume"), value: Fmt.compactUsd(market.dayNtlVlm))
-                    if let s = model.book.spread, let mid = model.book.mid, mid > 0 {
+                    if let s = model.topSpread, let mid = model.topMid, mid > 0 {
                         Stat(title: L("Spread"), value: Fmt.pct(s / mid, 3, signed: false))
                     }
                 }

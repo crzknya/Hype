@@ -329,6 +329,11 @@ struct OrderBook: Equatable {
     }
 }
 
+struct BestBidAsk: Equatable {
+    let bid: Double
+    let ask: Double
+}
+
 struct PublicTrade: Identifiable, Hashable {
     let px: Double
     let sz: Double
