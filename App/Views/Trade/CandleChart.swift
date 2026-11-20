@@ -24,6 +24,9 @@ struct CandleChart: View {
     /// Manual vertical zoom of the price scale (1 = auto). >1 compresses, <1 stretches.
     @State private var yScale: Double = 1
     @State private var yScaleStart: Double?
+    /// Vertical pan as a fraction of the visible price range (0 = auto-centered).
+    @State private var yPan: Double = 0
+    @State private var yPanStart: Double?
 
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 14
@@ -48,17 +51,24 @@ struct CandleChart: View {
                 priceAxisControl(size: size)
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 8)
+            // Pan in both directions (wins over the page scroll while the finger is on the chart).
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 6)
                     .onChanged { v in
                         guard crosshair == nil else { return }
-                        if dragStartOffset == nil { dragStartOffset = offset }
+                        if dragStartOffset == nil { dragStartOffset = offset; yPanStart = yPan }
                         let cw = (size.width - axisW) / CGFloat(visible)
                         let delta = Int((v.translation.width / max(cw, 1)).rounded())
                         offset = clampOffset((dragStartOffset ?? 0) + delta)
+                        let mainH = max(1, layout(size).mainH)
+                        yPan = (yPanStart ?? 0) + Double(v.translation.height / mainH)
                     }
-                    .onEnded { _ in dragStartOffset = nil }
+                    .onEnded { _ in dragStartOffset = nil; yPanStart = nil }
             )
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                // Back to the default view: latest candles, auto price scale.
+                offset = 0; yPan = 0; yScale = 1
+            })
             .simultaneousGesture(
                 MagnifyGesture()
                     .onChanged { v in
@@ -95,15 +105,19 @@ struct CandleChart: View {
                     }
                     .onEnded { _ in yScaleStart = nil }
             )
-            .simultaneousGesture(TapGesture(count: 2).onEnded { yScale = 1 })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { yScale = 1; yPan = 0 })
             .accessibilityLabel(L("Price scale"))
     }
 
-    private func clampOffset(_ o: Int) -> Int { max(0, min(o, max(0, candles.count - 10))) }
+    /// Negative offset = empty space to the right of the latest candle (up to half the screen).
+    private func clampOffset(_ o: Int) -> Int { max(-visible / 2, min(o, max(0, candles.count - 10))) }
+
+    /// Empty candle slots shown to the right of the latest candle.
+    private var futureSlots: Int { max(0, -offset) }
 
     private var range: Range<Int> {
-        let end = max(0, candles.count - offset)
-        let start = max(0, end - visible)
+        let end = max(0, candles.count - max(0, offset))
+        let start = max(0, end - (visible - futureSlots))
         return start..<end
     }
 
@@ -134,7 +148,7 @@ struct CandleChart: View {
         let plotW = L0.plotW
         let s = candles[r]
         let cw = plotW / CGFloat(visible)
-        let leftPad = CGFloat(visible - s.count) * cw
+        let leftPad = CGFloat(visible - s.count - futureSlots) * cw
         let dec = decimals ?? Fmt.autoDecimals(s.last?.c ?? 1)
         func x(_ i: Int) -> CGFloat { leftPad + CGFloat(i - r.lowerBound) * cw + cw / 2 }
 
@@ -157,6 +171,15 @@ struct CandleChart: View {
                 let c = (hi + lo) / 2, half = (hi - lo) / 2 * yScale
                 lo = c - half; hi = c + half
             }
+        if yPan != 0 {
+            if log {
+                let shift = (Foundation.log(hi) - Foundation.log(lo)) * yPan
+                lo *= Foundation.exp(shift); hi *= Foundation.exp(shift)
+            } else {
+                let shift = (hi - lo) * yPan
+                lo += shift; hi += shift
+            }
+        }
         }
         if log {
             let span = Foundation.log(hi / lo)
@@ -179,7 +202,7 @@ struct CandleChart: View {
 
         // Axis rows taken by the last-price tag and the countdown under it.
         var reservedY: [CGFloat] = []
-        if let last = s.last, offset == 0 {
+        if let last = s.last, offset <= 0 {
             let ly = y(last.c)
             reservedY = [ly, ly + 16 <= mainH - 7 ? ly + 16 : ly - 16]
         }
@@ -198,7 +221,7 @@ struct CandleChart: View {
                          at: CGPoint(x: plotW + 4, y: labelY), anchor: .leading)
             }
         }
-        if yScale != 1 {
+        if yScale != 1 || yPan != 0 {
             ctx.draw(Text(L("Double-tap: auto")).font(.system(size: 8)).foregroundColor(.hlMuted),
                      at: CGPoint(x: plotW + axisW / 2, y: mainH - 4), anchor: .bottom)
         }
@@ -249,7 +272,7 @@ struct CandleChart: View {
         }
 
         // Last price tag
-        if let last = s.last, offset == 0 {
+        if let last = s.last, offset <= 0 {
             let yy = y(last.c)
             let color = last.c >= last.o ? Color.hlGreen : Color.hlRed
             var path = Path()
@@ -442,7 +465,7 @@ struct CandleChart: View {
         guard !r.isEmpty else { return nil }
         let plotW = size.width - axisW
         let cw = plotW / CGFloat(visible)
-        let leftPad = CGFloat(visible - r.count) * cw
+        let leftPad = CGFloat(visible - r.count - futureSlots) * cw
         let idx = r.lowerBound + Int((p.x - leftPad) / cw)
         guard r.contains(idx) else { return nil }
         let c = candles[idx]
