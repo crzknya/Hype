@@ -48,22 +48,30 @@ struct CandleChart: View {
                         .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
                         .padding(4)
                 }
-                priceAxisControl(size: size)
             }
             .contentShape(Rectangle())
             // Pan in both directions (wins over the page scroll while the finger is on the chart).
+            // One drag gesture for the whole chart: started on the price axis it scales the price
+            // range (TradingView-style), elsewhere it pans in both directions.
             .highPriorityGesture(
-                DragGesture(minimumDistance: 6)
+                DragGesture(minimumDistance: 4)
                     .onChanged { v in
                         guard crosshair == nil else { return }
-                        if dragStartOffset == nil { dragStartOffset = offset; yPanStart = yPan }
-                        let cw = (size.width - axisW) / CGFloat(visible)
-                        let delta = Int((v.translation.width / max(cw, 1)).rounded())
-                        offset = clampOffset((dragStartOffset ?? 0) + delta)
                         let mainH = max(1, layout(size).mainH)
-                        yPan = (yPanStart ?? 0) + Double(v.translation.height / mainH)
+                        let onAxis = v.startLocation.x > size.width - axisW && v.startLocation.y < mainH
+                        if onAxis {
+                            if yScaleStart == nil { yScaleStart = yScale }
+                            // Drag down compresses (wider range), drag up stretches.
+                            yScale = min(20, max(0.05, (yScaleStart ?? 1) * exp(Double(v.translation.height) / 160)))
+                        } else {
+                            if dragStartOffset == nil { dragStartOffset = offset; yPanStart = yPan }
+                            let cw = (size.width - axisW) / CGFloat(visible)
+                            let delta = Int((v.translation.width / max(cw, 1)).rounded())
+                            offset = clampOffset((dragStartOffset ?? 0) + delta)
+                            yPan = (yPanStart ?? 0) + Double(v.translation.height / mainH)
+                        }
                     }
-                    .onEnded { _ in dragStartOffset = nil; yPanStart = nil }
+                    .onEnded { _ in dragStartOffset = nil; yPanStart = nil; yScaleStart = nil }
             )
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 // Back to the default view: latest candles, auto price scale.
@@ -87,26 +95,6 @@ struct CandleChart: View {
                     .onEnded { _ in crosshair = nil }
             )
         }
-    }
-
-    /// TradingView-style price axis: drag up/down to stretch/compress, double-tap for auto scale.
-    private func priceAxisControl(size: CGSize) -> some View {
-        let mainH = layout(size).mainH
-        return Color.clear
-            .frame(width: axisW, height: max(0, mainH))
-            .contentShape(Rectangle())
-            .offset(x: size.width - axisW)
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { v in
-                        if yScaleStart == nil { yScaleStart = yScale }
-                        // Drag down compresses (wider range), drag up stretches.
-                        yScale = min(20, max(0.05, (yScaleStart ?? 1) * exp(Double(v.translation.height) / 160)))
-                    }
-                    .onEnded { _ in yScaleStart = nil }
-            )
-            .simultaneousGesture(TapGesture(count: 2).onEnded { yScale = 1; yPan = 0 })
-            .accessibilityLabel(L("Price scale"))
     }
 
     /// Negative offset = empty space to the right of the latest candle (up to half the screen).
@@ -171,6 +159,7 @@ struct CandleChart: View {
                 let c = (hi + lo) / 2, half = (hi - lo) / 2 * yScale
                 lo = c - half; hi = c + half
             }
+        }
         if yPan != 0 {
             if log {
                 let shift = (Foundation.log(hi) - Foundation.log(lo)) * yPan
@@ -179,7 +168,6 @@ struct CandleChart: View {
                 let shift = (hi - lo) * yPan
                 lo += shift; hi += shift
             }
-        }
         }
         if log {
             let span = Foundation.log(hi / lo)
@@ -220,10 +208,6 @@ struct CandleChart: View {
                 ctx.draw(Text(Fmt.price(p, decimals: dec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
                          at: CGPoint(x: plotW + 4, y: labelY), anchor: .leading)
             }
-        }
-        if yScale != 1 || yPan != 0 {
-            ctx.draw(Text(L("Double-tap: auto")).font(.system(size: 8)).foregroundColor(.hlMuted),
-                     at: CGPoint(x: plotW + axisW / 2, y: mainH - 4), anchor: .bottom)
         }
 
         // Main pane (clipped)

@@ -404,8 +404,6 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
-        "Double-tap: auto": "2× тап: авто",
-        "Price scale": "Шкала цены",
         "Order sheet": "Шторка ордера",
         "Two tabs": "Две вкладки",
         "Chart, order book and positions full width; Long/Short open the order form in a sheet.": "График, стакан и позиции на всю ширину; Long/Short открывают форму ордера в шторке.",
