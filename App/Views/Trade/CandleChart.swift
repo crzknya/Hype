@@ -21,6 +21,9 @@ struct CandleChart: View {
     @State private var dragStartOffset: Int?
     @State private var zoomStart: Int?
     @State private var crosshair: CGPoint?
+    /// Manual vertical zoom of the price scale (1 = auto). >1 compresses, <1 stretches.
+    @State private var yScale: Double = 1
+    @State private var yScaleStart: Double?
 
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 14
@@ -42,6 +45,7 @@ struct CandleChart: View {
                         .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
                         .padding(4)
                 }
+                priceAxisControl(size: size)
             }
             .contentShape(Rectangle())
             .gesture(
@@ -73,6 +77,26 @@ struct CandleChart: View {
                     .onEnded { _ in crosshair = nil }
             )
         }
+    }
+
+    /// TradingView-style price axis: drag up/down to stretch/compress, double-tap for auto scale.
+    private func priceAxisControl(size: CGSize) -> some View {
+        let mainH = layout(size).mainH
+        return Color.clear
+            .frame(width: axisW, height: max(0, mainH))
+            .contentShape(Rectangle())
+            .offset(x: size.width - axisW)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { v in
+                        if yScaleStart == nil { yScaleStart = yScale }
+                        // Drag down compresses (wider range), drag up stretches.
+                        yScale = min(20, max(0.05, (yScaleStart ?? 1) * exp(Double(v.translation.height) / 160)))
+                    }
+                    .onEnded { _ in yScaleStart = nil }
+            )
+            .simultaneousGesture(TapGesture(count: 2).onEnded { yScale = 1 })
+            .accessibilityLabel(L("Price scale"))
     }
 
     private func clampOffset(_ o: Int) -> Int { max(0, min(o, max(0, candles.count - 10))) }
@@ -125,6 +149,15 @@ struct CandleChart: View {
         }
         if hi <= lo { hi = lo * 1.01 + 1e-9; lo = lo * 0.99 }
         let log = logScale && lo > 0
+        if yScale != 1 {
+            if log {
+                let c = (Foundation.log(hi) + Foundation.log(lo)) / 2, half = (Foundation.log(hi) - Foundation.log(lo)) / 2 * yScale
+                lo = Foundation.exp(c - half); hi = Foundation.exp(c + half)
+            } else {
+                let c = (hi + lo) / 2, half = (hi - lo) / 2 * yScale
+                lo = c - half; hi = c + half
+            }
+        }
         if log {
             let span = Foundation.log(hi / lo)
             lo = lo * Foundation.exp(-span * 0.06); hi = hi * Foundation.exp(span * 0.06)
@@ -144,6 +177,13 @@ struct CandleChart: View {
             return hi - f * (hi - lo)
         }
 
+        // Axis rows taken by the last-price tag and the countdown under it.
+        var reservedY: [CGFloat] = []
+        if let last = s.last, offset == 0 {
+            let ly = y(last.c)
+            reservedY = [ly, ly + 16 <= mainH - 7 ? ly + 16 : ly - 16]
+        }
+
         // Grid + price axis
         let gridColor = Color.white.opacity(0.06)
         for k in 0...4 {
@@ -152,8 +192,15 @@ struct CandleChart: View {
             var path = Path()
             path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
             ctx.stroke(path, with: .color(gridColor), lineWidth: 1)
-            ctx.draw(Text(Fmt.price(p, decimals: dec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
-                     at: CGPoint(x: plotW + 4, y: min(max(yy, 6), mainH - 6)), anchor: .leading)
+            let labelY = min(max(yy, 6), mainH - 6)
+            if !reservedY.contains(where: { abs($0 - labelY) < 13 }) {
+                ctx.draw(Text(Fmt.price(p, decimals: dec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
+                         at: CGPoint(x: plotW + 4, y: labelY), anchor: .leading)
+            }
+        }
+        if yScale != 1 {
+            ctx.draw(Text(L("Double-tap: auto")).font(.system(size: 8)).foregroundColor(.hlMuted),
+                     at: CGPoint(x: plotW + axisW / 2, y: mainH - 4), anchor: .bottom)
         }
 
         // Main pane (clipped)
@@ -218,8 +265,10 @@ struct CandleChart: View {
                     let text = remaining >= 3600 ? Fmt.countdown(remaining) : String(format: "%02d:%02d", remaining / 60, remaining % 60)
                     // Below the price tag, or above it near the bottom edge.
                     let ty = yy + 16 <= mainH - 7 ? yy + 16 : yy - 16
-                    ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: ty - 7, width: axisW - 2, height: 14), cornerRadius: 3),
-                             with: .color(color.opacity(0.3)))
+                    // Opaque so nothing on the axis shows through.
+                    let box = Path(roundedRect: CGRect(x: plotW + 1, y: ty - 7, width: axisW - 2, height: 14), cornerRadius: 3)
+                    ctx.fill(box, with: .color(.hlBg))
+                    ctx.fill(box, with: .color(color.opacity(0.3)))
                     ctx.draw(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(.white),
                              at: CGPoint(x: plotW + 4, y: ty), anchor: .leading)
                 }
