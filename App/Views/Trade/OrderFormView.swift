@@ -4,6 +4,7 @@ import HyperCore
 struct OrderFormView: View {
     @Environment(AppModel.self) private var model
     let market: Market
+    let bar: OrderBarState
 
     @State private var isBuy = true
     @State private var type: OrderTypeUI = .market
@@ -70,9 +71,6 @@ struct OrderFormView: View {
             if tpslOn && !market.isSpot && !type.isTrigger && type != .scale && type != .twap { tpslFields }
             summary
 
-            PrimaryButton(title: buttonTitle, color: isBuy ? .hlGreen : .hlRed, busy: busy, disabled: !model.canTrade) {
-                submit()
-            }
             if !model.canTrade {
                 Text(model.account == nil ? L("Add an account in Settings") : L("Watch-only account"))
                     .font(.caption2).foregroundStyle(Color.hlMuted)
@@ -90,7 +88,14 @@ struct OrderFormView: View {
             }
             model.pendingPrice = nil
         }
-        .onChange(of: market.id) { _, _ in reset() }
+        .onChange(of: market.id) { _, _ in reset(); syncBar() }
+        .onAppear { syncBar() }
+        .onChange(of: isBuy) { _, _ in syncBar() }
+        .onChange(of: type) { _, _ in syncBar() }
+        .onChange(of: busy) { _, _ in syncBar() }
+        .onChange(of: model.canTrade) { _, _ in syncBar() }
+        .onChange(of: sizeText) { _, _ in syncBar() }
+        .onChange(of: priceText) { _, _ in syncBar() }
         .onChange(of: riskOn) { _, on in if on { tpslOn = true } }
         .onChange(of: tpslOn) { _, on in if !on { riskOn = false } }
         .onChange(of: type) { _, t in
@@ -346,6 +351,17 @@ struct OrderFormView: View {
         guard dist > 0 else { return }
         let sz = risk / dist
         sizeText = sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(sz, market.szDecimals)
+    }
+
+    /// Publishes the primary action to the pinned bottom bar.
+    private func syncBar() {
+        bar.title = buttonTitle
+        bar.isBuy = isBuy
+        bar.busy = busy
+        bar.enabled = model.canTrade
+        let value = sizeCoin * refPrice
+        bar.detail = value > 0 ? "\(type.title) · \(Fmt.usd(value))" : ""
+        bar.submit = { submit() }
     }
 
     private var buttonTitle: String {

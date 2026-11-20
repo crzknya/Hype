@@ -41,6 +41,7 @@ final class AppModel {
     var minTradeUsd: Double = 0 { didSet { save() } }
     var indicators: [IndicatorConfig] = IndicatorConfig.defaults { didSet { save() } }
     var showVolume = true { didSet { save() } }
+    var chartHeight: Double = 250 { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }
     var theme: AppTheme = AppTheme.current {
         didSet { AppTheme.current = theme; save(); ThemeAppearance.apply() }
@@ -113,6 +114,7 @@ final class AppModel {
         minTradeUsd = d.double(forKey: "minTradeUsd")
         if let data = d.data(forKey: "indicators"), let ind = try? JSONDecoder().decode([IndicatorConfig].self, from: data) { indicators = ind }
         if d.object(forKey: "showVolume") != nil { showVolume = d.bool(forKey: "showVolume") }
+        if d.object(forKey: "chartHeight") != nil { chartHeight = min(560, max(140, d.double(forKey: "chartHeight"))) }
         if let iv = d.stringArray(forKey: "visibleIntervals") {
             let parsed = iv.compactMap(CandleInterval.init(rawValue:))
             if !parsed.isEmpty { visibleIntervals = parsed }
@@ -151,6 +153,7 @@ final class AppModel {
         d.set(minTradeUsd, forKey: "minTradeUsd")
         d.set(try? JSONEncoder().encode(indicators), forKey: "indicators")
         d.set(showVolume, forKey: "showVolume")
+        d.set(chartHeight, forKey: "chartHeight")
         d.set(visibleIntervals.map(\.rawValue), forKey: "visibleIntervals")
     }
 

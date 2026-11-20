@@ -404,6 +404,7 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
+        "Resize chart": "Изменить высоту графика",
         "Classic": "Классическая",
         "Neon": "Неон",
         "Theme": "Тема",

@@ -7,6 +7,8 @@ struct TradeView: View {
     @State private var depthFullScreen = false
     @State private var chartFullScreen = false
     @State private var showIndicators = false
+    @State private var orderBar = OrderBarState()
+    @State private var dragStartHeight: Double?
 
     var body: some View {
         @Bindable var model = model
@@ -17,7 +19,7 @@ struct TradeView: View {
                         TradeHeader(market: m)
                         if model.showChart { chartSection(m) }
                         HStack(alignment: .top, spacing: 8) {
-                            OrderFormView(market: m)
+                            OrderFormView(market: m, bar: orderBar)
                                 .frame(maxWidth: .infinity)
                             VStack(spacing: 6) {
                                 Picker("", selection: $rightPanel) {
@@ -48,6 +50,9 @@ struct TradeView: View {
                 .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .bottom) {
+                if model.selectedMarket != nil { OrderActionBar(bar: orderBar) }
+            }
             .themedBackground()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -92,9 +97,32 @@ struct TradeView: View {
         VStack(spacing: 6) {
             ChartToolbar(onFullScreen: { chartFullScreen = true }, onIndicators: { showIndicators = true })
             PriceChartView(market: m)
-                .frame(height: 250)
+                .frame(height: model.chartHeight)
                 .padding(.horizontal, 6)
+            resizeHandle
         }
+    }
+
+    /// Drag to change the chart height (persisted).
+    private var resizeHandle: some View {
+        ZStack {
+            Color.clear.frame(height: 22)
+            Capsule().fill(Color.hlMuted.opacity(0.5)).frame(width: 44, height: 5)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { v in
+                    if dragStartHeight == nil { dragStartHeight = model.chartHeight }
+                    model.chartHeight = min(560, max(140, (dragStartHeight ?? 250) + v.translation.height))
+                }
+                .onEnded { _ in
+                    dragStartHeight = nil
+                    Haptics.tap(enabled: model.haptics)
+                }
+        )
+        .accessibilityLabel(L("Resize chart"))
     }
 
 }
@@ -164,5 +192,37 @@ extension AppModel {
             lines.append(PriceLine(price: a.price, color: .yellow, label: "🔔"))
         }
         return lines
+    }
+}
+
+
+/// The order form publishes its primary action here so the button can be pinned above the tab bar.
+@Observable
+final class OrderBarState {
+    var title = ""
+    var isBuy = true
+    var busy = false
+    var enabled = false
+    var detail = ""
+    var submit: () -> Void = {}
+}
+
+/// Pinned "Long / Short" button at the bottom of the trade screen.
+struct OrderActionBar: View {
+    let bar: OrderBarState
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if !bar.detail.isEmpty {
+                Text(bar.detail).font(.caption2.monospacedDigit()).foregroundStyle(Color.hlMuted)
+            }
+            PrimaryButton(title: bar.title, color: bar.isBuy ? .hlGreen : .hlRed, busy: bar.busy, disabled: !bar.enabled) {
+                bar.submit()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(.ultraThinMaterial)
     }
 }
