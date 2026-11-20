@@ -225,7 +225,9 @@ final class AppModel {
         loading = false
         guard loops.isEmpty else { return }
         socket.connect()
-        socket.subscribe(.map([("type", .str("allMids"))]))
+        // Prices for every market (perps, HIP-3, spot) once a second — the stream the web app uses;
+        // the documented allMids stream only pushes every ~10 s.
+        socket.subscribe(.map([("type", .str("fastAssetCtxs"))]))
         subscribeCoin(selectedCoin)
         subscribeUser()
         loops.append(Task { [weak self] in
@@ -336,6 +338,15 @@ final class AppModel {
         bookReceivedAt = Date()
     }
 
+    private func scheduleMidsFlush() {
+        guard !midsFlushScheduled else { return }
+        midsFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.flushMids()
+        }
+    }
+
     private func flushMids() {
         midsFlushScheduled = false
         guard !pendingMids.isEmpty else { return }
@@ -409,7 +420,7 @@ final class AppModel {
     /// Messages per second by channel over the last few seconds (diagnostics in Settings).
     func socketRates(previous: [String: Int], seconds: Double) -> ([String: Int], String) {
         let now = socket.channelCounts
-        let parts = ["l2Book", "bbo", "trades", "allMids"].map { ch -> String in
+        let parts = ["l2Book", "bbo", "trades", "fastAssetCtxs"].map { ch -> String in
             let r = Double((now[ch] ?? 0) - (previous[ch] ?? 0)) / max(seconds, 0.1)
             return "\(ch) \(Fmt.num(r, 1))/s"
         }
@@ -465,7 +476,7 @@ final class AppModel {
             }
             let newNames = Set(dexes.map(\.name)).subtracting(perpDexs.map(\.name))
             perpDexs = dexes
-            for n in newNames { socket.subscribe(.map([("type", .str("allMids")), ("dex", .str(n))])) }
+            _ = newNames  // HIP-3 prices come from fastAssetCtxs as well
         }
         var out: [Market] = []
         for (k, d) in perpDexs.enumerated() {
@@ -682,17 +693,16 @@ final class AppModel {
 
     private func handle(channel: String, data: JSON) {
         switch channel {
-        case "allMids":
-            // Many allMids streams (main + every HIP-3 dex): buffer and publish at most twice a second
-            // so they don't keep the main thread busy ahead of order-book and trade messages.
-            for (k, v) in data["mids"].object { if let d = v.double { pendingMids[k] = d } }
-            if !midsFlushScheduled {
-                midsFlushScheduled = true
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    self?.flushMids()
-                }
+        case "fastAssetCtxs":
+            // {coin: {markPx, midPx}}; later messages may carry only changed coins.
+            for (k, v) in data.object {
+                if let d = v["midPx"].double ?? v["markPx"].double { pendingMids[k] = d }
             }
+            scheduleMidsFlush()
+        case "allMids":
+            // Kept for compatibility; prices normally come from fastAssetCtxs. Buffered like it.
+            for (k, v) in data["mids"].object { if let d = v.double { pendingMids[k] = d } }
+            scheduleMidsFlush()
         case "bbo":
             // Best bid/ask arrive on every change; used for the mid/spread line only. The ladder itself
             // always comes from the latest consistent l2Book snapshot (patching it made levels vanish).

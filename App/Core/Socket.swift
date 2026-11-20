@@ -127,6 +127,14 @@ final class HLSocket {
                     if channel == "l2" {
                         if let book = l2.handle(payload) { channel = "l2Book"; payload = book } else { channel = "" }
                     }
+                    // fastAssetCtxs arrives compressed (base64 raw DEFLATE JSON) like l2 deltas.
+                    if channel == "fastAssetCtxs", let b64 = payload.string {
+                        if let raw = Data(base64Encoded: b64),
+                           let inflated = try? (raw as NSData).decompressed(using: .zlib) as Data,
+                           let decoded = try? JSON.parse(inflated) {
+                            payload = decoded
+                        } else { channel = "" }
+                    }
                     if !channel.isEmpty, channel != "pong", channel != "subscriptionResponse",
                        inbox.push(channel, payload, gen: gen) {
                         DispatchQueue.main.async {
