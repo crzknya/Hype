@@ -13,6 +13,8 @@ struct CandleChart: View {
     var layers = ChartLayers()
     var decimals: Int? = nil
     var showVolume = true
+    var logScale = false
+    var intervalSeconds: Double = 3600
 
     @State private var visible = 70
     @State private var offset = 0          // candles hidden on the right
@@ -27,7 +29,10 @@ struct CandleChart: View {
         GeometryReader { geo in
             let size = geo.size
             ZStack(alignment: .topLeading) {
-                Canvas { ctx, sz in draw(ctx: &ctx, size: sz) }
+                // Redraw every second for the candle-close countdown.
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    Canvas { ctx, sz in draw(ctx: &ctx, size: sz, now: timeline.date) }
+                }
                 if let info = crosshairInfo(size: size) {
                     Text(info)
                         .font(.system(size: 10, design: .monospaced))
@@ -96,7 +101,7 @@ struct CandleChart: View {
         return Layout(plotW: size.width - axisW, mainH: mainH, volTop: mainH, volH: volH, paneTops: tops, paneH: paneH)
     }
 
-    private func draw(ctx: inout GraphicsContext, size: CGSize) {
+    private func draw(ctx: inout GraphicsContext, size: CGSize, now: Date) {
         let r = range
         guard !r.isEmpty else { return }
         let L0 = layout(size)
@@ -117,15 +122,30 @@ struct CandleChart: View {
             }
         }
         if hi <= lo { hi = lo * 1.01 + 1e-9; lo = lo * 0.99 }
-        let pad = (hi - lo) * 0.06
-        lo -= pad; hi += pad
+        let log = logScale && lo > 0
+        if log {
+            let span = Foundation.log(hi / lo)
+            lo = lo * Foundation.exp(-span * 0.06); hi = hi * Foundation.exp(span * 0.06)
+        } else {
+            let pad = (hi - lo) * 0.06
+            lo -= pad; hi += pad
+        }
         let mainH = L0.mainH
-        func y(_ p: Double) -> CGFloat { CGFloat((hi - p) / (hi - lo)) * mainH }
+        let logLo = Foundation.log(max(lo, 1e-12)), logHi = Foundation.log(max(hi, 1e-12))
+        func y(_ p: Double) -> CGFloat {
+            if log { return CGFloat((logHi - Foundation.log(max(p, 1e-12))) / (logHi - logLo)) * mainH }
+            return CGFloat((hi - p) / (hi - lo)) * mainH
+        }
+        /// Inverse of y(): price at a fraction 0 (top) … 1 (bottom) of the main pane.
+        func price(atFraction f: Double) -> Double {
+            if log { return Foundation.exp(logHi - f * (logHi - logLo)) }
+            return hi - f * (hi - lo)
+        }
 
         // Grid + price axis
         let gridColor = Color.white.opacity(0.06)
         for k in 0...4 {
-            let p = lo + (hi - lo) * Double(k) / 4
+            let p = price(atFraction: 1 - Double(k) / 4)
             let yy = y(p)
             var path = Path()
             path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
@@ -190,6 +210,16 @@ struct CandleChart: View {
                 ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: yy - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(color))
                 ctx.draw(Text(Fmt.price(last.c, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
                          at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
+                // Time left until the current candle closes.
+                let remaining = Int(last.t / 1000 + intervalSeconds - now.timeIntervalSince1970)
+                if remaining > 0 {
+                    let text = remaining >= 3600 ? Fmt.countdown(remaining) : String(format: "%02d:%02d", remaining / 60, remaining % 60)
+                    let ty = min(yy + 16, mainH - 7)
+                    ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: ty - 7, width: axisW - 2, height: 14), cornerRadius: 3),
+                             with: .color(color.opacity(0.3)))
+                    ctx.draw(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(.white),
+                             at: CGPoint(x: plotW + 4, y: ty), anchor: .leading)
+                }
             }
         }
 
@@ -236,9 +266,9 @@ struct CandleChart: View {
             path.move(to: CGPoint(x: 0, y: p.y)); path.addLine(to: CGPoint(x: plotW, y: p.y))
             ctx.stroke(path, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             if p.y < mainH {
-                let price = hi - Double(p.y / mainH) * (hi - lo)
+                let crossPrice = price(atFraction: Double(p.y / mainH))
                 ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: p.y - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(.white))
-                ctx.draw(Text(Fmt.price(price, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
+                ctx.draw(Text(Fmt.price(crossPrice, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
                          at: CGPoint(x: plotW + 4, y: p.y), anchor: .leading)
             }
         }

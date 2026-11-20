@@ -404,6 +404,7 @@ enum Translations {
         "Orders": "Ордера",
         "Transfers": "Переводы",
         "English": "English",
+        "Logarithmic scale": "Логарифмическая шкала",
         "Resize chart": "Изменить высоту графика",
         "Classic": "Классическая",
         "Neon": "Неон",

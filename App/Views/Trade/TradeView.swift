@@ -112,7 +112,8 @@ struct TradeView: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .highPriorityGesture(
-            DragGesture(minimumDistance: 2)
+            // Global coordinates: the handle moves while the chart resizes, so local translation would oscillate.
+            DragGesture(minimumDistance: 2, coordinateSpace: .global)
                 .onChanged { v in
                     if dragStartHeight == nil { dragStartHeight = model.chartHeight }
                     model.chartHeight = min(560, max(140, (dragStartHeight ?? 250) + v.translation.height))
