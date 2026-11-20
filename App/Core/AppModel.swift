@@ -43,6 +43,8 @@ final class AppModel {
     var showVolume = true { didSet { save() } }
     var chartHeight: Double = 250 { didSet { save() } }
     var logScale = false { didSet { save() } }
+    var tradeLayout: TradeLayout = .sheet { didSet { save() } }
+    var lastOrderType = "market" { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }
     var theme: AppTheme = AppTheme.current {
         didSet { AppTheme.current = theme; save(); ThemeAppearance.apply() }
@@ -116,6 +118,8 @@ final class AppModel {
         if let data = d.data(forKey: "indicators"), let ind = try? JSONDecoder().decode([IndicatorConfig].self, from: data) { indicators = ind }
         if d.object(forKey: "showVolume") != nil { showVolume = d.bool(forKey: "showVolume") }
         logScale = d.bool(forKey: "logScale")
+        tradeLayout = TradeLayout(rawValue: d.string(forKey: "tradeLayout") ?? "") ?? .sheet
+        lastOrderType = d.string(forKey: "lastOrderType") ?? "market"
         if d.object(forKey: "chartHeight") != nil { chartHeight = min(560, max(140, d.double(forKey: "chartHeight"))) }
         if let iv = d.stringArray(forKey: "visibleIntervals") {
             let parsed = iv.compactMap(CandleInterval.init(rawValue:))
@@ -157,6 +161,8 @@ final class AppModel {
         d.set(showVolume, forKey: "showVolume")
         d.set(chartHeight, forKey: "chartHeight")
         d.set(logScale, forKey: "logScale")
+        d.set(tradeLayout.rawValue, forKey: "tradeLayout")
+        d.set(lastOrderType, forKey: "lastOrderType")
         d.set(visibleIntervals.map(\.rawValue), forKey: "visibleIntervals")
     }
 

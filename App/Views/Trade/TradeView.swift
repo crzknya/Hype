@@ -1,48 +1,56 @@
 import SwiftUI
 
+/// Trade screen layouts, selectable in Settings.
+enum TradeLayout: String, CaseIterable, Identifiable, Codable {
+    case sheet, tabs, classic
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .sheet: return L("Order sheet")
+        case .tabs: return L("Two tabs")
+        case .classic: return L("Classic")
+        }
+    }
+    var help: String {
+        switch self {
+        case .sheet: return L("Chart, order book and positions full width; Long/Short open the order form in a sheet.")
+        case .tabs: return L("Separate Chart and Order tabs at the top of the trade screen.")
+        case .classic: return L("Order form and order book side by side under a collapsible chart.")
+        }
+    }
+}
+
+struct OrderSheetRequest: Identifiable {
+    let id = UUID()
+    let isBuy: Bool
+}
+
 struct TradeView: View {
     @Environment(AppModel.self) private var model
     @State private var showPicker = false
-    @State private var rightPanel = 0   // 0 book, 1 trades
+    @State private var rightPanel = 0   // classic layout: 0 book, 1 trades
     @State private var depthFullScreen = false
+    @State private var depthTab = 0
     @State private var chartFullScreen = false
     @State private var showIndicators = false
     @State private var orderBar = OrderBarState()
     @State private var dragStartHeight: Double?
+    @State private var page = 0               // tabs layout: 0 chart, 1 order
+    @State private var pageSide: Bool?        // side requested when switching to the order tab
+    @State private var orderSheet: OrderSheetRequest?
+    @State private var lastSide = true
 
     var body: some View {
-        @Bindable var model = model
         NavigationStack {
             ScrollView {
                 VStack(spacing: 10) {
                     if let m = model.selectedMarket {
                         TradeHeader(market: m)
-                        if model.showChart { chartSection(m) }
-                        HStack(alignment: .top, spacing: 8) {
-                            OrderFormView(market: m, bar: orderBar)
-                                .frame(maxWidth: .infinity)
-                            VStack(spacing: 6) {
-                                Picker("", selection: $rightPanel) {
-                                    Text(L("Order book")).tag(0)
-                                    Text(L("Trades")).tag(1)
-                                }
-                                .pickerStyle(.segmented)
-                                .controlSize(.mini)
-                                HStack {
-                                    if rightPanel == 1 { TradeFilterMenu() }
-                                    Spacer()
-                                    Button { depthFullScreen = true } label: {
-                                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
-                                    }
-                                    .foregroundStyle(Color.hlMuted)
-                                }
-                                if rightPanel == 0 { OrderBookPanel(market: m) } else { TradesPanel(market: m) }
-                            }
-                            .frame(width: 148)
+                        switch model.tradeLayout {
+                        case .sheet: sheetLayout(m)
+                        case .tabs: tabsLayout(m)
+                        case .classic: classicLayout(m)
                         }
-                        .padding(.horizontal, 10)
-                        AccountPanel(coin: m.id)
-                            .padding(.horizontal, 10)
                     } else {
                         ProgressView().padding(.top, 80)
                     }
@@ -51,7 +59,7 @@ struct TradeView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
-                if model.selectedMarket != nil { OrderActionBar(bar: orderBar) }
+                if let m = model.selectedMarket { bottomBar(m) }
             }
             .themedBackground()
             .navigationBarTitleDisplayMode(.inline)
@@ -75,21 +83,120 @@ struct TradeView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { withAnimation { model.showChart.toggle() } } label: {
-                        Image(systemName: model.showChart ? "chart.xyaxis.line" : "chart.line.flattrend.xyaxis")
+                    if model.tradeLayout == .classic {
+                        Button { withAnimation { model.showChart.toggle() } } label: {
+                            Image(systemName: model.showChart ? "chart.xyaxis.line" : "chart.line.flattrend.xyaxis")
+                        }
+                    } else {
+                        Button { chartFullScreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     }
                 }
             }
             .keyboardDoneToolbar()
             .sheet(isPresented: $showPicker) { MarketPickerSheet() }
+            .sheet(item: $orderSheet) { req in
+                if let m = model.selectedMarket { OrderSheet(market: m, isBuy: req.isBuy) }
+            }
             .fullScreenCover(isPresented: $chartFullScreen) {
                 if let m = model.selectedMarket { ChartScreen(market: m) }
             }
             .sheet(isPresented: $showIndicators) { IndicatorsSheet() }
             .fullScreenCover(isPresented: $depthFullScreen) {
-                if let m = model.selectedMarket { MarketDepthScreen(market: m, tab: rightPanel) }
+                if let m = model.selectedMarket { MarketDepthScreen(market: m, tab: depthTab) }
+            }
+            .onChange(of: model.pendingPrice) { _, p in
+                // A price tapped in the book opens the order form where it isn't on screen.
+                guard p != nil else { return }
+                switch model.tradeLayout {
+                case .sheet: if orderSheet == nil { orderSheet = OrderSheetRequest(isBuy: lastSide) }
+                case .tabs: if page == 0 { withAnimation { page = 1 } }
+                case .classic: break
+                }
             }
         }
+    }
+
+    // MARK: Layouts
+
+    @ViewBuilder
+    private func sheetLayout(_ m: Market) -> some View {
+        chartSection(m)
+        MarketDataTabs(market: m) { tab in depthTab = tab; depthFullScreen = true }
+            .padding(.horizontal, 10)
+    }
+
+    @ViewBuilder
+    private func tabsLayout(_ m: Market) -> some View {
+        Picker("", selection: $page) {
+            Text(L("Chart")).tag(0)
+            Text(L("Order")).tag(1)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 10)
+        if page == 0 {
+            chartSection(m)
+            MarketDataTabs(market: m) { tab in depthTab = tab; depthFullScreen = true }
+                .padding(.horizontal, 10)
+        } else {
+            formAndBook(m)
+            AccountPanel(coin: m.id).padding(.horizontal, 10)
+        }
+    }
+
+    @ViewBuilder
+    private func classicLayout(_ m: Market) -> some View {
+        if model.showChart { chartSection(m) }
+        formAndBook(m)
+        AccountPanel(coin: m.id).padding(.horizontal, 10)
+    }
+
+    @ViewBuilder
+    private func bottomBar(_ m: Market) -> some View {
+        switch model.tradeLayout {
+        case .sheet:
+            LongShortBar(market: m) { buy in
+                lastSide = buy
+                orderSheet = OrderSheetRequest(isBuy: buy)
+            }
+        case .tabs:
+            if page == 1 {
+                OrderActionBar(bar: orderBar)
+            } else {
+                LongShortBar(market: m) { buy in
+                    pageSide = buy
+                    withAnimation { page = 1 }
+                }
+            }
+        case .classic:
+            OrderActionBar(bar: orderBar)
+        }
+    }
+
+    /// Order form with a compact book/trades column (tabs and classic layouts).
+    private func formAndBook(_ m: Market) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            OrderFormView(market: m, bar: orderBar, initialBuy: pageSide)
+                .frame(maxWidth: .infinity)
+            VStack(spacing: 6) {
+                Picker("", selection: $rightPanel) {
+                    Text(L("Book")).tag(0)
+                    Text(L("Trades")).tag(1)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                HStack {
+                    if rightPanel == 1 { TradeFilterMenu() }
+                    Spacer()
+                    Button { depthTab = rightPanel; depthFullScreen = true } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
+                    }
+                    .foregroundStyle(Color.hlMuted)
+                }
+                if rightPanel == 0 { OrderBookPanel(market: m) } else { TradesPanel(market: m) }
+            }
+            .frame(width: 148)
+        }
+        .padding(.horizontal, 10)
     }
 
     @ViewBuilder
@@ -125,7 +232,6 @@ struct TradeView: View {
         )
         .accessibilityLabel(L("Resize chart"))
     }
-
 }
 
 struct TradeHeader: View {

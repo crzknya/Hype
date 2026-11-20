@@ -90,6 +90,10 @@ struct SettingsView: View {
                         Text(L("Market order slippage: {0}", Fmt.pct(model.slippage, 1, signed: false)))
                         Slider(value: $model.slippage, in: 0.001...0.1, step: 0.001)
                     }
+                    Picker(L("Trade screen layout"), selection: $model.tradeLayout) {
+                        ForEach(TradeLayout.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text(model.tradeLayout.help).font(.caption).foregroundStyle(Color.hlMuted)
                     Toggle(L("Confirm orders"), isOn: $model.confirmOrders)
                     Toggle(L("Haptics"), isOn: $model.haptics)
                 } header: {

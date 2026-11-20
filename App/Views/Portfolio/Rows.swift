@@ -228,22 +228,26 @@ struct TwapRow: View {
 struct AccountPanel: View {
     @Environment(AppModel.self) private var model
     let coin: String
+    /// Shows only this tab (0 positions, 1 orders, 2 trades) without the tab picker.
+    var fixedTab: Int? = nil
     @State private var tab = 0
     @State private var onlyThisCoin = false
     @State private var pending: PendingConfirm?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if fixedTab == nil {
             Picker("", selection: $tab) {
                 Text(L("Positions ({0})", model.positions.count)).tag(0)
                 Text(L("Orders ({0})", model.openOrders.count)).tag(1)
                 Text(L("Trades")).tag(2)
             }
             .pickerStyle(.segmented)
+            }
             HStack {
                 Toggle(L("Only {0}", model.displayName(coin)), isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)
                 Spacer()
-                if tab == 1 && !orders.isEmpty && model.canTrade {
+                if current == 1 && !orders.isEmpty && model.canTrade {
                     Button(L("Cancel all")) {
                         let c: String? = onlyThisCoin ? coin : nil
                         pending = PendingConfirm(title: L("Cancel all orders"), message: L("Orders to cancel: {0}", orders.count),
@@ -253,7 +257,7 @@ struct AccountPanel: View {
                     }
                         .font(.caption.bold()).foregroundStyle(Color.hlRed)
                 }
-                if tab == 0 && !model.positions.isEmpty && model.canTrade && !onlyThisCoin {
+                if current == 0 && !model.positions.isEmpty && model.canTrade && !onlyThisCoin {
                     Button(L("Close all")) {
                         pending = PendingConfirm(title: L("Close all positions"),
                                                  message: L("Market close of all positions: {0}", model.positions.count),
@@ -267,7 +271,7 @@ struct AccountPanel: View {
             if model.account == nil {
                 EmptyState(text: L("Connect an account in Settings to see positions and trade"), icon: "person.crop.circle.badge.plus")
             } else {
-                switch tab {
+                switch current {
                 case 0:
                     if positions.isEmpty { EmptyState(text: L("No open positions")) }
                     ForEach(positions) { PositionRow(position: $0) }
@@ -283,6 +287,8 @@ struct AccountPanel: View {
         }
         .confirmDialog($pending)
     }
+
+    private var current: Int { fixedTab ?? tab }
 
     private var positions: [Position] { onlyThisCoin ? model.positions.filter { $0.coin == coin } : model.positions }
     private var orders: [OpenOrder] { onlyThisCoin ? model.orders(for: coin) : model.openOrders }

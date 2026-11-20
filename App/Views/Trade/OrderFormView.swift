@@ -5,6 +5,10 @@ struct OrderFormView: View {
     @Environment(AppModel.self) private var model
     let market: Market
     let bar: OrderBarState
+    /// Side to start with (from the Long/Short buttons); nil keeps the default.
+    var initialBuy: Bool? = nil
+    /// Called after an order was placed successfully (the sheet closes itself).
+    var onPlaced: (() -> Void)? = nil
 
     @State private var isBuy = true
     @State private var type: OrderTypeUI = .market
@@ -77,19 +81,16 @@ struct OrderFormView: View {
             }
         }
         .font(.subheadline)
-        .onChange(of: model.pendingPrice) { _, p in
-            guard let p else { return }
-            let s = Fmt.input(p, market.priceDecimals(p))
-            if type == .scale { scaleStartText = s }
-            else if type.needsTrigger && !type.needsPrice { triggerText = s }
-            else {
-                if type == .market || type == .twap { type = .limit }
-                priceText = s
-            }
-            model.pendingPrice = nil
-        }
+        .onChange(of: model.pendingPrice) { _, _ in applyPendingPrice() }
         .onChange(of: market.id) { _, _ in reset(); syncBar() }
-        .onAppear { syncBar() }
+        .onAppear {
+            if let b = initialBuy { isBuy = b }
+            // Remember the last order type between sheet openings.
+            if let t = OrderTypeUI(rawValue: model.lastOrderType), availableTypes.contains(t) { type = t }
+            applyPendingPrice()
+            syncBar()
+        }
+        .onChange(of: type) { _, t in model.lastOrderType = t.rawValue }
         .onChange(of: isBuy) { _, _ in syncBar() }
         .onChange(of: type) { _, _ in syncBar() }
         .onChange(of: busy) { _, _ in syncBar() }
@@ -353,6 +354,19 @@ struct OrderFormView: View {
         sizeText = sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(sz, market.szDecimals)
     }
 
+    /// Puts a price tapped in the order book into the right field.
+    private func applyPendingPrice() {
+        guard let p = model.pendingPrice else { return }
+        let s = Fmt.input(p, market.priceDecimals(p))
+        if type == .scale { scaleStartText = s }
+        else if type.needsTrigger && !type.needsPrice { triggerText = s }
+        else {
+            if type == .market || type == .twap { type = .limit }
+            priceText = s
+        }
+        model.pendingPrice = nil
+    }
+
     /// Publishes the primary action to the pinned bottom bar.
     private func syncBar() {
         bar.title = buttonTitle
@@ -453,6 +467,7 @@ struct OrderFormView: View {
                 Haptics.success(enabled: model.haptics)
                 sizeText = ""; pct = 0
                 if riskOn { riskText = "" }
+                onPlaced?()
             } catch {
                 model.show(.error, error.localizedDescription)
                 Haptics.error(enabled: model.haptics)

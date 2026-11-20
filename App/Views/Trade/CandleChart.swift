@@ -300,15 +300,16 @@ struct CandleChart: View {
         var poc = Path()
         poc.move(to: CGPoint(x: 0, y: pocY)); poc.addLine(to: CGPoint(x: plotW, y: pocY))
         ctx.stroke(poc, with: .color(spec.color), lineWidth: 1.2)
+        let labelX = max(4, plotW - maxW - 4)
         ctx.draw(Text("POC").font(.system(size: 8, weight: .bold)).foregroundColor(spec.color),
-                 at: CGPoint(x: 4, y: pocY - 6), anchor: .leading)
+                 at: CGPoint(x: labelX, y: pocY - 6), anchor: .trailing)
         for (price, label) in [(vp.lo + Double(vp.vaHigh + 1) * vp.step, "VAH"), (vp.lo + Double(vp.vaLow) * vp.step, "VAL")] {
             let yy = y(price)
             var path = Path()
             path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
             ctx.stroke(path, with: .color(spec.color.opacity(0.6)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
             ctx.draw(Text(label).font(.system(size: 8, weight: .semibold)).foregroundColor(spec.color.opacity(0.8)),
-                     at: CGPoint(x: 4, y: yy - 6), anchor: .leading)
+                     at: CGPoint(x: labelX, y: yy - 6), anchor: .trailing)
         }
     }
 
