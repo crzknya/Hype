@@ -55,6 +55,7 @@ struct OrderBookPanel: View {
                 Text(model.topMid.map { Fmt.price($0, decimals: dec) } ?? "—")
                     .font(.system(size: wide ? 16 : 13, weight: .bold, design: .monospaced))
                 Spacer()
+                BookAgeBadge()
                 if let s = model.topSpread, let mid = model.topMid, mid > 0 {
                     Text(L("Spread") + " " + Fmt.pct(s / mid, 3, signed: false))
                         .font(.system(size: wide ? 11 : 9)).foregroundStyle(Color.hlMuted)

@@ -86,6 +86,7 @@ struct SideBySideBook: View {
                         Text(Fmt.pct(s / mid, 3, signed: false)).font(.system(size: 10)).foregroundStyle(Color.hlMuted)
                     }
                 }
+                BookAgeBadge()
                 Spacer()
                 Button { showUsd.toggle() } label: {
                     Text(showUsd ? "USD" : market.base).font(.system(size: 11, weight: .semibold))
@@ -199,5 +200,20 @@ struct OrderSheet: View {
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .presentationDragIndicator(.visible)
+    }
+}
+
+
+/// Shows "⚠ Ns" when the order-book ladder hasn't been refreshed for a while.
+struct BookAgeBadge: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { t in
+            let age = t.date.timeIntervalSince(model.bookReceivedAt)
+            if model.bookReceivedAt != .distantPast && age > 3 {
+                Text("⚠ \(Int(age))s").font(.system(size: 10, weight: .semibold)).foregroundStyle(.orange)
+            }
+        }
     }
 }

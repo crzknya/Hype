@@ -62,6 +62,8 @@ final class AppModel {
     var book = OrderBook()
     /// Live best bid/ask (bbo stream), fresher than the order-book snapshot.
     var bbo: BestBidAsk?
+    /// When the shown order-book snapshot arrived (for the staleness indicator).
+    var bookReceivedAt: Date = .distantPast
     var trades: [PublicTrade] = []
     var candles: [Candle] = []
     var candlesLoading = false
@@ -225,6 +227,12 @@ final class AppModel {
         subscribeUser()
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
+                await self?.pollBook()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        })
+        loops.append(Task { [weak self] in
+            while !Task.isCancelled {
                 await self?.refreshMarkets()
                 try? await Task.sleep(for: .seconds(15))
             }
@@ -311,6 +319,28 @@ final class AppModel {
         return subs
     }
 
+    /// Applies an l2Book snapshot (WebSocket or REST) if it is newer than the one shown.
+    private func applyBookSnapshot(_ data: JSON) {
+        let t = Date(timeIntervalSince1970: data["time"].dbl / 1000)
+        guard t >= book.time else { return }
+        let lv = data["levels"]
+        func parse(_ a: JSON) -> [BookLevel] { a.array.map { BookLevel(px: $0["px"].dbl, sz: $0["sz"].dbl, n: $0["n"].int ?? 0) } }
+        book = OrderBook(bids: parse(lv[0]), asks: parse(lv[1]), time: t)
+        bookReceivedAt = Date()
+    }
+
+    /// REST fallback: while the trade screen is open, fetch the book every second so the ladder
+    /// stays fresh even if WebSocket snapshots arrive late.
+    private func pollBook() async {
+        guard tab == .trade else { return }
+        let coin = selectedCoin, sig = bookSigFigs
+        var extra: [(String, MP)] = [("coin", .str(coin))]
+        if let sig { extra.append(("nSigFigs", .int(Int64(sig)))) }
+        guard let j = try? await api.info(type: "l2Book", extra),
+              coin == selectedCoin, sig == bookSigFigs, j["coin"].str == coin else { return }
+        applyBookSnapshot(j)
+    }
+
     private func l2Sub(_ coin: String, _ sig: Int?) -> MP {
         var kv: [(String, MP)] = [("type", .str("l2Book")), ("coin", .str(coin))]
         if let sig { kv.append(("nSigFigs", .int(Int64(sig)))) }
@@ -328,7 +358,7 @@ final class AppModel {
         socket.unsubscribe(.map([("type", .str("activeAssetCtx")), ("coin", .str(old))]))
         socket.unsubscribe(.map([("type", .str("bbo")), ("coin", .str(old))]))
         if let u = userAddress { socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(old))])) }
-        book = OrderBook(); bbo = nil; trades = []; candles = []; activeAsset = ActiveAssetData()
+        book = OrderBook(); bookReceivedAt = .distantPast; bbo = nil; trades = []; candles = []; activeAsset = ActiveAssetData()
         pendingPrice = nil
         subscribeCoin(selectedCoin)
         Task { await loadCandles() }
@@ -634,9 +664,7 @@ final class AppModel {
             if let b = pair[0]["px"].double, let a = pair[1]["px"].double, a >= b { bbo = BestBidAsk(bid: b, ask: a) }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
-            let lv = data["levels"]
-            func parse(_ a: JSON) -> [BookLevel] { a.array.map { BookLevel(px: $0["px"].dbl, sz: $0["sz"].dbl, n: $0["n"].int ?? 0) } }
-            book = OrderBook(bids: parse(lv[0]), asks: parse(lv[1]), time: Date(timeIntervalSince1970: data["time"].dbl / 1000))
+            applyBookSnapshot(data)
         case "trades":
             let new = data.array.filter { $0["coin"].str == selectedCoin }.map {
                 PublicTrade(px: $0["px"].dbl, sz: $0["sz"].dbl, isBuy: $0["side"].str == "B",
