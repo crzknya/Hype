@@ -62,6 +62,9 @@ final class AppModel {
     var book = OrderBook()
     /// Live best bid/ask (bbo stream), fresher than the order-book snapshot.
     var bbo: BestBidAsk?
+    @ObservationIgnored private var lastSocketBookAt: Date = .distantPast
+    @ObservationIgnored private var pendingMids: [String: Double] = [:]
+    @ObservationIgnored private var midsFlushScheduled = false
     /// When the shown order-book snapshot arrived (for the staleness indicator).
     var bookReceivedAt: Date = .distantPast
     var trades: [PublicTrade] = []
@@ -319,26 +322,40 @@ final class AppModel {
         return subs
     }
 
-    /// Applies an l2Book snapshot (WebSocket or REST) if it is newer than the one shown.
-    private func applyBookSnapshot(_ data: JSON) {
-        let t = Date(timeIntervalSince1970: data["time"].dbl / 1000)
-        guard t >= book.time else { return }
+    /// Applies an l2Book snapshot. WebSocket snapshots always apply (the stream is ordered); REST
+    /// snapshots only fill in when the stream has been quiet (their timestamps use a different clock).
+    private func applyBookSnapshot(_ data: JSON, fromSocket: Bool) {
+        if fromSocket {
+            lastSocketBookAt = Date()
+        } else if Date().timeIntervalSince(lastSocketBookAt) < 1.5 {
+            return
+        }
         let lv = data["levels"]
         func parse(_ a: JSON) -> [BookLevel] { a.array.map { BookLevel(px: $0["px"].dbl, sz: $0["sz"].dbl, n: $0["n"].int ?? 0) } }
-        book = OrderBook(bids: parse(lv[0]), asks: parse(lv[1]), time: t)
+        book = OrderBook(bids: parse(lv[0]), asks: parse(lv[1]), time: Date(timeIntervalSince1970: data["time"].dbl / 1000))
         bookReceivedAt = Date()
+    }
+
+    private func flushMids() {
+        midsFlushScheduled = false
+        guard !pendingMids.isEmpty else { return }
+        var m = mids
+        for (k, v) in pendingMids { m[k] = v }
+        pendingMids.removeAll(keepingCapacity: true)
+        mids = m        // one observable change per batch
+        checkAlerts()
     }
 
     /// REST fallback: while the trade screen is open, fetch the book every second so the ladder
     /// stays fresh even if WebSocket snapshots arrive late.
     private func pollBook() async {
-        guard tab == .trade else { return }
+        guard tab == .trade, Date().timeIntervalSince(lastSocketBookAt) >= 1.5 else { return }
         let coin = selectedCoin, sig = bookSigFigs
         var extra: [(String, MP)] = [("coin", .str(coin))]
         if let sig { extra.append(("nSigFigs", .int(Int64(sig)))) }
         guard let j = try? await api.info(type: "l2Book", extra),
               coin == selectedCoin, sig == bookSigFigs, j["coin"].str == coin else { return }
-        applyBookSnapshot(j)
+        applyBookSnapshot(j, fromSocket: false)
     }
 
     private func l2Sub(_ coin: String, _ sig: Int?) -> MP {
@@ -654,8 +671,16 @@ final class AppModel {
     private func handle(channel: String, data: JSON) {
         switch channel {
         case "allMids":
-            for (k, v) in data["mids"].object { if let d = v.double { mids[k] = d } }
-            checkAlerts()
+            // Many allMids streams (main + every HIP-3 dex): buffer and publish at most twice a second
+            // so they don't keep the main thread busy ahead of order-book and trade messages.
+            for (k, v) in data["mids"].object { if let d = v.double { pendingMids[k] = d } }
+            if !midsFlushScheduled {
+                midsFlushScheduled = true
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    self?.flushMids()
+                }
+            }
         case "bbo":
             // Best bid/ask arrive on every change; used for the mid/spread line only. The ladder itself
             // always comes from the latest consistent l2Book snapshot (patching it made levels vanish).
@@ -664,7 +689,7 @@ final class AppModel {
             if let b = pair[0]["px"].double, let a = pair[1]["px"].double, a >= b { bbo = BestBidAsk(bid: b, ask: a) }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
-            applyBookSnapshot(data)
+            applyBookSnapshot(data, fromSocket: true)
         case "trades":
             let new = data.array.filter { $0["coin"].str == selectedCoin }.map {
                 PublicTrade(px: $0["px"].dbl, sz: $0["sz"].dbl, isBuy: $0["side"].str == "B",
