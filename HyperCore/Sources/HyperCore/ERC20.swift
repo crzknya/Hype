@@ -2,6 +2,12 @@ import Foundation
 
 /// Hyperliquid deposit: an ERC-20 USDC transfer to the Bridge2 contract on Arbitrum One.
 public enum HLBridge {
+    /// CCTP withdrawal through the HyperEVM: Arbitrum's CCTP domain, gas limit and fee (USDC), as the web app.
+    public static let cctpArbitrumDomain: UInt64 = 3
+    public static let cctpGasLimit: UInt64 = 200_000
+    public static let cctpFee = 0.2
+    public static let legacyWithdrawFee = 1.0
+    public static let maxWithdrawal = 10_000_000.0
     /// Bridge2 on Arbitrum One (mainnet). Deposits below 5 USDC are lost.
     public static let mainnetBridge = "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7"
     /// Native USDC on Arbitrum One (6 decimals).

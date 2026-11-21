@@ -19,6 +19,8 @@ struct TransferSheet: View {
     @State private var busy = false
     @State private var arbBalance: Double?
     @State private var depositHash: String?
+    @State private var cctpRoute = true
+    @State private var gasHype: Double?
 
     var body: some View {
         NavigationStack {
@@ -116,6 +118,11 @@ struct TransferSheet: View {
     }
 
     @ViewBuilder private var withdraw: some View {
+        let fee = cctpRoute ? HLBridge.cctpFee : HLBridge.legacyWithdrawFee
+        let amount = Fmt.parse(amountText) ?? 0
+        let gasUsd = cctpRoute ? (gasHype ?? 0) * model.spotPrice("HYPE") : 0
+        // The web deducts HyperEVM gas from the amount when the HYPE balance cannot cover it.
+        let gasFromAmount = cctpRoute && (gasHype ?? 0) > model.spotAvailable("HYPE") ? gasUsd : 0
         Section {
             TextField(L("Recipient address (0x…)"), text: $destination)
                 .font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never)
@@ -125,15 +132,42 @@ struct TransferSheet: View {
             }
             LabeledContent(L("Available"), value: Fmt.usd(model.withdrawableUSDC))
         } footer: {
-            Text(L("Withdraws USDC to Arbitrum. Hyperliquid network fee is $1. Usually takes a few minutes.")
-                 + (model.isUnified ? "\n" + L("Unified account: withdrawn from your USDC balance (shared by spot and perps).") : ""))
+            if model.isUnified {
+                Text(L("Unified account: withdrawn from your USDC balance (shared by spot and perps)."))
+            }
+        }
+        Section {
+            Picker(L("Route"), selection: $cctpRoute) {
+                Text(L("Arbitrum (CCTP)")).tag(true)
+                Text(L("Arbitrum (legacy bridge)")).tag(false)
+            }
+            LabeledContent(L("Fee"), value: Fmt.num(fee, 2) + " USDC")
+            if cctpRoute {
+                LabeledContent(L("HyperEVM gas")) {
+                    if let g = gasHype { Text("≈ \(Fmt.num(g, 6)) HYPE (\(Fmt.usd(gasUsd, 4)))") } else { Text("—") }
+                }
+            }
+            if amount > 0 {
+                LabeledContent(L("You receive ≈"), value: Fmt.num(max(0, amount - fee - gasFromAmount), 2) + " USDC")
+            }
+        } footer: {
+            Text(cctpRoute
+                 ? L("Recommended by Hyperliquid. Goes through the HyperEVM via Circle CCTP; usually a few minutes.")
+                 : L("Legacy Arbitrum bridge. If the bridge is short of liquidity, the app switches to CCTP automatically."))
+        }
+        .task {
+            cctpRoute = model.usdcWithdrawRoute != "bridge"
+            gasHype = await model.cctpGasHype()
         }
         Section {
             submitButton(L("Withdraw")) {
                 guard Address.isValid(destination) else { throw HLError(L("Invalid address")) }
-                guard let a = Fmt.parse(amountText), a > 1 else { throw HLError(L("Amount must be greater than $1")) }
-                try await model.withdraw(amount: a, destination: destination)
-                return L("Withdrawal of {0} sent", Fmt.usd(a))
+                guard let a = Fmt.parse(amountText), a > 0 else { throw HLError(L("Enter an amount")) }
+                guard a > 2 * fee else { throw HLError(L("Minimum withdrawal is {0} USDC", Fmt.num(2 * fee, 2))) }
+                guard a <= model.withdrawableUSDC + 0.000001 else { throw HLError(L("Not enough funds")) }
+                guard a <= HLBridge.maxWithdrawal else { throw HLError(L("Maximum withdrawal is {0} USDC", Fmt.num(HLBridge.maxWithdrawal, 0))) }
+                let viaCctp = try await model.withdraw(amount: a, destination: destination, cctp: cctpRoute)
+                return L("Withdrawal of {0} sent", Fmt.usd(a)) + (viaCctp ? " (CCTP)" : "")
             }
         }
     }

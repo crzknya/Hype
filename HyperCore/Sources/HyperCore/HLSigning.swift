@@ -73,6 +73,7 @@ public struct UserSignedAction {
             case .uint(let u)?: message.append((f.name, .int(Int64(u))))
             case .bool(let b)?: message.append((f.name, .bool(b)))
             case .bytes32(let b)?: message.append((f.name, .str(Hex.encode(b))))
+            case .bytes(let b)?: message.append((f.name, .str(Hex.encode(b))))
             case nil: break
             }
         }

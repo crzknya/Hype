@@ -221,6 +221,27 @@
    "v": "28"
   },
   {
+   "name": "sendToEvm",
+   "action": {
+    "type": "sendToEvmWithData",
+    "token": "USDC",
+    "amount": "12.5",
+    "sourceDex": "spot",
+    "destinationRecipient": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "addressEncoding": "hex",
+    "destinationChainId": 3,
+    "gasLimit": 200000,
+    "data": "0x",
+    "nonce": 1700000000000,
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "a76cbb90f17ce9a7ed8406b592d4ace0570f0df1e7d1d1618c6b8a1cfe0a3581",
+   "r": "afdba9e6b1e1f09623bb8b4a78141d53f357c45381948f03d017e1f3371436da",
+   "s": "199078dd6d94496c05ba0dd61e3be1b4cf1bbd8bd2f37f2906799796ea780623",
+   "v": "27"
+  },
+  {
    "name": "approveAgentArb",
    "action": {
     "type": "approveAgent",

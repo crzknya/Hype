@@ -214,4 +214,26 @@ public enum HLAction {
             values: ["hyperliquidChain": .string(chain(mainnet)), "user": .address(u), "abstraction": .string(abstraction), "nonce": .uint(nonce)],
             nonce: nonce, chainId: chainId)
     }
+    /// Sends a token from HyperCore through the HyperEVM to another chain (CCTP withdrawal of USDC to
+    /// Arbitrum = destinationChainId 3). sourceDex "spot" for unified accounts, "" for perps.
+    public static func sendToEvmWithData(token: String, amount: String, sourceDex: String, destinationRecipient: String,
+                                         destinationChainId: UInt64, gasLimit: UInt64, data: [UInt8] = [], nonce: UInt64,
+                                         mainnet: Bool, chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
+        let dest = destinationRecipient.lowercased()
+        let dataHex = Hex.encode(data)
+        return UserSignedAction(
+            action: .map([("type", .str("sendToEvmWithData")), ("signatureChainId", .str(HLSigning.hex(chainId))),
+                          ("hyperliquidChain", .str(chain(mainnet))), ("token", .str(token)), ("amount", .str(amount)),
+                          ("sourceDex", .str(sourceDex)), ("destinationRecipient", .str(dest)), ("addressEncoding", .str("hex")),
+                          ("destinationChainId", .int(Int64(destinationChainId))), ("gasLimit", .int(Int64(gasLimit))),
+                          ("data", .str(dataHex)), ("nonce", .int(Int64(nonce)))]),
+            primaryType: "HyperliquidTransaction:SendToEvmWithData",
+            fields: [.init("hyperliquidChain", "string"), .init("token", "string"), .init("amount", "string"),
+                     .init("sourceDex", "string"), .init("destinationRecipient", "string"), .init("addressEncoding", "string"),
+                     .init("destinationChainId", "uint32"), .init("gasLimit", "uint64"), .init("data", "bytes"), .init("nonce", "uint64")],
+            values: ["hyperliquidChain": .string(chain(mainnet)), "token": .string(token), "amount": .string(amount),
+                     "sourceDex": .string(sourceDex), "destinationRecipient": .string(dest), "addressEncoding": .string("hex"),
+                     "destinationChainId": .uint(destinationChainId), "gasLimit": .uint(gasLimit), "data": .bytes(data), "nonce": .uint(nonce)],
+            nonce: nonce, chainId: chainId)
+    }
 }

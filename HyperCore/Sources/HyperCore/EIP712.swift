@@ -5,6 +5,7 @@ public enum EIP712 {
     public enum Value {
         case string(String)
         case bytes32([UInt8])
+        case bytes([UInt8])          // dynamic `bytes`: encoded as keccak256(bytes)
         case uint(UInt64)
         case bool(Bool)
         case address(String)
@@ -33,6 +34,7 @@ public enum EIP712 {
         case .bytes32(let b):
             precondition(b.count == 32)
             return b
+        case .bytes(let b): return Keccak.hash256(b)
         case .uint(let v): return word(v)
         case .bool(let b): return word(b ? 1 : 0)
         case .address(let a):

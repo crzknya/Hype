@@ -96,6 +96,9 @@ final class AppModel {
     /// Market-order notional limits by max leverage, and markets at their open-interest cap.
     @ObservationIgnored var maxMarketNtls: [(leverage: Int, notional: Double)] = []
     var perpsAtOiCap: Set<String> = []
+    /// USDC routes recommended by Hyperliquid ("cctp" or "bridge").
+    var usdcWithdrawRoute = "cctp"
+    var usdcDepositRoute = "cctp"
     var portfolioHistory: [(Date, Double)] = []
     /// "day" / "week" / "month" / "allTime" → account value & PnL history from the `portfolio` request.
     var portfolioRanges: [String: PortfolioRange] = [:]

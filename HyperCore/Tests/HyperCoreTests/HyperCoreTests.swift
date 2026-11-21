@@ -78,6 +78,13 @@ final class HyperCoreTests: XCTestCase {
                                                           token: a["token"].str, amount: a["amount"].str, fromSubAccount: a["fromSubAccount"].str,
                                                           nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
             case "setAbstraction": action = HLAction.userSetAbstraction(user: a["user"].str, abstraction: a["abstraction"].str, nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
+            case "sendToEvm":
+                action = HLAction.sendToEvmWithData(token: a["token"].str, amount: a["amount"].str, sourceDex: a["sourceDex"].str,
+                                                    destinationRecipient: a["destinationRecipient"].str,
+                                                    destinationChainId: UInt64(a["destinationChainId"].int64!), gasLimit: UInt64(a["gasLimit"].int64!),
+                                                    nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
+                let td = try JSON.parse(Data(action.typedDataJSON().utf8))
+                XCTAssertEqual(td["message"]["data"].str, "0x")
             case "approveAgentArb":
                 action = HLAction.approveAgent(agentAddress: a["agentAddress"].str, agentName: a["agentName"].str,
                                                nonce: UInt64(a["nonce"].int64!), mainnet: mainnet, chainId: 0xa4b1)

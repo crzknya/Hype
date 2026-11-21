@@ -186,6 +186,10 @@ extension AppModel {
     }
 
     func loadLimits() async {
+        if let r = try? await api.info(type: "usdcRouting"), let w = r["withdrawalRoute"].string {
+            usdcWithdrawRoute = w
+            usdcDepositRoute = r["depositRoute"].str
+        }
         if let j = try? await api.info(type: "maxMarketOrderNtls") {
             let list = j.array.compactMap { e -> (leverage: Int, notional: Double)? in
                 guard let l = e[0].int else { return nil }
@@ -393,9 +397,43 @@ extension AppModel {
         Task { await refreshAccount() }
     }
 
-    func withdraw(amount: Double, destination: String) async throws {
-        try await submitUser(HLAction.withdraw(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
+    /// Withdraws USDC to Arbitrum like app.hyperliquid.xyz: via CCTP (through the HyperEVM, 0.2 USDC fee
+    /// plus HyperEVM gas) or the legacy bridge ($1 fee). A legacy withdrawal that the bridge cannot cover
+    /// is retried via CCTP automatically. Returns true when CCTP was used.
+    @discardableResult
+    func withdraw(amount: Double, destination: String, cctp: Bool) async throws -> Bool {
+        let amt = HLNum.wire(amount, maxDecimals: 6)
+        if !cctp {
+            do {
+                try await submitUser(HLAction.withdraw(destination: destination, amount: amt, time: nextNonce(),
+                                                       mainnet: network.isMainnet, chainId: userSignChainId))
+                Task { await refreshAccount(); await refreshHistory() }
+                return false
+            } catch {
+                guard error.localizedDescription.contains("does not have enough balance for withdrawal") else { throw error }
+                show(.info, L("The legacy bridge is short of liquidity: switching to CCTP"))
+            }
+        }
+        try await submitUser(HLAction.sendToEvmWithData(token: "USDC", amount: amt, sourceDex: isUnified ? "spot" : "",
+                                                        destinationRecipient: destination, destinationChainId: HLBridge.cctpArbitrumDomain,
+                                                        gasLimit: HLBridge.cctpGasLimit, nonce: nextNonce(),
+                                                        mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
+        return true
+    }
+
+    /// Estimated HyperEVM gas for a CCTP withdrawal, in HYPE (gas price × 200k), via the public RPC.
+    func cctpGasHype() async -> Double? {
+        let body = MP.map([("jsonrpc", .str("2.0")), ("id", .int(1)), ("method", .str("eth_gasPrice")), ("params", .arr([]))])
+        var req = URLRequest(url: URL(string: "https://rpc.hyperliquid.xyz/evm")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data(body.json().utf8)
+        req.timeoutInterval = 10
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let j = try? JSON.parse(data), let hex = j["result"].string,
+              let wei = UInt64(hex.replacingOccurrences(of: "0x", with: ""), radix: 16) else { return nil }
+        return Double(wei) * Double(HLBridge.cctpGasLimit) / 1e18
     }
 
     /// Switches the account type ("unifiedAccount", "portfolioMargin" or "disabled"), signed by the main wallet.

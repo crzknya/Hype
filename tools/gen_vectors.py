@@ -63,6 +63,11 @@ user("setAbstraction", {"type":"userSetAbstraction","user":"0x5e9ee1089755c34351
             {"name": "user", "type": "address"},
             {"name": "abstraction", "type": "string"},
             {"name": "nonce", "type": "uint64"}], "HyperliquidTransaction:UserSetAbstraction", True)
+user("sendToEvm", {"type":"sendToEvmWithData","token":"USDC","amount":"12.5","sourceDex":"spot","destinationRecipient":"0x5e9ee1089755c3435139848e47e6635505d5a13a","addressEncoding":"hex","destinationChainId":3,"gasLimit":200000,"data":"0x","nonce":nonce}, [
+            {"name": "hyperliquidChain", "type": "string"},{"name": "token", "type": "string"},{"name": "amount", "type": "string"},
+            {"name": "sourceDex", "type": "string"},{"name": "destinationRecipient", "type": "string"},{"name": "addressEncoding", "type": "string"},
+            {"name": "destinationChainId", "type": "uint32"},{"name": "gasLimit", "type": "uint64"},{"name": "data", "type": "bytes"},
+            {"name": "nonce", "type": "uint64"}], "HyperliquidTransaction:SendToEvmWithData", True)
 # Signed on Arbitrum (as an external wallet like Rabby would do).
 arb = {"type":"approveAgent","agentAddress":"0x5e9ee1089755c3435139848e47e6635505d5a13a","agentName":"Hype iOS","nonce":nonce,
        "signatureChainId":"0xa4b1","hyperliquidChain":"Mainnet"}
