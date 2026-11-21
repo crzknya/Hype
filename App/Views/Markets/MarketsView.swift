@@ -53,7 +53,11 @@ struct MarketsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
                         ConnectionDot(connected: model.wsConnected)
-                        Text(model.network.title).font(.caption).foregroundStyle(Color.hlMuted)
+                        // Only flag the test network; on mainnet the connection dot is enough.
+                        if !model.network.isMainnet {
+                            Text(model.network.title).font(.caption).foregroundStyle(.orange)
+                                .lineLimit(1).fixedSize()
+                        }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
