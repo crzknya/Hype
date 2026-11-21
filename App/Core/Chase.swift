@@ -19,6 +19,7 @@ struct ChaseOrder: Identifiable, Equatable {
     var price: Double
     var placedAt = Date()
     var status: Status = .working
+    var failures = 0
 }
 
 extension AppModel {
@@ -89,20 +90,24 @@ extension AppModel {
         chaseTask = Task { [weak self] in
             while let self, !Task.isCancelled, !self.activeChases.isEmpty {
                 await self.stepChases()
-                try? await Task.sleep(for: .milliseconds(700))
+                try? await Task.sleep(for: .milliseconds(800))
             }
             self?.chaseTask = nil
         }
     }
 
     private func stepChases() async {
-        if !accountStreamLive { await refreshOrders() }
+        // Without the live stream, poll open orders at most every 5 s (the request is rate-limit heavy).
+        if !accountStreamLive && Date().timeIntervalSince(chaseOrdersFetchAt) > 5 {
+            chaseOrdersFetchAt = Date()
+            await refreshOrders()
+        }
         for c in activeChases {
             guard let m = market(c.coin) else { continue }
             let open = openOrders.first { $0.cloid?.lowercased() == c.cloid.lowercased() }
             guard let open else {
-                // Gone from the book: filled (or cancelled by the user).
-                if Date().timeIntervalSince(c.placedAt) > 4 { finishChase(c.id, L("Chase order finished: {0}", m.name)) }
+                // Gone from an order list fetched after our last change: filled (or cancelled by the user).
+                if ordersUpdatedAt.timeIntervalSince(c.placedAt) > 1.5 { finishChase(c.id, L("Chase order finished: {0}", m.name)) }
                 continue
             }
             guard let q = await bestBidAsk(m) else { continue }
@@ -121,13 +126,21 @@ extension AppModel {
                     chases[i].price = newPx
                     chases[i].size = open.sz
                     chases[i].placedAt = Date()
+                    chases[i].failures = 0
                 }
             } catch {
                 let msg = error.localizedDescription
                 if msg.contains("filled") || msg.contains("canceled") || msg.contains("never placed") {
                     finishChase(c.id, L("Chase order finished: {0}", m.name))
+                } else if msg.contains("Post only") || msg.contains("Post-only") {
+                    // The book moved under us: retried on the next step.
+                } else if let i = chases.firstIndex(where: { $0.id == c.id }) {
+                    chases[i].failures += 1
+                    if chases[i].failures >= 6 {
+                        chases[i].status = .stopped
+                        show(.error, L("Chase on {0} stopped after repeated errors; the order stays as a limit order.\n{1}", m.name, msg))
+                    }
                 }
-                // Post-only rejections (the book moved) are retried on the next step.
             }
         }
     }

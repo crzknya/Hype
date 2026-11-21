@@ -156,6 +156,7 @@ struct AddAccountView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var kind: Account.Kind = .agent
+    @State private var riskAccepted = false
     @State private var name = ""
     @State private var address = ""
     @State private var key = ""
@@ -173,6 +174,15 @@ struct AddAccountView: View {
                     }
                     .pickerStyle(.segmented)
                 } footer: { Text(kindHelp) }
+
+                if kind == .privateKey {
+                    Section {
+                        Label(L("Not recommended. This stores your main wallet key on the phone: anyone who gets it can withdraw everything, and app.hyperliquid.xyz never asks for it. Prefer Connect wallet (Rabby) or an API wallet, which cannot withdraw."),
+                              systemImage: "exclamationmark.octagon.fill")
+                            .font(.caption.bold()).foregroundStyle(Color.hlRed)
+                        Toggle(L("I understand the risk"), isOn: $riskAccepted)
+                    }
+                }
 
                 Section {
                     TextField(L("Name (e.g. Main)"), text: $name)
@@ -213,7 +223,7 @@ struct AddAccountView: View {
                 }
 
                 Section {
-                    PrimaryButton(title: L("Save"), busy: checking) { save() }
+                    PrimaryButton(title: L("Save"), busy: checking, disabled: kind == .privateKey && !riskAccepted) { save() }
                         .listRowBackground(Color.clear)
                 }
             }

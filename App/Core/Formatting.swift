@@ -91,11 +91,40 @@ enum Fmt {
     }
 
     /// Parses user input accepting both "," and "." decimal separators and spaces.
+    /// Parses user input with either decimal separator. "1,5" / "1.5" → 1.5; grouped thousands
+    /// ("60,000", "1,234.5", "1.234,5", "60 000") are understood. A lone comma followed by exactly three
+    /// digits ("1,500") is ambiguous (1.5 or 1500) and is rejected rather than guessed.
     static func parse(_ s: String) -> Double? {
-        let t = s.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "\u{00a0}", with: "")
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        for sp in [" ", "\u{00a0}", "\u{202f}", "'", "’", "_"] { t = t.replacingOccurrences(of: sp, with: "") }
         guard !t.isEmpty else { return nil }
-        return Double(t)
+        let dots = t.filter { $0 == "." }.count, commas = t.filter { $0 == "," }.count
+        if dots > 0 && commas > 0 {
+            // The last separator is the decimal one, the other groups thousands.
+            guard let ld = t.lastIndex(of: "."), let lc = t.lastIndex(of: ",") else { return nil }
+            if lc > ld { t = t.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".") }
+            else { t = t.replacingOccurrences(of: ",", with: "") }
+        } else if commas > 1 || dots > 1 {
+            // Several identical separators can only group thousands: "1,234,567" / "1.234.567".
+            let sep: Character = commas > 1 ? "," : "."
+            let groups = t.split(separator: sep, omittingEmptySubsequences: false)
+            guard groups.dropFirst().allSatisfy({ $0.count == 3 }) else { return nil }
+            t = groups.joined()
+        } else if commas == 1 {
+            let parts = t.split(separator: ",", omittingEmptySubsequences: false)
+            let intPart = parts[0].trimmingCharacters(in: CharacterSet(charactersIn: "-+"))
+            if parts.count == 2, parts[1].count == 3, !intPart.isEmpty, intPart != "0" { return nil }   // "1,500": ambiguous
+            t = t.replacingOccurrences(of: ",", with: ".")
+        }
+        guard let v = Double(t), v.isFinite else { return nil }
+        return v
+    }
+
+    /// True when the text would be rejected only because of an ambiguous separator ("1,500").
+    static func isAmbiguous(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        guard parse(t) == nil, t.filter({ $0 == "," }).count == 1, !t.contains(".") else { return false }
+        return Double(t.replacingOccurrences(of: ",", with: ".")) != nil
     }
 
     static func input(_ x: Double, _ d: Int) -> String {

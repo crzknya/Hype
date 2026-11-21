@@ -67,6 +67,18 @@ public struct HLWallet {
     }
 }
 
+public extension HLSignature {
+    /// Address that produced this signature over `digest`, or nil if the signature is malformed.
+    func recoverAddress(digest: [UInt8]) -> String? {
+        guard digest.count == 32, r.count == 32, s.count == 32, v == 27 || v == 28,
+              r.contains(where: { $0 != 0 }), s.contains(where: { $0 != 0 }),
+              let sig = try? P256K.Recovery.ECDSASignature(compactRepresentation: Data(r + s), recoveryId: Int32(v - 27))
+        else { return nil }
+        let pub = P256K.Recovery.PublicKey(HashDigest(digest), signature: sig, format: .uncompressed)
+        return HLWallet.address(fromUncompressedPublicKey: [UInt8](pub.dataRepresentation))
+    }
+}
+
 public enum Address {
     public static func isValid(_ s: String) -> Bool {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)

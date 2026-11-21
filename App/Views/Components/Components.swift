@@ -119,6 +119,16 @@ struct NumField<Trailing: View>: View {
         .padding(.horizontal, 10)
         .frame(height: 40)
         .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            if Fmt.isAmbiguous(text) { RoundedRectangle(cornerRadius: 8).stroke(Color.hlRed, lineWidth: 1) }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if Fmt.isAmbiguous(text) {
+                Text(L("Ambiguous number: write it without the comma or with a dot"))
+                    .font(.system(size: 9)).foregroundStyle(Color.hlRed)
+                    .padding(.horizontal, 10).offset(y: 12)
+            }
+        }
     }
 }
 

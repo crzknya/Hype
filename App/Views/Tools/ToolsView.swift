@@ -30,12 +30,6 @@ struct ToolsView: View {
                     }
                 }
                 Section("Hyperliquid") {
-                    NavigationLink { LeaderboardView() } label: {
-                        Label(L("Leaderboard"), systemImage: "trophy")
-                    }
-                    NavigationLink { PointsView() } label: {
-                        Label(L("Points"), systemImage: "star.circle")
-                    }
                     NavigationLink { ReferralsView() } label: {
                         Label(L("Referrals"), systemImage: "person.2.wave.2")
                     }

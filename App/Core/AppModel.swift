@@ -114,6 +114,9 @@ final class AppModel {
     /// Client-side chase orders (repriced while the app runs) and their runner.
     var chases: [ChaseOrder] = []
     @ObservationIgnored var chaseTask: Task<Void, Never>?
+    /// When the open-orders list was last updated (stream or REST) and last fetched for chases.
+    @ObservationIgnored var ordersUpdatedAt = Date.distantPast
+    @ObservationIgnored var chaseOrdersFetchAt = Date.distantPast
     /// Order history (historicalOrders) and TWAP slice fills.
     var orderHistory: [HistoricalOrder] = []
     var twapFills: [Fill] = []
@@ -289,8 +292,13 @@ final class AppModel {
         subscribeCoin(selectedCoin)
         subscribeUser()
         loops.append(Task { [weak self] in
+            var n = 0
             while !Task.isCancelled {
                 await self?.pollBook()
+                n += 1
+                // The l2 stream sends deltas without sequence numbers: take a fresh snapshot every 30 s so a
+                // lost message cannot leave the ladder wrong for long.
+                if n % 30 == 0 { self?.resyncBook() }
                 try? await Task.sleep(for: .seconds(1))
             }
         })
@@ -334,6 +342,11 @@ final class AppModel {
     }
 
     private func clearAccountState() {
+        // Chases belong to the previous account: stop repricing (their orders stay as limit orders there).
+        if chases.contains(where: { $0.status == .working }) {
+            for i in chases.indices where chases[i].status == .working { chases[i].status = .stopped }
+            show(.info, L("Chase orders stopped: the account changed. Their orders stay on the book as limit orders."))
+        }
         summary = AccountSummary(); positions = []; openOrders = []; fills = []; fundingHistory = []
         mainPositions = []; dexPositions = [:]; dexSummaries = [:]; activeDexes = []
         ledger = []; spotBalances = []; twaps = []; portfolioHistory = []; portfolioRanges = [:]; accountError = nil
@@ -443,6 +456,13 @@ final class AppModel {
         guard let j = try? await api.info(type: "l2Book", extra),
               coin == selectedCoin, sig == bookSigFigs, j["coin"].str == coin else { return }
         applyBookSnapshot(j, fromSocket: false)
+    }
+
+    private func resyncBook() {
+        guard tab == .trade, wsConnected else { return }
+        let sub = l2Sub(selectedCoin, bookSigFigs)
+        socket.unsubscribe(sub)
+        socket.subscribe(sub)
     }
 
     /// Order-book subscription. "l2" is the stream app.hyperliquid.xyz uses (snapshot + compressed deltas,
@@ -706,6 +726,7 @@ final class AppModel {
         guard user == userAddress else { return }
         var seen = Set<Int64>()
         openOrders = all.filter { seen.insert($0.oid).inserted }
+        ordersUpdatedAt = Date()
     }
 
     /// Full refresh including HIP-3 dex clearinghouses.
@@ -1036,6 +1057,7 @@ final class AppModel {
             let list = data["orders"].array.map(OpenOrder.init).filter { seen.insert($0.oid).inserted }
             if list != openOrders { openOrders = list }
             ordersStreamAt = Date()
+            ordersUpdatedAt = Date()
         case "twapStates":
             guard data["user"].str.lowercased() == userAddress else { return }
             twaps = data["states"].array.compactMap { e in
@@ -1134,6 +1156,9 @@ final class AppModel {
             sig = try await WalletConnectService.shared.signTypedData(
                 topic: topic, address: acc.address, chainId: a.chainId, json: a.typedDataJSON(),
                 wallet: acc.walletApp.flatMap(WalletApp.init(rawValue:)))
+            guard sig.recoverAddress(digest: HLSigning.userSignedDigest(a))?.lowercased() == acc.address.lowercased() else {
+                throw HLError(L("The wallet signed with a different account. Select {0} in the wallet and try again.", Address.short(acc.address)))
+            }
         } else {
             sig = try wallet().sign(digest: HLSigning.userSignedDigest(a))
         }
@@ -1165,7 +1190,8 @@ final class AppModel {
             ("Order could not immediately match", L("Order could not fill immediately (IOC): no liquidity within slippage")),
             ("Reduce only order would increase position", L("Reduce-only order would increase the position")),
             ("Price must be divisible by tick size", L("Price is not a multiple of the tick size")),
-            ("does not exist", L("User/agent not found. Make sure the API wallet is approved at app.hyperliquid.xyz/API")),
+            ("User or API Wallet", L("User/agent not found. Make sure the API wallet is approved at app.hyperliquid.xyz/API")),
+            ("never placed, already canceled, or filled", L("The order is no longer open (filled or cancelled)")),
             ("Too many cumulative requests", L("Too many requests for the account's trading volume")),
         ]
         for (k, v) in map where msg.contains(k) { return "\(v)\n(\(msg))" }

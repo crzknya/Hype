@@ -55,10 +55,15 @@ final class HyperCoreTests: XCTestCase {
         }
     }
 
-    func testUserPointsConnectionId() {
-        // eth_abi: keccak(encode(['string','uint64'], ['userPoints', 1700000000]))
-        XCTAssertEqual(Hex.encode(HLSigning.userPointsConnectionId(timestamp: 1_700_000_000), prefix: false),
-                       "0b6a9337819c9cf3507d6ffc353c1203ef7373a85d1a62485bf966535f4c8d0f")
+    func testRecoverAddress() throws {
+        let w = try HLWallet(privateKeyHex: v["privateKey"].str)
+        let digest = Keccak.hash256("hype recover test")
+        let sig = w.sign(digest: digest)
+        XCTAssertEqual(sig.recoverAddress(digest: digest), w.address.lowercased())
+        XCTAssertEqual(sig.recoverAddress(digest: digest)?.lowercased(), v["address"].str.lowercased())
+        let other = Keccak.hash256("other message")
+        XCTAssertNotEqual(sig.recoverAddress(digest: other), w.address.lowercased())
+        XCTAssertNil(HLSignature(r: [UInt8](repeating: 0, count: 32), s: sig.s, v: sig.v).recoverAddress(digest: digest))
     }
 
     func testERC20BigAmounts() {

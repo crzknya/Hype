@@ -348,6 +348,9 @@ struct UnitDepositView: View {
                   let j = try? JSON.parse(data), let a = j["address"].string, !a.isEmpty else {
                 throw HLError(L("Unable to get a deposit address from Unit"))
             }
+            guard choice.isValidAddress(a) else {
+                throw HLError(L("Unit returned an address in an unexpected format for {0}; it is not shown. Use app.hyperliquid.xyz instead.", choice.chainTitle))
+            }
             address = a
         } catch { self.error = error.localizedDescription }
     }
@@ -359,6 +362,25 @@ struct UnitAsset: Identifiable, Hashable {
     let symbol: String
     let uToken: String
     var id: String { chain + "/" + asset }
+
+    /// Basic format check of a deposit address returned by Unit for this chain.
+    func isValidAddress(_ a: String) -> Bool {
+        let base58 = Set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+        switch chain {
+        case "bitcoin":
+            if a.lowercased().hasPrefix("bc1") {
+                let bech = Set("qpzry9x8gf2tvdw0s3jn54khce6mua7l")
+                return (42...62).contains(a.count) && a.lowercased().dropFirst(3).allSatisfy { bech.contains($0) }
+            }
+            return (a.hasPrefix("1") || a.hasPrefix("3")) && (26...35).contains(a.count) && a.allSatisfy { base58.contains($0) }
+        case "solana":
+            return (32...44).contains(a.count) && a.allSatisfy { base58.contains($0) }
+        case "zcash":
+            return (a.hasPrefix("t1") || a.hasPrefix("t3")) && a.count == 35 && a.allSatisfy { base58.contains($0) }
+        default:
+            return Address.isValid(a)
+        }
+    }
 
     var chainTitle: String {
         switch chain {

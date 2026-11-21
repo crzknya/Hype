@@ -31,6 +31,13 @@ struct TransferSheet: View {
                 case .send: send
                 case .deposit: deposit
                 }
+                if model.activeSubAccount != nil && (kind == .withdraw || kind == .send) {
+                    Section {
+                        Label(L("You are trading as a sub-account. Switch back to the master account for withdrawals, sends and transfers; move funds with Sub-accounts → Transfer."),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
                 if kind != .deposit && !(model.account?.kind.canTransfer ?? false) {
                     Section {
                         Label(L("This operation is signed by the main wallet. An API wallet can only trade. Add an account with a private key or do it on app.hyperliquid.xyz."),
@@ -292,7 +299,9 @@ struct TransferSheet: View {
     }
 
     private func submitButton(_ title: String, _ op: @escaping () async throws -> String) -> some View {
-        PrimaryButton(title: title, busy: busy, disabled: !(model.account?.kind.canTransfer ?? false)) {
+        PrimaryButton(title: title, busy: busy,
+                      disabled: !(model.account?.kind.canTransfer ?? false)
+                        || (model.activeSubAccount != nil && (kind == .withdraw || kind == .send))) {
             hideKeyboard()
             busy = true
             Task {

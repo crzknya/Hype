@@ -87,7 +87,7 @@ extension AppModel {
     func validate(_ d: OrderDraft) throws {
         let m = d.market
         guard d.size > 0 else { throw HLError(L("Enter a size")) }
-        let sz = NSDecimalNumber(decimal: m.roundSize(d.size, mode: .plain)).doubleValue
+        let sz = NSDecimalNumber(decimal: m.roundSize(d.size, mode: .down)).doubleValue
         guard sz > 0 else { throw HLError(L("Size is below the minimum step {0}", Fmt.num(m.minSizeStep, m.szDecimals))) }
         let px = d.price ?? d.triggerPx ?? mid(m.id)
         if d.type != .scale && d.type != .twap && !d.reduceOnly && sz * px < 10 {
@@ -100,6 +100,17 @@ extension AppModel {
             throw HLError(L("{0} is at its open interest cap: only orders that reduce a position are accepted.", m.name))
         }
         if d.type.needsPrice && (d.price ?? 0) <= 0 { throw HLError(L("Enter a price")) }
+        // A limit far through the market fills at once at much worse prices — almost always a typo.
+        if d.type == .limit, let p = d.price, p > 0, !m.id.hasPrefix("#") {
+            let ref = mid(m.id)
+            if ref > 0 {
+                let through = d.isBuy ? p / ref - 1 : 1 - p / ref
+                if through > 0.15 {
+                    throw HLError(L("Limit price {0} is {1} {2} the market ({3}) and would execute immediately at worse prices. Check the price or use a market order.",
+                                    Fmt.price(p), Fmt.pct(through, 1, signed: false), d.isBuy ? L("above") : L("below"), Fmt.price(ref)))
+                }
+            }
+        }
         if d.type.needsTrigger && (d.triggerPx ?? 0) <= 0 { throw HLError(L("Enter a trigger price")) }
         if d.type == .scale {
             guard let a = d.scaleStart, let b = d.scaleEnd, a > 0, b > 0 else { throw HLError(L("Enter the grid price range")) }
@@ -131,7 +142,7 @@ extension AppModel {
     func place(_ d: OrderDraft) async throws -> String {
         try validate(d)
         let m = d.market
-        let sz = m.roundSize(d.size, mode: .plain)
+        let sz = m.roundSize(d.size, mode: .down)
         // HIP-3 on a standard account: cross margin is rejected, switch the market to isolated first.
         if !m.isSpot && !crossAllowed(m) && m.id == selectedCoin && activeAsset.isCross && position(m.id) == nil {
             try await updateLeverage(m, leverage: max(1, min(activeAsset.leverage, m.maxLeverage)), isCross: false)
@@ -164,7 +175,7 @@ extension AppModel {
 
         case .scale:
             let orders = scaleWires(d)
-            let data = try await submit(HLAction.order(orders))
+            let data = try await submitOrders(orders)
             return summarize(data, count: orders.count)
 
         default:
@@ -183,9 +194,29 @@ extension AppModel {
                 if let tp = d.tp, tp > 0 { orders.append(triggerWire(m, isBuy: !d.isBuy, trigger: tp, limit: nil, sz: sz, tpsl: .tp)) }
                 if let sl = d.sl, sl > 0 { orders.append(triggerWire(m, isBuy: !d.isBuy, trigger: sl, limit: nil, sz: sz, tpsl: .sl)) }
             }
-            let data = try await submit(HLAction.order(orders, grouping: orders.count > 1 ? .normalTpsl : .na))
+            let data = try await submitOrders(orders, grouping: orders.count > 1 ? .normalTpsl : .na)
             Task { await refreshAccount(); await refreshOrders() }
             return summarize(data, count: orders.count)
+        }
+    }
+
+    /// Sends orders with client order ids. If the connection drops after sending, the first order is
+    /// looked up by its cloid so the user is told whether it reached the exchange instead of retrying blindly.
+    func submitOrders(_ wires: [OrderWire], grouping: Grouping = .na) async throws -> JSON {
+        var orders = wires
+        for i in orders.indices where orders[i].cloid == nil { orders[i].cloid = Self.newCloid() }
+        do {
+            return try await submit(HLAction.order(orders, grouping: grouping))
+        } catch let e as URLError {
+            try? await Task.sleep(for: .seconds(1.5))
+            if let u = userAddress, let cloid = orders.first?.cloid,
+               let j = try? await api.info(type: "orderStatus", [("user", .str(u)), ("oid", .str(cloid))]),
+               j["status"].str == "order" {
+                Task { await refreshAccount(); await refreshOrders() }
+                throw HLError(L("The connection dropped, but the order reached the exchange (status: {0}). Check positions and open orders before placing it again.",
+                                j["order"]["status"].str))
+            }
+            throw HLError(L("Network error ({0}). The order was most likely not placed — check open orders before retrying.", e.localizedDescription))
         }
     }
 
@@ -199,7 +230,7 @@ extension AppModel {
         return (0..<n).map { i in
             let px = a + (b - a) * Double(i) / Double(n - 1)
             let s = d.size * weights[i] / wsum
-            return wire(m, isBuy: d.isBuy, px: m.roundPrice(px), sz: m.roundSize(s, mode: .plain), reduceOnly: d.reduceOnly, kind: .limit(tif: .gtc))
+            return wire(m, isBuy: d.isBuy, px: m.roundPrice(px), sz: m.roundSize(s, mode: .down), reduceOnly: d.reduceOnly, kind: .limit(tif: .gtc))
         }
     }
 
@@ -240,6 +271,14 @@ extension AppModel {
 
     // MARK: Position actions
 
+    /// Withdrawals, sends, EVM transfers and the account type act on the master account (they are signed
+    /// by the main wallet, which cannot act for a sub-account), so they are blocked while trading as one.
+    func requireMasterAccount() throws {
+        guard activeSubAccount == nil else {
+            throw HLError(L("You are trading as a sub-account. Switch back to the master account for withdrawals, sends and transfers; move funds with Sub-accounts → Transfer."))
+        }
+    }
+
     /// Market closes use at least 8% max slippage (as app.hyperliquid.xyz), so they fill in fast markets.
     var closeSlippage: Double { max(slippage, 0.08) }
 
@@ -254,7 +293,7 @@ extension AppModel {
         } else {
             o = wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: sz, reduceOnly: true, kind: .limit(tif: .ioc))
         }
-        let data = try await submit(HLAction.order([o]))
+        let data = try await submitOrders([o])
         Task { await refreshAccount(); await refreshOrders() }
         return summarize(data, count: 1)
     }
@@ -267,7 +306,7 @@ extension AppModel {
                         reduceOnly: true, kind: .limit(tif: .ioc))
         }
         guard !wires.isEmpty else { throw HLError(L("No open positions")) }
-        let data = try await submit(HLAction.order(wires))
+        let data = try await submitOrders(wires)
         Task { await refreshAccount(); await refreshOrders() }
         return summarize(data, count: wires.count)
     }
@@ -276,12 +315,13 @@ extension AppModel {
         guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         let isBuy = !p.isLong
         let sz = m.roundSize(p.size * 2, mode: .plain)
-        let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
+        let data = try await submitOrders([wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))])
         Task { await refreshAccount() }
         return summarize(data, count: 1)
     }
 
-    /// Sets position TP/SL (replaces existing position TP/SL orders of the same kind).
+    /// Sets position TP/SL. The new orders are placed first and the old ones of the same kind are
+    /// cancelled only after that succeeded, so a rejected update never leaves the position unprotected.
     func setPositionTpsl(_ p: Position, tp: Double?, sl: Double?) async throws -> String {
         guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         let existing = openOrders.filter { $0.coin == p.coin && $0.isPositionTpsl }
@@ -290,19 +330,27 @@ extension AppModel {
             let isTp = o.orderType.hasPrefix("Take")
             if (isTp && tp != nil) || (!isTp && sl != nil) { toCancel.append((m.asset, o.oid)) }
         }
-        if !toCancel.isEmpty { try await submit(HLAction.cancel(toCancel)) }
         let isBuy = !p.isLong
         let sz = Decimal(string: HLNum.wire(p.size)) ?? 0
         var orders: [OrderWire] = []
         if let tp, tp > 0 { orders.append(triggerWire(m, isBuy: isBuy, trigger: tp, limit: nil, sz: sz, tpsl: .tp)) }
         if let sl, sl > 0 { orders.append(triggerWire(m, isBuy: isBuy, trigger: sl, limit: nil, sz: sz, tpsl: .sl)) }
-        guard !orders.isEmpty else {
-            Task { await refreshOrders() }
-            return L("TP/SL removed")
+        var result = L("TP/SL removed")
+        if !orders.isEmpty {
+            // Throws (and keeps the old orders) when every new order is rejected.
+            let data = try await submitOrders(orders, grouping: .positionTpsl)
+            let statuses = data["statuses"].array
+            if statuses.contains(where: { $0["error"].string != nil }) {
+                // Partially rejected: keep the old orders so the position stays protected.
+                Task { await refreshOrders() }
+                return summarize(data, count: orders.count)
+            }
+            result = summarize(data, count: orders.count)
         }
-        let data = try await submit(HLAction.order(orders, grouping: .positionTpsl))
+        // The exchange may already have replaced them; a failed cancel is not an error here.
+        if !toCancel.isEmpty { _ = try? await submit(HLAction.cancel(toCancel)) }
         Task { await refreshOrders() }
-        return summarize(data, count: orders.count)
+        return result
     }
 
     func updateLeverage(_ m: Market, leverage: Int, isCross: Bool) async throws {
@@ -441,6 +489,7 @@ extension AppModel {
     /// is retried via CCTP automatically. Returns true when CCTP was used.
     @discardableResult
     func withdraw(amount: Double, destination: String, cctp: Bool) async throws -> Bool {
+        try requireMasterAccount()
         let amt = HLNum.wire(amount, maxDecimals: 6)
         if !cctp {
             do {
@@ -477,6 +526,7 @@ extension AppModel {
 
     /// Switches the account type ("unifiedAccount", "portfolioMargin" or "disabled"), signed by the main wallet.
     func setAbstraction(_ mode: String) async throws {
+        try requireMasterAccount()
         guard let acc = account else { throw HLError(L("No account connected")) }
         try await submitUser(HLAction.userSetAbstraction(user: acc.address, abstraction: mode, nonce: nextNonce(),
                                                          mainnet: network.isMainnet, chainId: userSignChainId))
@@ -485,11 +535,13 @@ extension AppModel {
     }
 
     func sendUsd(amount: Double, destination: String) async throws {
+        try requireMasterAccount()
         try await submitUser(HLAction.usdSend(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
     }
 
     func sendSpot(token: SpotToken, amount: Double, destination: String) async throws {
+        try requireMasterAccount()
         try await submitUser(HLAction.spotSend(destination: destination, token: token.wire,
                                                amount: HLNum.wire(amount, maxDecimals: token.weiDecimals),
                                                time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
@@ -646,18 +698,20 @@ extension AppModel {
         let size = isBuy ? amount / px : amount
         guard size * px >= 10 else { throw HLError(L("Minimum swap value is 10 {0}", from)) }
         let sz = m.roundSize(size)
-        let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: m.roundPrice(px), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
+        let data = try await submitOrders([wire(m, isBuy: isBuy, px: m.roundPrice(px), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))])
         Task { await refreshAccount() }
         return summarize(data, count: 1)
     }
 
     /// HyperCore spot → HyperEVM: a spot send to the token's system address (main wallet signature).
     func coreToEvm(_ token: SpotToken, amount: Double) async throws {
+        try requireMasterAccount()
         try await sendSpot(token: token, amount: amount, destination: HLBridge.systemAddress(tokenIndex: token.index))
     }
 
     /// HyperEVM → HyperCore: a transaction on the HyperEVM (chain 999) signed in the connected wallet.
     func evmToCore(_ token: SpotToken, amount: Double) async throws -> String {
+        try requireMasterAccount()
         guard let acc = account, acc.kind == .wallet, let topic = acc.wcTopic else {
             throw HLError(L("Transfers from the HyperEVM are signed in a connected wallet (Settings → Connect wallet)."))
         }

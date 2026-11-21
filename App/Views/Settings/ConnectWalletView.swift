@@ -138,6 +138,10 @@ struct ConnectWalletView: View {
                                                mainnet: model.network.isMainnet, chainId: chainId)
             let sig = try await wc.signTypedData(topic: topic, address: addr, chainId: chainId,
                                                  json: action.typedDataJSON(), wallet: walletApp)
+            // The wallet must have signed with the connected account (not another account selected in the wallet).
+            guard sig.recoverAddress(digest: HLSigning.userSignedDigest(action))?.lowercased() == addr.lowercased() else {
+                throw HLError(L("The wallet signed with a different account. Select {0} in the wallet and try again.", Address.short(addr)))
+            }
             let res = try await model.api.exchange(action: action.action, nonce: nonce, signature: sig, vault: nil)
             guard res["status"].str == "ok" else {
                 throw HLError(model.translate(res["response"].string ?? L("Unknown error")))
