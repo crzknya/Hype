@@ -206,6 +206,7 @@ struct OpenOrder: Identifiable, Hashable {
         case "Stop Limit": return L("Stop Limit")
         case "Take Profit Market": return L("Take Market")
         case "Take Profit Limit": return L("Take Limit")
+        case "Trailing Stop Market", "Trailing Stop": return L("Trailing Stop")
         default: return orderType
         }
     }
@@ -440,4 +441,36 @@ struct PortfolioRange {
     var volume: Double
     /// PnL over the range (last − first point of the cumulative PnL history).
     var pnlChange: Double { (pnl.last?.1 ?? 0) - (pnl.first?.1 ?? 0) }
+}
+
+/// An entry of `historicalOrders`: the order as it was and its final (or current) status.
+struct HistoricalOrder: Identifiable, Hashable {
+    let order: OpenOrder
+    let status: String
+    let time: Date
+    var id: String { "\(order.oid)-\(status)" }
+
+    init(_ j: JSON) {
+        order = OpenOrder(j["order"])
+        status = j["status"].str
+        time = Date(timeIntervalSince1970: j["statusTimestamp"].dbl / 1000)
+    }
+
+    var statusTitle: String {
+        switch status {
+        case "open": return L("Open")
+        case "filled": return L("Filled")
+        case "canceled": return L("Canceled")
+        case "triggered": return L("Triggered")
+        case "rejected": return L("Rejected")
+        case "marginCanceled": return L("Canceled: margin")
+        case "reduceOnlyCanceled": return L("Canceled: reduce only")
+        case "badAloPxRejected": return L("Rejected: post-only would cross")
+        case "iocCancelRejected": return L("Rejected: IOC not filled")
+        case "scheduledCancel": return L("Canceled: schedule")
+        case "selfTradeCanceled": return L("Canceled: self trade")
+        case "siblingFilledCanceled": return L("Canceled: TP/SL sibling filled")
+        default: return status
+        }
+    }
 }

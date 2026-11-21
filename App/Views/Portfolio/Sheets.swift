@@ -224,3 +224,66 @@ struct ModifyOrderSheet: View {
         .presentationDetents([.medium])
     }
 }
+
+/// Trailing stop that closes a position (reduce-only), as "Set Trailing Stop" on app.hyperliquid.xyz.
+struct TrailingStopSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let position: Position
+    @State private var valueText = ""
+    @State private var isPct = true
+    @State private var activationOn = false
+    @State private var activationText = ""
+    @State private var busy = false
+
+    var body: some View {
+        let m = model.market(position.coin)
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent(L("Position"), value: "\(position.isLong ? L("Long") : L("Short")) \(Fmt.num(position.size, m?.szDecimals ?? 4)) \(model.displayName(position.coin))")
+                    NumField(title: L("Retracement"), text: $valueText, placeholder: isPct ? "1" : "") {
+                        Button(isPct ? "%" : "USD") { isPct.toggle() }.font(.caption.bold())
+                    }
+                    if isPct {
+                        HStack {
+                            ForEach([0.5, 1.0, 2.0, 5.0], id: \.self) { p in
+                                Button(Fmt.num(p, p < 1 ? 1 : 0) + "%") { valueText = Fmt.input(p, 1) }
+                                    .buttonStyle(.bordered).controlSize(.small)
+                            }
+                        }
+                    }
+                    Toggle(L("Activation price"), isOn: $activationOn)
+                    if activationOn { NumField(title: L("Activation"), text: $activationText, placeholder: Fmt.price(model.mid(position.coin))) }
+                } footer: {
+                    Text(L("This will close the position once the price retraces by the amount set."))
+                }
+                Section {
+                    PrimaryButton(title: L("Set trailing stop"), busy: busy, disabled: m == nil || !model.canTrade) {
+                        guard let m else { return }
+                        var d = OrderDraft(market: m, isBuy: !position.isLong, type: .trailing, size: position.size)
+                        d.reduceOnly = true
+                        d.trailValue = Fmt.parse(valueText)
+                        d.trailIsPct = isPct
+                        d.trailActivation = activationOn ? Fmt.parse(activationText) : nil
+                        busy = true
+                        Task {
+                            do {
+                                let msg = try await model.place(d)
+                                model.show(.success, msg)
+                                dismiss()
+                            } catch { model.show(.error, error.localizedDescription) }
+                            busy = false
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle(L("Trailing stop"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
+            .keyboardDoneToolbar()
+        }
+        .presentationDetents([.medium, .large])
+    }
+}

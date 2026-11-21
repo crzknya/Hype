@@ -15,7 +15,7 @@ struct PortfolioView: View {
     @State private var graph: Graph = .value
 
     enum Tab: String, CaseIterable, Identifiable {
-        case balances = "Balances", positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", funding = "Funding", ledger = "Transfers"
+        case balances = "Balances", positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", history = "Order history", funding = "Funding", ledger = "Transfers"
         var id: String { rawValue }
     }
 
@@ -242,7 +242,7 @@ struct PortfolioView: View {
     private func title(_ t: Tab) -> String {
         switch t {
         case .positions: return L("Positions {0}", model.positions.count)
-        case .orders: return L("Orders {0}", model.openOrders.count)
+        case .orders: return L("Orders {0}", model.openOrders.count + model.activeChases.count)
         case .twap: return "TWAP \(model.twaps.count)"
         default: return L(t.rawValue)
         }
@@ -270,7 +270,8 @@ struct PortfolioView: View {
                 ForEach(model.positions) { PositionRow(position: $0) }
             }
         case .orders:
-            if model.openOrders.isEmpty { EmptyState(text: L("No open orders")) }
+            ChaseList()
+            if model.openOrders.isEmpty && model.activeChases.isEmpty { EmptyState(text: L("No open orders")) }
             else {
                 if model.canTrade {
                     HStack {
@@ -288,6 +289,14 @@ struct PortfolioView: View {
         case .twap:
             if model.twaps.isEmpty { EmptyState(text: L("No active TWAPs")) }
             ForEach(model.twaps) { TwapRow(twap: $0) }
+            if !model.twapFills.isEmpty {
+                Text(L("TWAP fills")).font(.caption.bold()).foregroundStyle(Color.hlMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(model.twapFills.prefix(100)) { FillRow(fill: $0) }
+            }
+        case .history:
+            if model.orderHistory.isEmpty { EmptyState(text: L("No orders yet")) }
+            ForEach(model.orderHistory.prefix(200)) { HistoryOrderRow(entry: $0) }
         case .fills:
             FillsSection()
         case .funding:
@@ -562,6 +571,50 @@ struct AccountSwitcher: View {
                 Image(systemName: "chevron.down").font(.caption)
             }
             .foregroundStyle(.primary)
+        }
+    }
+}
+
+/// A row of the order history (historicalOrders).
+struct HistoryOrderRow: View {
+    @Environment(AppModel.self) private var model
+    let entry: HistoricalOrder
+
+    var body: some View {
+        let o = entry.order
+        let m = model.market(o.coin)
+        let dec = m?.szDecimals ?? 4
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(model.displayName(o.coin)).font(.subheadline.bold())
+                    SideBadge(isLong: o.isBuy, spot: m?.isSpot ?? false)
+                    Text(o.typeTitle).font(.caption).foregroundStyle(Color.hlMuted)
+                    if o.reduceOnly { Badge(text: "RO", color: .hlMuted) }
+                }
+                HStack(spacing: 10) {
+                    if o.isTrigger { Text(L("Trigger {0}", Fmt.price(o.triggerPx))) }
+                    if !o.orderType.contains("Market") { Text(L("Price {0}", Fmt.price(o.limitPx))) }
+                    Text(o.origSz == 0 ? L("position") : Fmt.num(o.origSz, dec))
+                }
+                .font(.system(size: 11, design: .monospaced))
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(entry.statusTitle).font(.caption.bold()).foregroundStyle(color)
+                Text(Fmt.dateTime(entry.time)).font(.caption2).foregroundStyle(Color.hlMuted)
+            }
+        }
+        .padding(10)
+        .themedCard()
+    }
+
+    private var color: Color {
+        switch entry.status {
+        case "filled": return .hlGreen
+        case "open", "triggered": return .hlAccent
+        case "canceled": return .hlMuted
+        default: return .orange
         }
     }
 }

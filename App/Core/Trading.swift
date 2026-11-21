@@ -2,7 +2,7 @@ import Foundation
 import HyperCore
 
 enum OrderTypeUI: String, CaseIterable, Identifiable {
-    case market, limit, stopMarket, stopLimit, takeMarket, takeLimit, scale, twap
+    case market, limit, stopMarket, stopLimit, takeMarket, takeLimit, trailing, chase, scale, twap
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,8 @@ enum OrderTypeUI: String, CaseIterable, Identifiable {
         case .stopLimit: return L("Stop Limit")
         case .takeMarket: return L("Take Market")
         case .takeLimit: return L("Take Limit")
+        case .trailing: return L("Trailing Stop")
+        case .chase: return L("Chase (limit)")
         case .scale: return L("Scale (grid)")
         case .twap: return "TWAP"
         }
@@ -21,6 +23,10 @@ enum OrderTypeUI: String, CaseIterable, Identifiable {
     var isTrigger: Bool { needsTrigger }
     var tpsl: TPSL { (self == .takeMarket || self == .takeLimit) ? .tp : .sl }
     var triggerIsMarket: Bool { self == .stopMarket || self == .takeMarket }
+    /// TP/SL and risk sizing apply to plain market / limit orders only.
+    var allowsTpsl: Bool { self == .market || self == .limit }
+    /// Executes as a taker (market, market triggers, trailing stop, TWAP).
+    var isTaker: Bool { [.market, .stopMarket, .takeMarket, .trailing, .twap].contains(self) }
 }
 
 struct OrderDraft {
@@ -42,6 +48,12 @@ struct OrderDraft {
     // twap
     var twapMinutes = 30
     var twapRandomize = true
+    // trailing stop: retracement in % (or price distance) and optional activation price
+    var trailValue: Double?
+    var trailIsPct = true
+    var trailActivation: Double?
+    // chase: max distance from the start price (fraction, 0 = no limit)
+    var chaseMaxDistance = 0.0
 }
 
 extension AppModel {
@@ -94,6 +106,14 @@ extension AppModel {
         if d.type == .twap {
             guard d.twapMinutes >= 5 && d.twapMinutes <= 1440 else { throw HLError(L("TWAP duration: 5–1440 minutes")) }
         }
+        if d.type == .trailing {
+            guard let v = d.trailValue, v > 0 else { throw HLError(L("Enter the retracement")) }
+            if d.trailIsPct && v > 50 { throw HLError(L("Retracement must be below 50%")) }
+            if let a = d.trailActivation, a <= 0 { throw HLError(L("Enter the activation price")) }
+        }
+        if d.type == .chase && d.chaseMaxDistance > 0.05 {
+            throw HLError(L("Max chase distance cannot exceed 5% of the current price."))
+        }
         if let tp = d.tp, tp > 0 {
             let ref = d.price ?? mid(m.id)
             if d.isBuy ? tp <= ref : tp >= ref { throw HLError(L("Take profit must be {0} the entry price", d.isBuy ? L("above") : L("below"))) }
@@ -123,6 +143,22 @@ extension AppModel {
             if let id = data["status"]["running"]["twapId"].int64 { return L("TWAP started (#{0})", id) }
             return L("TWAP started")
 
+        case .trailing:
+            let v = d.trailValue ?? 0
+            let maxDec = HLNum.maxPriceDecimals(szDecimals: m.szDecimals, isSpot: m.isSpot)
+            _ = try await submit(HLAction.trailingStop(
+                asset: m.asset, isBuy: d.isBuy, sz: HLNum.wire(sz), reduceOnly: d.reduceOnly,
+                retracementPct: d.trailIsPct ? String(format: "%.4f%%", v) : nil,
+                retracementPx: d.trailIsPct ? nil : HLNum.wire(v, maxDecimals: maxDec),
+                activationPx: d.trailActivation.map { HLNum.wire(m.roundPrice($0)) }))
+            Task { await refreshOrders() }
+            return L("Trailing stop placed")
+
+        case .chase:
+            try await startChase(m, isBuy: d.isBuy, size: NSDecimalNumber(decimal: sz).doubleValue,
+                                 reduceOnly: d.reduceOnly, maxDistance: d.chaseMaxDistance)
+            return L("Chase order placed")
+
         case .scale:
             let orders = scaleWires(d)
             let data = try await submit(HLAction.order(orders))
@@ -140,7 +176,7 @@ extension AppModel {
                                    sz: sz, tpsl: d.type.tpsl, reduceOnly: d.reduceOnly)
             }
             var orders = [main]
-            if !d.type.isTrigger && !m.isSpot {
+            if d.type.allowsTpsl && !m.isSpot {
                 if let tp = d.tp, tp > 0 { orders.append(triggerWire(m, isBuy: !d.isBuy, trigger: tp, limit: nil, sz: sz, tpsl: .tp)) }
                 if let sl = d.sl, sl > 0 { orders.append(triggerWire(m, isBuy: !d.isBuy, trigger: sl, limit: nil, sz: sz, tpsl: .sl)) }
             }

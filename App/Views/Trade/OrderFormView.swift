@@ -30,6 +30,11 @@ struct OrderFormView: View {
     @State private var scaleSkew = 1.0
     @State private var twapMinutes = 30
     @State private var twapRandomize = true
+    @State private var trailText = ""
+    @State private var trailIsPct = true
+    @State private var trailActivationOn = false
+    @State private var trailActivationText = ""
+    @State private var chaseDistText = ""
     @State private var busy = false
     @State private var confirm: IdentifiedDraft?
     @State private var showLeverage = false
@@ -59,6 +64,13 @@ struct OrderFormView: View {
                 Stepper(L("Duration: {0}", twapLabel), value: $twapMinutes, in: 5...1440, step: twapMinutes < 60 ? 5 : 30).font(.caption)
                 Toggle(L("Randomize intervals"), isOn: $twapRandomize).font(.caption)
             }
+            if type == .trailing { trailingFields }
+            if type == .chase {
+                NumField(title: L("Max distance %"), text: $chaseDistText, placeholder: L("none"))
+                Text(L("Post-only limit kept one tick inside the spread until it fills. Runs while the app is open; stopping leaves a normal limit order."))
+                    .font(.system(size: 10)).foregroundStyle(Color.hlMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             sizeField
             Slider(value: $pct, in: 0...1)
@@ -72,7 +84,7 @@ struct OrderFormView: View {
             }
 
             options
-            if tpslOn && !market.isSpot && !type.isTrigger && type != .scale && type != .twap { tpslFields }
+            if tpslOn && !market.isSpot && type.allowsTpsl { tpslFields }
             summary
 
             if !model.canTrade {
@@ -101,7 +113,7 @@ struct OrderFormView: View {
         .onChange(of: tpslOn) { _, on in if !on { riskOn = false } }
         .onChange(of: type) { _, t in
             // TP/SL and risk sizing only exist for plain market/limit orders.
-            if t.isTrigger || t == .scale || t == .twap { riskOn = false }
+            if !t.allowsTpsl { riskOn = false }
             if pct > 0 { applyPct(pct) }
         }
         .onChange(of: isBuy) { _, _ in if pct > 0 { applyPct(pct) } }
@@ -168,7 +180,7 @@ struct OrderFormView: View {
     }
 
     private var availableTypes: [OrderTypeUI] {
-        market.isSpot ? [.market, .limit, .scale, .twap] : OrderTypeUI.allCases
+        market.isSpot ? [.market, .limit, .chase, .scale, .twap] : OrderTypeUI.allCases
     }
 
     private func midButton(_ set: @escaping (String) -> Void) -> some View {
@@ -211,7 +223,7 @@ struct OrderFormView: View {
                     .controlSize(.small)
                 }
             }
-            if !market.isSpot && !type.isTrigger && type != .scale && type != .twap {
+            if !market.isSpot && type.allowsTpsl {
                 HStack {
                     Toggle("TP/SL", isOn: $tpslOn).toggleStyle(CheckToggle())
                     Spacer()
@@ -220,6 +232,39 @@ struct OrderFormView: View {
             }
         }
         .font(.caption)
+    }
+
+    private var trailingFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            NumField(title: L("Retracement"), text: $trailText, placeholder: trailIsPct ? "1" : Fmt.price(refMid * 0.01)) {
+                Button(trailIsPct ? "%" : market.quote) { trailIsPct.toggle() }
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.hlAccent)
+            }
+            if trailIsPct {
+                HStack(spacing: 4) {
+                    ForEach([0.5, 1.0, 2.0, 5.0], id: \.self) { p in
+                        Button(Fmt.num(p, p < 1 ? 1 : 0) + "%") { trailText = Fmt.input(p, 1) }
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 5)
+                            .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+            Toggle(L("Activation price"), isOn: $trailActivationOn).toggleStyle(CheckToggle()).font(.caption)
+            if trailActivationOn {
+                NumField(title: L("Activation"), text: $trailActivationText, placeholder: Fmt.price(refMid)) { midButton { trailActivationText = $0 } }
+            }
+            Text(trailingExplainer).font(.system(size: 10)).foregroundStyle(Color.hlMuted)
+        }
+    }
+
+    private var trailingExplainer: String {
+        let r = trailText.isEmpty ? "—" : (trailIsPct ? trailText + "%" : trailText + " " + market.quote)
+        if trailActivationOn, !trailActivationText.isEmpty {
+            return L("When the mark price reaches {0}, the trailing stop activates; once the price retraces by {1} from the best price since activation, a stop market order is placed.", trailActivationText, r)
+        }
+        return L("When the mark price retraces by {0} from the best price since activation, a stop market order is placed.", r)
     }
 
     private var tpslFields: some View {
@@ -360,8 +405,9 @@ struct OrderFormView: View {
         let s = Fmt.input(p, market.priceDecimals(p))
         if type == .scale { scaleStartText = s }
         else if type.needsTrigger && !type.needsPrice { triggerText = s }
+        else if type == .trailing { trailActivationOn = true; trailActivationText = s }
         else {
-            if type == .market || type == .twap { type = .limit }
+            if type == .market || type == .twap || type == .chase { type = .limit }
             priceText = s
         }
         model.pendingPrice = nil
@@ -389,7 +435,7 @@ struct OrderFormView: View {
         d.triggerPx = Fmt.parse(triggerText)
         d.tif = tif
         d.reduceOnly = reduceOnly
-        if tpslOn && !type.isTrigger && !market.isSpot {
+        if tpslOn && type.allowsTpsl && !market.isSpot {
             d.tp = Fmt.parse(tpText)
             d.sl = Fmt.parse(slText)
         }
@@ -399,6 +445,10 @@ struct OrderFormView: View {
         d.scaleSkew = scaleSkew
         d.twapMinutes = twapMinutes
         d.twapRandomize = twapRandomize
+        d.trailValue = Fmt.parse(trailText)
+        d.trailIsPct = trailIsPct
+        d.trailActivation = trailActivationOn ? Fmt.parse(trailActivationText) : nil
+        d.chaseMaxDistance = (Fmt.parse(chaseDistText) ?? 0) / 100
         if type == .scale { d.size = sizeInUsd ? (Fmt.parse(sizeText) ?? 0) / max(refPrice, 1e-12) : sizeCoin }
         return d
     }
@@ -432,7 +482,7 @@ struct OrderFormView: View {
             }
         }
         let rates = model.fees(for: market)
-        let fee = (d.type == .market || d.type == .twap || d.type.triggerIsMarket) ? rates.taker : rates.maker
+        let fee = d.type.isTaker ? rates.taker : rates.maker
         lines.append(SummaryLine(L("Fee ≈"), value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
         if let sl = d.sl, sl > 0, d.size > 0 {
             lines.append(SummaryLine(L("Loss at SL"), Fmt.signedUsd(-abs(px - sl) * d.size), .hlRed))

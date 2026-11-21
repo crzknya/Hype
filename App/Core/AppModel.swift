@@ -96,6 +96,12 @@ final class AppModel {
     /// Market-order notional limits by max leverage, and markets at their open-interest cap.
     @ObservationIgnored var maxMarketNtls: [(leverage: Int, notional: Double)] = []
     var perpsAtOiCap: Set<String> = []
+    /// Client-side chase orders (repriced while the app runs) and their runner.
+    var chases: [ChaseOrder] = []
+    @ObservationIgnored var chaseTask: Task<Void, Never>?
+    /// Order history (historicalOrders) and TWAP slice fills.
+    var orderHistory: [HistoricalOrder] = []
+    var twapFills: [Fill] = []
     /// USDC routes recommended by Hyperliquid ("cctp" or "bridge").
     var usdcWithdrawRoute = "cctp"
     var usdcDepositRoute = "cctp"
@@ -300,6 +306,7 @@ final class AppModel {
         summary = AccountSummary(); positions = []; openOrders = []; fills = []; fundingHistory = []
         mainPositions = []; dexPositions = [:]; dexSummaries = [:]; activeDexes = []
         ledger = []; spotBalances = []; twaps = []; portfolioHistory = []; portfolioRanges = [:]; accountError = nil
+        orderHistory = []; twapFills = []
         abstraction = nil; availableAfterMaintenance = [:]; vaultEquity = 0; stakedHype = 0
         activeAsset = ActiveAssetData()
     }
@@ -784,11 +791,20 @@ final class AppModel {
         async let l = tryInfo("userNonFundingLedgerUpdates", [("user", .str(user)), ("startTime", .int(Int64(now - 52 * week)))])
         async let t = tryInfo("twapHistory", [("user", .str(user))])
         async let p = tryInfo("portfolio", [("user", .str(user))])
+        async let oh = tryInfo("historicalOrders", [("user", .str(user))])
+        async let tf = tryInfo("userTwapSliceFills", [("user", .str(user))])
         async let ve = tryInfo("userVaultEquities", [("user", .str(user))])
         async let ds = tryInfo("delegatorSummary", [("user", .str(user))])
         let (fills, funding, ledger, twap, portfolio) = await (f, fu, l, t, p)
         let (vaults, staking) = await (ve, ds)
+        let (history, sliceFills) = await (oh, tf)
         guard user == userAddress else { return }
+        if let history {
+            orderHistory = history.array.map(HistoricalOrder.init).sorted { $0.time > $1.time }
+        }
+        if let sliceFills {
+            twapFills = sliceFills.array.map { Fill($0["fill"]) }.sorted { $0.time > $1.time }
+        }
         if let vaults { vaultEquity = vaults.array.reduce(0) { $0 + $1["equity"].dbl } }
         if let staking {
             stakedHype = staking["delegated"].dbl + staking["undelegated"].dbl + staking["totalPendingWithdrawal"].dbl

@@ -37,6 +37,14 @@ final class HyperCoreTests: XCTestCase {
             return HLAction.order([OrderWire(asset: 10107, isBuy: false, limitPx: "0.00012345", sz: "100000", reduceOnly: false,
                                              kind: .limit(tif: .ioc), cloid: "0x00000000000000000000000000000001")])
         case "setReferrer": return HLAction.setReferrer(code: "HYPEIOS")
+        case "trailingPct":
+            return HLAction.trailingStop(asset: 0, isBuy: false, sz: "0.01", reduceOnly: true, retracementPct: "1.5000%", retracementPx: nil, activationPx: nil)
+        case "trailingPx":
+            return HLAction.trailingStop(asset: 3, isBuy: true, sz: "2", reduceOnly: false, retracementPct: nil, retracementPx: "25", activationPx: "61000")
+        case "modifyCloid":
+            return HLAction.modify(cloid: "0x00000000000000000000000000000001",
+                                   order: OrderWire(asset: 0, isBuy: true, limitPx: "60000", sz: "0.01", reduceOnly: false,
+                                                    kind: .limit(tif: .alo), cloid: "0x00000000000000000000000000000001"))
         default: fatalError("unknown case \(name)")
         }
     }

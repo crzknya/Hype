@@ -70,6 +70,22 @@ public enum HLAction {
         .map([("type", .str("modify")), ("oid", .int(oid)), ("order", order.mp)])
     }
 
+    /// Modify addressed by client order id (the `oid` field accepts a cloid).
+    public static func modify(cloid: String, order: OrderWire) -> MP {
+        .map([("type", .str("modify")), ("oid", .str(cloid)), ("order", order.mp)])
+    }
+
+    /// Trailing stop market order (as app.hyperliquid.xyz): triggers a stop market once the mark price
+    /// retraces by `retracement` (percent string like "1.5000%" or a price distance) from the best price
+    /// since activation. `activationPx` nil = active immediately.
+    public static func trailingStop(asset: Int, isBuy: Bool, sz: String, reduceOnly: Bool,
+                                    retracementPct: String?, retracementPx: String?, activationPx: String?) -> MP {
+        let retr: MP = retracementPct.map { .map([("pct", .str($0))]) } ?? .map([("px", .str(retracementPx ?? "0"))])
+        return .map([("type", .str("trailingStop")), ("asset", .int(Int64(asset))), ("isBuy", .bool(isBuy)),
+                     ("sz", .str(sz)), ("reduceOnly", .bool(reduceOnly)), ("retracement", retr),
+                     ("activationPx", activationPx.map { .str($0) } ?? .null)])
+    }
+
     public static func batchModify(_ items: [(oid: Int64, order: OrderWire)]) -> MP {
         .map([("type", .str("batchModify")),
               ("modifies", .arr(items.map { .map([("oid", .int($0.oid)), ("order", $0.order.mp)]) }))])

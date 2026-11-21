@@ -40,6 +40,9 @@ l1("twap", twap, None, None, True)
 cl = {"type":"order","orders":[{"a":10107,"b":False,"p":"0.00012345","s":"100000","r":False,"t":{"limit":{"tif":"Ioc"}},"c":"0x00000000000000000000000000000001"}],"grouping":"na"}
 l1("spotCloid", cl, None, None, True)
 l1("setReferrer", {"type":"setReferrer","code":"HYPEIOS"}, None, None, True)
+l1("trailingPct", {"type":"trailingStop","asset":0,"isBuy":False,"sz":"0.01","reduceOnly":True,"retracement":{"pct":"1.5000%"},"activationPx":None}, None, None, True)
+l1("trailingPx", {"type":"trailingStop","asset":3,"isBuy":True,"sz":"2","reduceOnly":False,"retracement":{"px":"25"},"activationPx":"61000"}, None, None, True)
+l1("modifyCloid", {"type":"modify","oid":"0x00000000000000000000000000000001","order":{"a":0,"b":True,"p":"60000","s":"0.01","r":False,"t":{"limit":{"tif":"Alo"}},"c":"0x00000000000000000000000000000001"}}, None, None, True)
 out["l1"] = cases
 
 users = []

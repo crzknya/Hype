@@ -8,7 +8,7 @@ struct PositionRow: View {
     @State private var pending: PendingConfirm?
 
     enum PositionSheet: String, Identifiable {
-        case close, tpsl, margin
+        case close, tpsl, margin, trailing
         var id: String { rawValue }
     }
 
@@ -63,6 +63,20 @@ struct PositionRow: View {
                                 model.perform { try await model.reverse(p) }
                             }
                         }
+                        Button(L("Trailing stop")) { sheet = .trailing }
+                        Button(L("Chase close")) {
+                            pending = PendingConfirm(
+                                title: L("Chase close"),
+                                message: L("Post-only order that rests at the top of the book and follows it until {0} {1} is closed. Runs while the app is open.",
+                                           Fmt.num(p.size, m?.szDecimals ?? 4), model.displayName(p.coin)),
+                                button: L("Start")) {
+                                guard let m else { return }
+                                model.perform {
+                                    try await model.startChase(m, isBuy: !p.isLong, size: p.size, reduceOnly: true, maxDistance: 0)
+                                    return L("Chase order placed")
+                                }
+                            }
+                        }
                         if p.leverageType == "isolated" { Button(L("Adjust margin")) { sheet = .margin } }
                         Button(L("Open chart")) { model.select(p.coin) }
                     } label: {
@@ -80,6 +94,7 @@ struct PositionRow: View {
             case .close: ClosePositionSheet(position: p)
             case .tpsl: TpslSheet(position: p)
             case .margin: MarginSheet(position: p)
+            case .trailing: TrailingStopSheet(position: p)
             }
         }
     }
@@ -276,6 +291,7 @@ struct AccountPanel: View {
                     if positions.isEmpty { EmptyState(text: L("No open positions")) }
                     ForEach(positions) { PositionRow(position: $0) }
                 case 1:
+                    ChaseList(coin: onlyThisCoin ? coin : nil)
                     if orders.isEmpty { EmptyState(text: L("No open orders")) }
                     ForEach(orders) { OrderRow(order: $0) }
                 default:
@@ -293,4 +309,34 @@ struct AccountPanel: View {
     private var positions: [Position] { onlyThisCoin ? model.positions.filter { $0.coin == coin } : model.positions }
     private var orders: [OpenOrder] { onlyThisCoin ? model.orders(for: coin) : model.openOrders }
     private var fills: [Fill] { onlyThisCoin ? model.fills.filter { $0.coin == coin } : model.fills }
+}
+
+/// Active chase orders with a Stop button (the order then stays as a normal limit order).
+struct ChaseList: View {
+    @Environment(AppModel.self) private var model
+    var coin: String?
+
+    var body: some View {
+        let list = model.activeChases.filter { coin == nil || $0.coin == coin }
+        ForEach(list) { c in
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 5) {
+                        Text(model.displayName(c.coin)).font(.subheadline.bold())
+                        SideBadge(isLong: c.isBuy, spot: model.market(c.coin)?.isSpot ?? false)
+                        Badge(text: L("Chase"), color: .hlAccent)
+                        if c.reduceOnly { Badge(text: "RO", color: .hlMuted) }
+                    }
+                    Text(L("Price {0}", Fmt.price(c.price)) + " · " + Fmt.num(c.size, model.market(c.coin)?.szDecimals ?? 4))
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                Spacer()
+                ProgressView().controlSize(.small)
+                Button(L("Stop")) { model.stopChase(c.id) }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+            .padding(10)
+            .themedCard()
+        }
+    }
 }
