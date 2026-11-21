@@ -308,7 +308,7 @@ struct UnitDepositView: View {
                     ForEach(UnitAsset.all) { a in Text("\(a.symbol) · \(a.chainTitle)").tag(a) }
                 }
             }
-            Section(L("Deposit address")) {
+            Section {
                 if loading { ProgressView() }
                 if let error { Text(error).foregroundStyle(Color.hlRed).font(.caption) }
                 if let address {
@@ -325,6 +325,8 @@ struct UnitDepositView: View {
                         Label(L("Verify the address and minimums on Unit"), systemImage: "checkmark.shield")
                     }
                 }
+            } header: {
+                Text(L("Deposit address"))
             } footer: {
                 Text(L("Send only {0} on {1} to this address. It is credited to your Hyperliquid spot balance as {2} after network confirmations. Deposits below Unit's minimum may be lost.", choice.symbol, choice.chainTitle, choice.uToken))
             }
