@@ -133,7 +133,7 @@ struct OutcomeDetailView: View {
                         Spacer()
                         Text(Fmt.pct(model.outcomePrice(spec, side), 1, signed: false)).font(.system(size: 15, weight: .bold, design: .monospaced))
                         Button(L("Trade")) { trade = side }
-                            .buttonStyle(.borderedProminent).tint(side == 0 ? .hlGreen : .hlRed).controlSize(.small)
+                            .buttonStyle(.borderedProminent).tint(side == 0 ? Color.hlGreen : Color.hlRed).controlSize(.small)
                             .disabled(!model.canTrade)
                     }
                 }
