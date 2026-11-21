@@ -29,6 +29,20 @@ struct ToolsView: View {
                         Label(L("Top gainers & losers"), systemImage: "chart.line.uptrend.xyaxis")
                     }
                 }
+                Section("Hyperliquid") {
+                    NavigationLink { LeaderboardView() } label: {
+                        Label(L("Leaderboard"), systemImage: "trophy")
+                    }
+                    NavigationLink { PointsView() } label: {
+                        Label(L("Points"), systemImage: "star.circle")
+                    }
+                    NavigationLink { ReferralsView() } label: {
+                        Label(L("Referrals"), systemImage: "person.2.wave.2")
+                    }
+                    NavigationLink { SubAccountsView() } label: {
+                        Label(L("Sub-accounts"), systemImage: "person.2")
+                    }
+                }
                 Section(L("Protection")) {
                     NavigationLink { DeadMansSwitchView() } label: {
                         Label(L("Auto-cancel orders"), systemImage: "timer")

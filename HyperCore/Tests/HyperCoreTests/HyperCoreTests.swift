@@ -55,6 +55,12 @@ final class HyperCoreTests: XCTestCase {
         }
     }
 
+    func testUserPointsConnectionId() {
+        // eth_abi: keccak(encode(['string','uint64'], ['userPoints', 1700000000]))
+        XCTAssertEqual(Hex.encode(HLSigning.userPointsConnectionId(timestamp: 1_700_000_000), prefix: false),
+                       "0b6a9337819c9cf3507d6ffc353c1203ef7373a85d1a62485bf966535f4c8d0f")
+    }
+
     func testERC20BigAmounts() {
         // 1.5 HYPE with 18 decimals = 1_500_000_000_000_000_000 = 0x14d1120d7b160000
         let w = ERC20.baseUnitsWord(1.5, decimals: 18)

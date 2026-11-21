@@ -36,6 +36,10 @@ final class AppModel {
     var slippage: Double = 0.08 { didSet { save() } }   // web default 8%
     var confirmOrders = true { didSet { save() } }
     var haptics = true { didSet { save() } }
+    /// Fill notifications: in-app toast, sound, and a local notification while the app is in the background.
+    var fillToasts = true { didSet { save() } }
+    var fillSound = false { didSet { save() } }
+    var backgroundFillAlerts = false { didSet { save() } }
     var biometricLock = false { didSet { save() } }
     var selectedCoin: String = "BTC" { didSet { save(); if oldValue != selectedCoin { coinChanged(old: oldValue) } } }
     var interval: CandleInterval = .h1 { didSet { save(); if oldValue != interval { intervalChanged(old: oldValue) } } }
@@ -99,6 +103,9 @@ final class AppModel {
     /// Market-order notional limits by max leverage, and markets at their open-interest cap.
     @ObservationIgnored var maxMarketNtls: [(leverage: Int, notional: Double)] = []
     var perpsAtOiCap: Set<String> = []
+    /// Market categories (perpCategories: stocks, commodities, indices, fx, …) and HIP-3 descriptions.
+    var categories: [String: String] = [:]
+    var annotations: [String: String] = [:]
     /// Client-side chase orders (repriced while the app runs) and their runner.
     var chases: [ChaseOrder] = []
     @ObservationIgnored var chaseTask: Task<Void, Never>?
@@ -149,6 +156,9 @@ final class AppModel {
         if d.object(forKey: "slippage") != nil { slippage = d.double(forKey: "slippage") }
         if d.object(forKey: "confirmOrders") != nil { confirmOrders = d.bool(forKey: "confirmOrders") }
         if d.object(forKey: "haptics") != nil { haptics = d.bool(forKey: "haptics") }
+        if d.object(forKey: "fillToasts") != nil { fillToasts = d.bool(forKey: "fillToasts") }
+        fillSound = d.bool(forKey: "fillSound")
+        backgroundFillAlerts = d.bool(forKey: "backgroundFillAlerts")
         biometricLock = d.bool(forKey: "biometricLock")
         if d.object(forKey: "showChart") != nil { showChart = d.bool(forKey: "showChart") }
         minTradeUsd = d.double(forKey: "minTradeUsd")
@@ -187,6 +197,9 @@ final class AppModel {
         d.set(slippage, forKey: "slippage")
         d.set(confirmOrders, forKey: "confirmOrders")
         d.set(haptics, forKey: "haptics")
+        d.set(fillToasts, forKey: "fillToasts")
+        d.set(fillSound, forKey: "fillSound")
+        d.set(backgroundFillAlerts, forKey: "backgroundFillAlerts")
         d.set(biometricLock, forKey: "biometricLock")
         d.set(showChart, forKey: "showChart")
         d.set(selectedCoin, forKey: "selectedCoin")
@@ -509,6 +522,11 @@ final class AppModel {
             metaLoaded = true
             let firstHip3 = hip3.isEmpty
             await refreshHip3()
+            if categories.isEmpty, let c = await tryInfo("perpCategories", []) {
+                var map: [String: String] = [:]
+                for e in c.array { map[e[0].str] = MarketCategory.normalize(e[1].str) }
+                categories = map
+            }
             if firstHip3 && !hip3.isEmpty { await refreshAllAccounts() }
             if marketById[selectedCoin] == nil, let first = perps.first { selectedCoin = first.id }
         } catch {
@@ -943,9 +961,12 @@ final class AppModel {
             fills = (new + fills).sorted { $0.time > $1.time }
             let f = new[0]
             let total = new.reduce(0) { $0 + $1.sz }
-            show(.success, L("Filled: {0} {1} {2} at {3}", f.isBuy ? L("buy") : L("sell"), Fmt.num(total, market(f.coin)?.szDecimals ?? 4), displayName(f.coin), Fmt.price(f.px)))
+            let text = L("Filled: {0} {1} {2} at {3}", f.isBuy ? L("buy") : L("sell"), Fmt.num(total, market(f.coin)?.szDecimals ?? 4), displayName(f.coin), Fmt.price(f.px))
+            if fillToasts { show(.success, text) }
+            if fillSound { FillAlerts.playSound() }
+            if backgroundFillAlerts { FillAlerts.notifyIfBackground(text) }
             Haptics.success(enabled: haptics)
-            Task { await refreshAccount(); await refreshOrders() }
+            if !accountStreamLive { Task { await refreshAccount(); await refreshOrders() } }
         case "orderUpdates":
             if Date().timeIntervalSince(ordersStreamAt) > 8 { Task { await refreshOrders() } }
         case "webData3":

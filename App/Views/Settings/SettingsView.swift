@@ -97,6 +97,14 @@ struct SettingsView: View {
                     Text(model.tradeLayout.help).font(.caption).foregroundStyle(Color.hlMuted)
                     Toggle(L("Confirm orders"), isOn: $model.confirmOrders)
                     Toggle(L("Haptics"), isOn: $model.haptics)
+                    Toggle(L("Fill notifications"), isOn: $model.fillToasts)
+                    Toggle(L("Fill sound"), isOn: $model.fillSound)
+                    Toggle(L("Notify about fills in the background"), isOn: Binding(
+                        get: { model.backgroundFillAlerts },
+                        set: { on in
+                            if on { Task { model.backgroundFillAlerts = await FillAlerts.requestPermission() } }
+                            else { model.backgroundFillAlerts = false }
+                        }))
                 } header: {
                     Text(L("Trade"))
                 } footer: {

@@ -32,6 +32,27 @@ public enum HLSigning {
         return EIP712.digest(domainSeparator: domain, structHash: s)
     }
 
+    /// Phantom-agent digest for an arbitrary connection id (signed info requests such as userPoints).
+    public static func agentDigest(connectionId: [UInt8], isMainnet: Bool) -> [UInt8] {
+        let domain = EIP712.domainSeparator(name: "Exchange", version: "1", chainId: 1337)
+        let s = EIP712.structHash("Agent",
+                                  [EIP712.Field("source", "string"), EIP712.Field("connectionId", "bytes32")],
+                                  ["source": .string(isMainnet ? "a" : "b"), "connectionId": .bytes32(connectionId)])
+        return EIP712.digest(domainSeparator: domain, structHash: s)
+    }
+
+    /// keccak256(abi.encode(string "userPoints", uint64 timestamp)) — the web app's userPoints auth.
+    public static func userPointsConnectionId(timestamp: UInt64) -> [UInt8] {
+        func word(_ v: UInt64) -> [UInt8] {
+            [UInt8](repeating: 0, count: 24) + (0..<8).reversed().map { UInt8(truncatingIfNeeded: v >> UInt64($0 * 8)) }
+        }
+        let text = Array("userPoints".utf8)
+        var padded = text
+        padded += [UInt8](repeating: 0, count: (32 - text.count % 32) % 32)
+        let data = word(0x40) + word(timestamp) + word(UInt64(text.count)) + padded
+        return Keccak.hash256(data)
+    }
+
     public static func userSignedDigest(_ a: UserSignedAction) -> [UInt8] {
         let domain = EIP712.domainSeparator(name: "HyperliquidSignTransaction", version: "1", chainId: a.chainId)
         return EIP712.digest(domainSeparator: domain, structHash: EIP712.structHash(a.primaryType, a.fields, a.values))

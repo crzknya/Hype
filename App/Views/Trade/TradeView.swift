@@ -270,6 +270,7 @@ struct TradeHeader: View {
                     }
                 }
             }
+            if market.isHip3 { Hip3Banner(market: market) }
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)

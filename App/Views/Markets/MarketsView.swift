@@ -6,6 +6,7 @@ struct MarketsView: View {
     @State private var search = ""
     @State private var sort: SortKey = .volume
     @State private var descending = true
+    @State private var category: String?
 
     enum Segment: String, CaseIterable, Identifiable {
         case favorites = "★", perps = "Perps", hip3 = "HIP-3", spot = "Spot"
@@ -26,6 +27,17 @@ struct MarketsView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.vertical, 8)
+
+                if segment == .hip3 && search.isEmpty && !availableCategories.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            categoryChip(nil, L("All"))
+                            ForEach(availableCategories) { c in categoryChip(c.rawValue, c.title) }
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.bottom, 6)
+                }
 
                 MarketList(markets: list, onSelect: { model.select($0.id) })
             }
@@ -58,6 +70,22 @@ struct MarketsView: View {
         }
     }
 
+    private var availableCategories: [MarketCategory] {
+        let present = Set(model.hip3.compactMap { model.categories[$0.id] })
+        return MarketCategory.allCases.filter { present.contains($0.rawValue) }
+    }
+
+    private func categoryChip(_ value: String?, _ title: String) -> some View {
+        Button { category = value } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(category == value ? Color.hlAccent.opacity(0.2) : Color.hlCard, in: Capsule())
+                .foregroundStyle(category == value ? Color.hlAccent : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var list: [Market] {
         var base: [Market]
         let q = search.trimmingCharacters(in: .whitespaces).uppercased()
@@ -68,7 +96,9 @@ struct MarketsView: View {
         } else {
             switch segment {
             case .perps: base = model.perps.map { model.marketById[$0.id] ?? $0 }
-            case .hip3: base = model.hip3.map { model.marketById[$0.id] ?? $0 }
+            case .hip3:
+                base = model.hip3.map { model.marketById[$0.id] ?? $0 }
+                if let category { base = base.filter { model.categories[$0.id] == category } }
             case .spot: base = model.spots.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm > 0 }
             case .favorites: base = model.favorites.compactMap { model.marketById[$0] }
             }
