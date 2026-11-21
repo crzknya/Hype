@@ -58,7 +58,12 @@ struct SpotToken: Identifiable, Hashable {
     let szDecimals: Int
     let weiDecimals: Int
     let tokenId: String
+    var evmContract: String? = nil      // linked HyperEVM ERC-20 (nil: not linked; HYPE is native)
+    var evmExtraDecimals = 0            // EVM decimals = weiDecimals + evmExtraDecimals
     var id: Int { index }
+    var evmDecimals: Int { weiDecimals + evmExtraDecimals }
+    /// Can move between HyperCore and HyperEVM.
+    var isEvmLinked: Bool { evmContract != nil || name == "HYPE" }
     /// Wire form for spotSend: NAME:0xTOKENID
     var wire: String { "\(name):\(tokenId)" }
 }
@@ -472,5 +477,23 @@ struct HistoricalOrder: Identifiable, Hashable {
         case "siblingFilledCanceled": return L("Canceled: TP/SL sibling filled")
         default: return status
         }
+    }
+}
+
+/// A sub-account of the master (`subAccounts` info).
+struct SubAccount: Identifiable, Hashable {
+    let address: String
+    let name: String
+    let perpsValue: Double
+    let withdrawable: Double
+    let balances: [SpotBalance]
+    var id: String { address }
+
+    init(_ j: JSON) {
+        address = j["subAccountUser"].str.lowercased()
+        name = j["name"].str
+        perpsValue = j["clearinghouseState"]["marginSummary"]["accountValue"].dbl
+        withdrawable = j["clearinghouseState"]["withdrawable"].dbl
+        balances = j["spotState"]["balances"].array.map(SpotBalance.init).filter { $0.total != 0 }
     }
 }

@@ -95,7 +95,7 @@ final class WalletConnectService {
         configure()
         let methods: Set<String> = Self.requiredMethods
         let events: Set<String> = ["accountsChanged", "chainChanged"]
-        let chains = [42161, 1, 8453, 10, 137, 56].compactMap { Blockchain("eip155:\($0)") }
+        let chains = [42161, 1, 8453, 10, 137, 56, 999].compactMap { Blockchain("eip155:\($0)") }   // 999 = HyperEVM
         let ns = ["eip155": ProposalNamespace(chains: chains, methods: methods, events: events)]
         let uri = try await Sign.instance.connect(namespaces: ns)
         return PairingLink(absolute: uri.absoluteString, encoded: uri.deeplinkUri)
@@ -222,14 +222,19 @@ enum WalletApp: String, CaseIterable, Identifiable, Codable {
 
 extension WalletConnectService {
     /// Asks the wallet to send a transaction; returns the transaction hash.
-    func sendTransaction(topic: String, from: String, chainId: UInt64, to: String, data: String,
+    func sendTransaction(topic: String, from: String, chainId: UInt64, to: String, data: String, value: String = "0x0",
                          wallet: WalletApp?) async throws -> String {
         configure()
         guard sessionSupportsAll(topic: topic) else {
             throw HLError(L("Reconnect the wallet in Settings to allow deposits (Renew trading key)."))
         }
         guard let chain = Blockchain("eip155:\(chainId)") else { throw HLError(L("Unsupported chain")) }
-        let tx: [String: String] = ["from": from, "to": to, "data": data, "value": "0x0"]
+        if let session = Sign.instance.getSessions().first(where: { $0.topic == topic }),
+           let accounts = session.namespaces["eip155"]?.accounts,
+           !accounts.contains(where: { $0.reference == String(chainId) }) {
+            throw HLError(L("The wallet session does not include this network (chain {0}). Reconnect the wallet in Settings.", chainId))
+        }
+        let tx: [String: String] = ["from": from, "to": to, "data": data, "value": value]
         let request = try Request(topic: topic, method: "eth_sendTransaction", params: AnyCodable([tx]), chainId: chain)
         return try await withCheckedThrowingContinuation { cont in
             requestWaiters["\(request.id)"] = cont

@@ -591,3 +591,114 @@ extension AppModel {
         return nil
     }
 }
+
+// MARK: - Sub-accounts, stablecoin swap, HyperCore ⇄ HyperEVM (as app.hyperliquid.xyz)
+
+extension AppModel {
+    /// Creates a sub-account (name up to 16 characters); returns its address.
+    @discardableResult
+    func createSubAccount(name: String) async throws -> String {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, n.count <= 16 else { throw HLError(L("Name: 1–16 characters")) }
+        let data = try await submit(HLAction.createSubAccount(name: n), vault: .some(nil))
+        Task { await refreshHistory() }
+        return data.str
+    }
+
+    func renameSubAccount(_ sub: SubAccount, name: String) async throws {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, n.count <= 16 else { throw HLError(L("Name: 1–16 characters")) }
+        try await submit(HLAction.subAccountModify(subAccountUser: sub.address, name: n), vault: .some(nil))
+        Task { await refreshHistory() }
+    }
+
+    /// Moves funds between the master and a sub-account. `token` nil = perps USDC.
+    func transferSubAccount(_ sub: SubAccount, amount: Double, toSub: Bool, token: SpotToken?) async throws {
+        if let token {
+            try await submit(HLAction.subAccountSpotTransfer(subAccountUser: sub.address, isDeposit: toSub, token: token.wire,
+                                                             amount: HLNum.wire(amount, maxDecimals: min(token.weiDecimals, 8))), vault: .some(nil))
+        } else {
+            let micros = NSDecimalNumber(decimal: HLNum.round(amount * 1_000_000, places: 0, mode: .down)).int64Value
+            try await submit(HLAction.subAccountTransfer(subAccountUser: sub.address, isDeposit: toSub, usdMicros: micros), vault: .some(nil))
+        }
+        Task { await refreshAccount(); await refreshHistory() }
+    }
+
+    /// Stablecoins offered by "Swap Stablecoins" on the web.
+    static let swapStables = ["USDC", "USDT0", "USDH"]
+
+    /// Spot market between two tokens and whether swapping `from` → `to` buys its base.
+    func swapMarket(from: String, to: String) -> (market: Market, isBuy: Bool)? {
+        if let m = spots.first(where: { $0.base == from && $0.quote == to }) { return (m, false) }
+        if let m = spots.first(where: { $0.base == to && $0.quote == from }) { return (m, true) }
+        return nil
+    }
+
+    /// Swaps stablecoins with an IOC order at most 1% from the book (may fill partially, as on the web).
+    func swapStable(from: String, to: String, amount: Double) async throws -> String {
+        guard let pair = swapMarket(from: from, to: to) else { throw HLError(L("No market for {0} → {1}", from, to)) }
+        let m = pair.market, isBuy = pair.isBuy
+        let px = NSDecimalNumber(decimal: marketPx(m, isBuy: isBuy, slippage: 0.01)).doubleValue
+        guard px > 0 else { throw HLError(L("No price for {0}", m.name)) }
+        let size = isBuy ? amount / px : amount
+        guard size * px >= 10 else { throw HLError(L("Minimum swap value is 10 {0}", from)) }
+        let sz = m.roundSize(size)
+        let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: m.roundPrice(px), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
+        Task { await refreshAccount() }
+        return summarize(data, count: 1)
+    }
+
+    /// HyperCore spot → HyperEVM: a spot send to the token's system address (main wallet signature).
+    func coreToEvm(_ token: SpotToken, amount: Double) async throws {
+        try await sendSpot(token: token, amount: amount, destination: HLBridge.systemAddress(tokenIndex: token.index))
+    }
+
+    /// HyperEVM → HyperCore: a transaction on the HyperEVM (chain 999) signed in the connected wallet.
+    func evmToCore(_ token: SpotToken, amount: Double) async throws -> String {
+        guard let acc = account, acc.kind == .wallet, let topic = acc.wcTopic else {
+            throw HLError(L("Transfers from the HyperEVM are signed in a connected wallet (Settings → Connect wallet)."))
+        }
+        let system = HLBridge.systemAddress(tokenIndex: token.index)
+        let wallet = acc.walletApp.flatMap(WalletApp.init(rawValue:))
+        let hash: String
+        if token.name == "HYPE" {
+            hash = try await WalletConnectService.shared.sendTransaction(
+                topic: topic, from: acc.address, chainId: HLBridge.hyperEvmChainId, to: system, data: "0x",
+                value: ERC20.quantity(ERC20.baseUnitsWord(amount, decimals: 18)), wallet: wallet)
+        } else {
+            guard let contract = token.evmContract else { throw HLError(L("{0} is not linked to the HyperEVM", token.name)) }
+            hash = try await WalletConnectService.shared.sendTransaction(
+                topic: topic, from: acc.address, chainId: HLBridge.hyperEvmChainId, to: contract,
+                data: ERC20.transferData(to: system, amountWord: ERC20.baseUnitsWord(amount, decimals: token.evmDecimals)), wallet: wallet)
+        }
+        Task {
+            for _ in 0..<4 {
+                try? await Task.sleep(for: .seconds(4))
+                await refreshAccount()
+            }
+        }
+        return hash
+    }
+
+    /// Balance of a token on the HyperEVM (native HYPE or the linked ERC-20).
+    func evmBalance(_ token: SpotToken) async -> Double? {
+        guard let addr = account?.address else { return nil }
+        let call: MP
+        if token.name == "HYPE" {
+            call = .map([("jsonrpc", .str("2.0")), ("id", .int(1)), ("method", .str("eth_getBalance")),
+                         ("params", .arr([.str(addr), .str("latest")]))])
+        } else {
+            guard let c = token.evmContract else { return nil }
+            call = .map([("jsonrpc", .str("2.0")), ("id", .int(1)), ("method", .str("eth_call")),
+                         ("params", .arr([.map([("to", .str(c)), ("data", .str(ERC20.balanceOfData(owner: addr)))]), .str("latest")]))])
+        }
+        var req = URLRequest(url: URL(string: "https://rpc.hyperliquid.xyz/evm")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data(call.json().utf8)
+        req.timeoutInterval = 10
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let j = try? JSON.parse(data), let hex = j["result"].string else { return nil }
+        return ERC20.units(hex: hex, decimals: token.name == "HYPE" ? 18 : token.evmDecimals)
+    }
+}

@@ -37,6 +37,12 @@ final class HyperCoreTests: XCTestCase {
             return HLAction.order([OrderWire(asset: 10107, isBuy: false, limitPx: "0.00012345", sz: "100000", reduceOnly: false,
                                              kind: .limit(tif: .ioc), cloid: "0x00000000000000000000000000000001")])
         case "setReferrer": return HLAction.setReferrer(code: "HYPEIOS")
+        case "createSub": return HLAction.createSubAccount(name: "bot 1")
+        case "subModify": return HLAction.subAccountModify(subAccountUser: "0x90da2f893dd7a5bc75c7e60a8d8ec0a7ec8ce285", name: "scalp")
+        case "subTransfer": return HLAction.subAccountTransfer(subAccountUser: "0x90da2f893dd7a5bc75c7e60a8d8ec0a7ec8ce285", isDeposit: true, usdMicros: 12_500_000)
+        case "subSpot":
+            return HLAction.subAccountSpotTransfer(subAccountUser: "0x90da2f893dd7a5bc75c7e60a8d8ec0a7ec8ce285", isDeposit: false,
+                                                   token: "USDC:0x6d1e7cde53ba9467b783cb7c530ce054", amount: "3.5")
         case "trailingPct":
             return HLAction.trailingStop(asset: 0, isBuy: false, sz: "0.01", reduceOnly: true, retracementPct: "1.5000%", retracementPx: nil, activationPx: nil)
         case "trailingPx":
@@ -47,6 +53,18 @@ final class HyperCoreTests: XCTestCase {
                                                     kind: .limit(tif: .alo), cloid: "0x00000000000000000000000000000001"))
         default: fatalError("unknown case \(name)")
         }
+    }
+
+    func testERC20BigAmounts() {
+        // 1.5 HYPE with 18 decimals = 1_500_000_000_000_000_000 = 0x14d1120d7b160000
+        let w = ERC20.baseUnitsWord(1.5, decimals: 18)
+        XCTAssertEqual(w.count, 32)
+        XCTAssertEqual(Hex.encode(w, prefix: false).suffix(16), "14d1120d7b160000")
+        XCTAssertEqual(ERC20.quantity(w), "0x14d1120d7b160000")
+        XCTAssertEqual(ERC20.quantity(ERC20.baseUnitsWord(0, decimals: 18)), "0x0")
+        XCTAssertEqual(ERC20.units(hex: "0x14d1120d7b160000", decimals: 18), 1.5, accuracy: 1e-12)
+        XCTAssertEqual(HLBridge.systemAddress(tokenIndex: 268), "0x200000000000000000000000000000000000010c")
+        XCTAssertEqual(HLBridge.systemAddress(tokenIndex: 150), "0x2222222222222222222222222222222222222222")
     }
 
     func testL1Actions() throws {

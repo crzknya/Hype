@@ -27,7 +27,10 @@ final class AppModel {
     // MARK: Settings (persisted)
     var network: HLNetwork { didSet { save(); networkChanged() } }
     var accounts: [Account] = [] { didSet { save() } }
-    var activeAccountId: UUID? { didSet { save(); accountChanged() } }
+    var activeAccountId: UUID? { didSet { activeSubAccount = nil; save(); accountChanged() } }
+    /// Trading as a sub-account of the active (master) account: its address is used as the vault address.
+    var activeSubAccount: String? { didSet { if oldValue != activeSubAccount { accountChanged() } } }
+    var subAccounts: [SubAccount] = []
     var favorites: Set<String> = [] { didSet { save() } }
     var alerts: [PriceAlert] = [] { didSet { save() } }
     var slippage: Double = 0.08 { didSet { save() } }   // web default 8%
@@ -203,8 +206,13 @@ final class AppModel {
     // MARK: Derived
 
     var account: Account? { accounts.first { $0.id == activeAccountId } }
-    var userAddress: String? { account.map { ($0.vaultAddress?.isEmpty == false ? $0.vaultAddress! : $0.address).lowercased() } }
+    var userAddress: String? {
+        if let sub = activeSubAccount { return sub }
+        return account.map { ($0.vaultAddress?.isEmpty == false ? $0.vaultAddress! : $0.address).lowercased() }
+    }
     var canTrade: Bool { account?.kind.canTrade ?? false }
+    /// The master account address (never a sub-account / vault).
+    var masterAddress: String? { account?.address.lowercased() }
     var selectedMarket: Market? { marketById[selectedCoin] }
     var unrealizedPnl: Double { positions.reduce(0) { $0 + $1.unrealizedPnl } }
 
@@ -572,6 +580,8 @@ final class AppModel {
             let idx = t["index"].int ?? 0
             tokens[idx] = SpotToken(index: idx, name: t["name"].str, szDecimals: t["szDecimals"].int ?? 0,
                                     weiDecimals: t["weiDecimals"].int ?? 0, tokenId: t["tokenId"].str)
+            tokens[idx]?.evmContract = t["evmContract"]["address"].string
+            tokens[idx]?.evmExtraDecimals = t["evmContract"]["evm_extra_wei_decimals"].int ?? 0
         }
         spotTokens = tokens
         var ctxByCoin: [String: JSON] = [:]
@@ -792,13 +802,16 @@ final class AppModel {
         async let t = tryInfo("twapHistory", [("user", .str(user))])
         async let p = tryInfo("portfolio", [("user", .str(user))])
         async let oh = tryInfo("historicalOrders", [("user", .str(user))])
+        async let sa = tryInfo("subAccounts", [("user", .str(masterAddress ?? user))])
         async let tf = tryInfo("userTwapSliceFills", [("user", .str(user))])
         async let ve = tryInfo("userVaultEquities", [("user", .str(user))])
         async let ds = tryInfo("delegatorSummary", [("user", .str(user))])
         let (fills, funding, ledger, twap, portfolio) = await (f, fu, l, t, p)
         let (vaults, staking) = await (ve, ds)
         let (history, sliceFills) = await (oh, tf)
+        let subs = await sa
         guard user == userAddress else { return }
+        if let subs { subAccounts = subs.array.map(SubAccount.init) }
         if let history {
             orderHistory = history.array.map(HistoricalOrder.init).sorted { $0.time > $1.time }
         }
@@ -1046,6 +1059,7 @@ final class AppModel {
     }
 
     var vaultForActions: String? {
+        if let sub = activeSubAccount { return sub }
         guard let v = account?.vaultAddress, !v.isEmpty else { return nil }
         return v.lowercased()
     }

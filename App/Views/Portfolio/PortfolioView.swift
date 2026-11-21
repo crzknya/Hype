@@ -11,6 +11,8 @@ struct PortfolioView: View {
     @State private var transfer: TransferKind?
     @State private var pending: PendingConfirm?
     @State private var showAccountType = false
+    @State private var showSwap = false
+    @State private var showEvm = false
     @State private var range: ChartRange = .month
     @State private var graph: Graph = .value
 
@@ -67,6 +69,8 @@ struct PortfolioView: View {
             }
             .sheet(item: $transfer) { TransferSheet(kind: $0) }
             .sheet(isPresented: $showAccountType) { AccountTypeSheet() }
+            .sheet(isPresented: $showSwap) { SwapStablecoinsSheet() }
+            .sheet(isPresented: $showEvm) { EvmCoreSheet() }
             .confirmDialog($pending)
         }
     }
@@ -198,14 +202,38 @@ struct PortfolioView: View {
     // MARK: Actions
 
     private var actions: some View {
-        HStack(spacing: 8) {
-            actionTile(L("Deposit"), "arrow.down.circle") { transfer = .deposit }
-            actionTile(L("Withdraw"), "arrow.up.circle") { transfer = .withdraw }
-            actionTile(L("Send"), "paperplane") { transfer = .send }
-            if !model.isUnified && model.abstraction != nil {
-                actionTile(L("Perps ⇄ Spot"), "arrow.left.arrow.right") { transfer = .classTransfer }
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                actionTile(L("Deposit"), "arrow.down.circle") { transfer = .deposit }
+                actionTile(L("Withdraw"), "arrow.up.circle") { transfer = .withdraw }
+                actionTile(L("Send"), "paperplane") { transfer = .send }
+                if !model.isUnified && model.abstraction != nil {
+                    actionTile(L("Perps ⇄ Spot"), "arrow.left.arrow.right") { transfer = .classTransfer }
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    chip(L("Swap stablecoins"), "arrow.triangle.2.circlepath") { showSwap = true }
+                    chip(L("EVM ⇄ Core"), "arrow.up.arrow.down") { showEvm = true }
+                    NavigationLink { SubAccountsView() } label: {
+                        chipLabel(L("Sub-accounts"), "person.2")
+                    }
+                    .buttonStyle(.plain)
+                    chip(model.accountModeTitle, "slider.horizontal.3") { showAccountType = true }
+                }
             }
         }
+    }
+
+    private func chip(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { chipLabel(title, icon) }.buttonStyle(.plain)
+    }
+
+    private func chipLabel(_ title: String, _ icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Color.hlCard, in: Capsule())
     }
 
     private func actionTile(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
@@ -552,6 +580,14 @@ struct FundingSection: View {
 
 struct AccountSwitcher: View {
     @Environment(AppModel.self) private var model
+
+    private var accountTitle: String {
+        let base = model.account?.name ?? L("Account")
+        if let sub = model.activeSubAccount {
+            return base + " · " + (model.subAccounts.first { $0.address == sub }?.name ?? Address.short(sub))
+        }
+        return base
+    }
     var body: some View {
         Menu {
             ForEach(model.accounts) { a in
@@ -562,12 +598,28 @@ struct AccountSwitcher: View {
                     else { Text("\(a.name) · \(Address.short(a.address))") }
                 }
             }
+            if !model.subAccounts.isEmpty {
+                Section(L("Sub-accounts")) {
+                    Button {
+                        model.activeSubAccount = nil
+                    } label: {
+                        if model.activeSubAccount == nil { Label(L("Master account"), systemImage: "checkmark") } else { Text(L("Master account")) }
+                    }
+                    ForEach(model.subAccounts) { sub in
+                        Button {
+                            model.activeSubAccount = sub.address
+                        } label: {
+                            if model.activeSubAccount == sub.address { Label(sub.name, systemImage: "checkmark") } else { Text(sub.name) }
+                        }
+                    }
+                }
+            }
             Divider()
             Button(L("Manage accounts")) { model.tab = .settings }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: model.account?.kind == .watch ? "eye" : "person.crop.circle")
-                Text(model.account?.name ?? L("Account")).font(.headline)
+                Text(accountTitle).font(.headline)
                 Image(systemName: "chevron.down").font(.caption)
             }
             .foregroundStyle(.primary)

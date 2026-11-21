@@ -126,6 +126,28 @@ public enum HLAction {
         .map([("type", .str("vaultTransfer")), ("vaultAddress", .str(vault.lowercased())), ("isDeposit", .bool(isDeposit)), ("usd", .int(usdMicros))])
     }
 
+    // MARK: Sub-accounts (L1, can be signed by an API wallet of the master)
+
+    public static func createSubAccount(name: String) -> MP {
+        .map([("type", .str("createSubAccount")), ("name", .str(name))])
+    }
+
+    public static func subAccountModify(subAccountUser: String, name: String) -> MP {
+        .map([("type", .str("subAccountModify")), ("subAccountUser", .str(subAccountUser.lowercased())), ("name", .str(name))])
+    }
+
+    /// Perps USDC between master and sub-account; usd in micro-dollars.
+    public static func subAccountTransfer(subAccountUser: String, isDeposit: Bool, usdMicros: Int64) -> MP {
+        .map([("type", .str("subAccountTransfer")), ("subAccountUser", .str(subAccountUser.lowercased())),
+              ("isDeposit", .bool(isDeposit)), ("usd", .int(usdMicros))])
+    }
+
+    /// Spot token between master and sub-account; token "NAME:0xTOKENID".
+    public static func subAccountSpotTransfer(subAccountUser: String, isDeposit: Bool, token: String, amount: String) -> MP {
+        .map([("type", .str("subAccountSpotTransfer")), ("subAccountUser", .str(subAccountUser.lowercased())),
+              ("isDeposit", .bool(isDeposit)), ("token", .str(token)), ("amount", .str(amount))])
+    }
+
     // MARK: User-signed actions (require the main wallet key)
 
     private static func chain(_ mainnet: Bool) -> String { mainnet ? "Mainnet" : "Testnet" }

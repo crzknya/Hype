@@ -13,8 +13,20 @@ public enum HLBridge {
     /// Native USDC on Arbitrum One (6 decimals).
     public static let arbitrumUSDC = "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
     public static let arbitrumChainId: UInt64 = 42161
+    public static let hyperEvmChainId: UInt64 = 999
     public static let minDeposit: Double = 5
     public static let usdcDecimals = 6
+
+    /// HyperCore ⇄ HyperEVM system address of a spot token (HYPE uses 0x2222…2222).
+    public static func systemAddress(tokenIndex: Int) -> String {
+        if tokenIndex == 150 { return "0x2222222222222222222222222222222222222222" }
+        var b = [UInt8](repeating: 0, count: 20)
+        b[0] = 0x20
+        var v = UInt64(tokenIndex)
+        var i = 19
+        while v > 0 && i > 0 { b[i] = UInt8(v & 0xff); v >>= 8; i -= 1 }
+        return Hex.encode(b)
+    }
 }
 
 public enum ERC20 {
@@ -39,6 +51,49 @@ public enum ERC20 {
 
     public static func balanceOfData(owner: String) -> String {
         Hex.encode(balanceOfSelector + word(address: owner))
+    }
+
+    /// Calldata for transfer(to, amount) with a 32-byte amount word (any size).
+    public static func transferData(to: String, amountWord: [UInt8]) -> String {
+        Hex.encode(transferSelector + word(address: to) + amountWord)
+    }
+
+    /// 32-byte big-endian word of amount × 10^decimals, rounded down; exact for 18-decimal tokens.
+    public static func baseUnitsWord(_ amount: Double, decimals: Int) -> [UInt8] {
+        guard amount > 0, decimals >= 0 else { return [UInt8](repeating: 0, count: 32) }
+        let d = HLNum.round(amount, places: min(decimals, 18), mode: .down)
+        let scaled = NSDecimalNumber(decimal: d).multiplying(byPowerOf10: Int16(decimals))
+        var digits = String(scaled.stringValue.split(separator: ".").first ?? "0").compactMap(\.wholeNumberValue)
+        var bytes: [UInt8] = []
+        while digits.contains(where: { $0 != 0 }) {
+            var rem = 0
+            var next: [Int] = []
+            for dg in digits {
+                let cur = rem * 10 + dg
+                let q = cur / 256
+                rem = cur % 256
+                if !(next.isEmpty && q == 0) { next.append(q) }
+            }
+            bytes.insert(UInt8(rem), at: 0)
+            digits = next
+        }
+        return [UInt8](repeating: 0, count: max(0, 32 - bytes.count)) + bytes.suffix(32)
+    }
+
+    /// JSON-RPC quantity ("0x…" without leading zeros) of a big-endian word.
+    public static func quantity(_ word: [UInt8]) -> String {
+        let hex = Hex.encode(word, prefix: false).drop { $0 == "0" }
+        return "0x" + (hex.isEmpty ? "0" : String(hex))
+    }
+
+    /// Decimal value of a hex quantity / uint256 result in token units.
+    public static func units(hex: String, decimals: Int) -> Double {
+        var v = 0.0
+        for c in hex.lowercased().replacingOccurrences(of: "0x", with: "") {
+            guard let d = c.hexDigitValue else { continue }
+            v = v * 16 + Double(d)
+        }
+        return v / pow(10, Double(decimals))
     }
 
     /// Converts a decimal amount to base units, rounding down.
