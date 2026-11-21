@@ -213,6 +213,18 @@ struct TransferSheet: View {
     }
 
     @ViewBuilder private var deposit: some View {
+        Section {
+            NavigationLink { UnitDepositView() } label: {
+                Label(L("BTC, ETH, SOL and other chains (Unit)"), systemImage: "bitcoinsign.circle")
+            }
+            Link(destination: URL(string: "https://app.hyperliquid.xyz/portfolio")!) {
+                Label(L("Card / bank (opens app.hyperliquid.xyz)"), systemImage: "creditcard")
+            }
+        } header: {
+            Text(L("Other ways to deposit"))
+        } footer: {
+            Text(L("USDC from Arbitrum is below. Card purchases are handled by the web app's payment partner."))
+        }
         if model.account?.kind == .wallet && model.network.isMainnet {
             Section {
                 LabeledContent(L("From"), value: "\(model.account?.walletApp.flatMap(WalletApp.init(rawValue:))?.title ?? L("Wallet")) · Arbitrum")

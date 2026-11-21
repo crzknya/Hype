@@ -386,7 +386,9 @@ struct BalancesSection: View {
             let isStable = b.coin == "USDC"
             let pnl: Double? = (!isStable && b.entryNtl > 0 && px > 0) ? value - b.entryNtl : nil
             let decimals = model.spotTokens[b.token]?.szDecimals ?? 4
-            out.append(Row(id: "spot-\(b.coin)", coin: b.coin, place: unified ? L("Unified") : L("Spot"),
+            let isOutcome = b.coin.hasPrefix("+")
+            out.append(Row(id: "spot-\(b.coin)", coin: isOutcome ? model.displayName(b.coin) : b.coin,
+                           place: isOutcome ? L("Outcome") : (unified ? L("Unified") : L("Spot")),
                            total: b.total, available: max(0, b.available), usd: value,
                            pnl: pnl, roe: pnl.map { $0 / b.entryNtl }, decimals: isStable ? 2 : max(decimals, 2)))
         }

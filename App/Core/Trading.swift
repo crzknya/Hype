@@ -64,7 +64,10 @@ extension AppModel {
             if let q = bbo { ref = isBuy ? q.ask : q.bid }
             else if let b = book.bestBid, let a = book.bestAsk { ref = isBuy ? a : b }
         }
-        return HLNum.marketPrice(mid: ref, isBuy: isBuy, slippage: s ?? slippage, szDecimals: m.szDecimals, isSpot: m.isSpot)
+        let px = HLNum.marketPrice(mid: ref, isBuy: isBuy, slippage: s ?? slippage, szDecimals: m.szDecimals, isSpot: m.isSpot)
+        // Outcome tokens trade strictly between 0 and 1.
+        if m.id.hasPrefix("#") { return min(max(px, Decimal(string: "0.00001")!), Decimal(string: "0.99999")!) }
+        return px
     }
 
     func wire(_ m: Market, isBuy: Bool, px: Decimal, sz: Decimal, reduceOnly: Bool, kind: OrderKind) -> OrderWire {

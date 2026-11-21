@@ -105,6 +105,11 @@ final class AppModel {
     var perpsAtOiCap: Set<String> = []
     /// Market categories (perpCategories: stocks, commodities, indices, fx, …) and HIP-3 descriptions.
     var categories: [String: String] = [:]
+    /// HIP-4 outcome markets.
+    var outcomeTemplates: [String: OutcomeTemplate] = [:]
+    var outcomeSpecs: [OutcomeSpec] = []
+    var outcomeQuestions: [OutcomeQuestion] = []
+    @ObservationIgnored var outcomeCtx: [String: (mid: Double, mark: Double, volume: Double)] = [:]
     var annotations: [String: String] = [:]
     /// Client-side chase orders (repriced while the app runs) and their runner.
     var chases: [ChaseOrder] = []
@@ -230,7 +235,11 @@ final class AppModel {
     var unrealizedPnl: Double { positions.reduce(0) { $0 + $1.unrealizedPnl } }
 
     func market(_ coin: String) -> Market? { marketById[coin] }
-    func displayName(_ coin: String) -> String { marketById[coin]?.name ?? coin }
+    func displayName(_ coin: String) -> String {
+        if let m = marketById[coin] { return m.name }
+        if let o = outcomeSide(of: coin) { return outcomeSideTitle(o.spec, o.side) }
+        return coin
+    }
     func mid(_ coin: String) -> Double {
         if let m = mids[coin], m > 0 { return m }
         return marketById[coin]?.midPx ?? marketById[coin]?.markPx ?? 0
@@ -255,6 +264,7 @@ final class AppModel {
     /// USD price of a spot token (via its /USDC market).
     func spotPrice(_ coin: String) -> Double {
         if coin == "USDC" { return 1 }
+        if coin.hasPrefix("+") { return mid("#" + coin.dropFirst()) }   // outcome tokens
         guard let m = spots.first(where: { $0.base == coin && $0.quote == "USDC" }) else { return 0 }
         return mid(m.id)
     }
@@ -522,6 +532,7 @@ final class AppModel {
             metaLoaded = true
             let firstHip3 = hip3.isEmpty
             await refreshHip3()
+            if outcomeSpecs.isEmpty { await loadOutcomes() }
             if categories.isEmpty, let c = await tryInfo("perpCategories", []) {
                 var map: [String: String] = [:]
                 for e in c.array { map[e[0].str] = MarketCategory.normalize(e[1].str) }
@@ -604,6 +615,15 @@ final class AppModel {
         spotTokens = tokens
         var ctxByCoin: [String: JSON] = [:]
         for c in j[1].array { ctxByCoin[c["coin"].str] = c }
+        for (coin, c) in ctxByCoin where coin.hasPrefix("#") {
+            outcomeCtx[coin] = (c["midPx"].double ?? c["markPx"].dbl, c["markPx"].dbl, c["dayNtlVlm"].dbl)
+            if var m = marketById[coin] {
+                m.midPx = c["midPx"].double ?? c["markPx"].dbl
+                m.markPx = c["markPx"].dbl
+                m.dayNtlVlm = c["dayNtlVlm"].dbl
+                marketById[coin] = m
+            }
+        }
         var out: [Market] = []
         for u in j[0]["universe"].array {
             let tk = u["tokens"].array.compactMap(\.int)

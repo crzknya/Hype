@@ -9,7 +9,7 @@ struct MarketsView: View {
     @State private var category: String?
 
     enum Segment: String, CaseIterable, Identifiable {
-        case favorites = "★", perps = "Perps", hip3 = "HIP-3", spot = "Spot"
+        case favorites = "★", perps = "Perps", hip3 = "HIP-3", spot = "Spot", outcomes = "Outcomes"
         var id: String { rawValue }
     }
 
@@ -39,7 +39,11 @@ struct MarketsView: View {
                     .padding(.bottom, 6)
                 }
 
-                MarketList(markets: list, onSelect: { model.select($0.id) })
+                if segment == .outcomes {
+                    OutcomesList(search: search)
+                } else {
+                    MarketList(markets: list, onSelect: { model.select($0.id) })
+                }
             }
             .themedBackground()
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Search coin"))
@@ -101,6 +105,7 @@ struct MarketsView: View {
                 if let category { base = base.filter { model.categories[$0.id] == category } }
             case .spot: base = model.spots.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm > 0 }
             case .favorites: base = model.favorites.compactMap { model.marketById[$0] }
+            case .outcomes: base = []
             }
         }
         let sorted: [Market]
