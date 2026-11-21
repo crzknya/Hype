@@ -13,6 +13,8 @@ struct Market: Identifiable, Hashable {
     let onlyIsolated: Bool
     var dex: String = ""     // "" = main perp dex, otherwise HIP-3 builder dex name (e.g. "xyz")
     var marginTiers: [MarginTier] = []   // from the dex meta's marginTables (empty = single tier at maxLeverage)
+    var deployerFeeScale: Double = 0     // HIP-3: deployer fee share (fees × (scale + max(1, scale)))
+    var growthMode = false               // HIP-3 growth mode: fees × 0.1
     var markPx: Double = 0
     var midPx: Double = 0
     var oraclePx: Double = 0

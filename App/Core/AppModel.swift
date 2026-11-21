@@ -30,7 +30,7 @@ final class AppModel {
     var activeAccountId: UUID? { didSet { save(); accountChanged() } }
     var favorites: Set<String> = [] { didSet { save() } }
     var alerts: [PriceAlert] = [] { didSet { save() } }
-    var slippage: Double = 0.03 { didSet { save() } }
+    var slippage: Double = 0.08 { didSet { save() } }   // web default 8%
     var confirmOrders = true { didSet { save() } }
     var haptics = true { didSet { save() } }
     var biometricLock = false { didSet { save() } }
@@ -88,8 +88,14 @@ final class AppModel {
     var spotBalances: [SpotBalance] = []
     var twaps: [TwapState] = []
     var activeAsset = ActiveAssetData()
-    var takerFee: Double = 0.00045
+    var takerFee: Double = 0.00045        // perps, before referral discount
     var makerFee: Double = 0.00015
+    var spotTakerFee: Double = 0.0007
+    var spotMakerFee: Double = 0.0004
+    var referralDiscount: Double = 0
+    /// Market-order notional limits by max leverage, and markets at their open-interest cap.
+    @ObservationIgnored var maxMarketNtls: [(leverage: Int, notional: Double)] = []
+    var perpsAtOiCap: Set<String> = []
     var portfolioHistory: [(Date, Double)] = []
     /// "day" / "week" / "month" / "allTime" → account value & PnL history from the `portfolio` request.
     var portfolioRanges: [String: PortfolioRange] = [:]
@@ -259,6 +265,7 @@ final class AppModel {
         Task { await loadCandles() }
         Task { await refreshHistory() }
         Task { await refreshFees() }
+        Task { await loadLimits() }
     }
 
     func stop() {
@@ -515,6 +522,8 @@ final class AppModel {
             var m = Market(id: coin, name: short, base: short, quote: "USD", asset: offset + i, isSpot: false,
                            szDecimals: u["szDecimals"].int ?? 0, maxLeverage: u["maxLeverage"].int ?? 1,
                            onlyIsolated: isolatedOnly, dex: dex)
+            m.deployerFeeScale = u["deployerFeeScale"].dbl
+            m.growthMode = u["growthMode"].str == "enabled"
             m.marginTiers = MarginTier.tiers(tableId: u["marginTableId"].int, maxLeverage: m.maxLeverage, tables: tables)
             if i < ctxs.count { apply(ctx: ctxs[i], to: &m) }
             out.append(m)
@@ -633,6 +642,37 @@ final class AppModel {
     func withdrawable(for m: Market) -> Double {
         if isUnified { return spotAvailable(collateralName(m.dex)) }
         return m.isHip3 ? (dexSummaries[m.dex]?.withdrawable ?? 0) : summary.withdrawable
+    }
+
+    /// Cross margin is unavailable for isolated-only markets, and for HIP-3 markets on standard
+    /// accounts (only unified / portfolio-margin / dex-abstraction accounts share collateral with HIP-3 dexes).
+    func crossAllowed(_ m: Market) -> Bool {
+        if m.onlyIsolated { return false }
+        guard m.isHip3, let a = abstraction else { return true }
+        return isUnified || a == "dexAbstraction"
+    }
+
+    // MARK: Fees (as app.hyperliquid.xyz)
+
+    static let stablecoins: Set<String> = ["USDC", "USDT0", "USDT", "USDH", "USDE", "USDHL", "USDXL", "FEUSD", "USDB"]
+
+    /// Effective taker / maker rates for a market: spot or perp base rate with the referral discount,
+    /// spot stable pairs × 0.2, HIP-3 deployer fee scale and growth mode (× 0.1).
+    func fees(for m: Market) -> (taker: Double, maker: Double) {
+        let disc = 1 - referralDiscount
+        var taker = (m.isSpot ? spotTakerFee : takerFee) * disc
+        var maker = m.isSpot ? spotMakerFee : makerFee
+        if maker > 0 { maker *= disc }
+        if m.isSpot {
+            if Self.stablecoins.contains(m.base) && Self.stablecoins.contains(m.quote) { taker *= 0.2; maker *= 0.2 }
+        } else if m.isHip3 {
+            let scale = m.deployerFeeScale + max(1, m.deployerFeeScale)
+            let growth = m.growthMode ? 0.1 : 1
+            taker *= scale * growth
+            maker *= growth
+            if maker > 0 { maker *= scale }
+        }
+        return (taker, maker)
     }
 
     // MARK: Account mode (as app.hyperliquid.xyz)
@@ -775,6 +815,9 @@ final class AppModel {
         if let f = try? await api.info(type: "userFees", [("user", .str(user))]) {
             if let t = f["userCrossRate"].double { takerFee = t }
             if let m = f["userAddRate"].double { makerFee = m }
+            if let t = f["userSpotCrossRate"].double { spotTakerFee = t }
+            if let m = f["userSpotAddRate"].double { spotMakerFee = m }
+            referralDiscount = f["activeReferralDiscount"].dbl
         }
     }
 

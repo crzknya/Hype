@@ -49,7 +49,7 @@ struct OrderFormView: View {
             if type == .scale {
                 NumField(title: L("From"), text: $scaleStartText, placeholder: Fmt.price(refMid)) { midButton { scaleStartText = $0 } }
                 NumField(title: L("To"), text: $scaleEndText, placeholder: Fmt.price(refMid))
-                Stepper(L("Orders: {0}", scaleCount), value: $scaleCount, in: 2...50).font(.caption)
+                Stepper(L("Orders: {0}", scaleCount), value: $scaleCount, in: 2...100).font(.caption)
                 HStack {
                     Text(L("Skew {0}", Fmt.num(scaleSkew, 1))).font(.caption).frame(width: 64, alignment: .leading)
                     Slider(value: $scaleSkew, in: 0.2...5, step: 0.1)
@@ -118,7 +118,7 @@ struct OrderFormView: View {
     private var leverageRow: some View {
         Button { showLeverage = true } label: {
             HStack {
-                Text(model.activeAsset.isCross && !market.onlyIsolated ? "Cross" : "Isolated")
+                Text(model.activeAsset.isCross && model.crossAllowed(market) ? "Cross" : "Isolated")
                 Spacer()
                 Text("\(currentLeverage)x").bold()
                 Image(systemName: "slider.horizontal.3").font(.caption)
@@ -427,11 +427,12 @@ struct OrderFormView: View {
             lines.append(SummaryLine(L("Margin"), value > 0 ? Fmt.usd(value / Double(currentLeverage)) : "—", .primary))
             if value > 0, !d.reduceOnly,
                let liq = model.estimateLiq(m: market, isBuy: d.isBuy, price: px, size: d.size, leverage: currentLeverage,
-                                           isCross: model.activeAsset.isCross && !market.onlyIsolated) {
+                                           isCross: model.activeAsset.isCross && model.crossAllowed(market)) {
                 lines.append(SummaryLine(L("Liquidation ≈"), Fmt.price(liq), .orange))
             }
         }
-        let fee = (d.type == .market || d.type == .twap || d.type.triggerIsMarket) ? model.takerFee : model.makerFee
+        let rates = model.fees(for: market)
+        let fee = (d.type == .market || d.type == .twap || d.type.triggerIsMarket) ? rates.taker : rates.maker
         lines.append(SummaryLine(L("Fee ≈"), value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
         if let sl = d.sl, sl > 0, d.size > 0 {
             lines.append(SummaryLine(L("Loss at SL"), Fmt.signedUsd(-abs(px - sl) * d.size), .hlRed))
@@ -561,9 +562,13 @@ struct LeverageSheet: View {
                         Text("Isolated").tag(false)
                     }
                     .pickerStyle(.segmented)
-                    .disabled(market.onlyIsolated)
+                    .disabled(!model.crossAllowed(market))
                 } footer: {
-                    Text(isCross ? L("Cross: all free account margin backs the position.") : L("Isolated: risk is limited to the margin allocated to this position."))
+                    if market.isHip3 && !market.onlyIsolated && !model.crossAllowed(market) {
+                        Text(L("Cross margin on HIP-3 is not supported for a standard account. Use isolated margin or switch to a unified account (Portfolio → account type)."))
+                    } else {
+                        Text(isCross ? L("Cross: all free account margin backs the position.") : L("Isolated: risk is limited to the margin allocated to this position."))
+                    }
                 }
                 Section(L("Leverage: {0}x", Int(leverage))) {
                     Slider(value: $leverage, in: 1...Double(max(market.maxLeverage, 1)), step: 1)
@@ -596,7 +601,7 @@ struct LeverageSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
             .onAppear {
                 leverage = Double(model.position(market.id)?.leverage ?? max(1, model.activeAsset.leverage))
-                isCross = market.onlyIsolated ? false : model.activeAsset.isCross
+                isCross = model.crossAllowed(market) ? model.activeAsset.isCross : false
             }
         }
         .presentationDetents([.medium])

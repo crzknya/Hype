@@ -78,11 +78,17 @@ extension AppModel {
         if d.type != .scale && d.type != .twap && !d.reduceOnly && sz * px < 10 {
             throw HLError(L("Minimum order value is $10 (now {0})", Fmt.usd(sz * px)))
         }
+        if d.type == .market && !m.isSpot, let cap = maxMarketNotional(m), sz * px > cap {
+            throw HLError(L("Market orders on {0} are limited to {1}. Use a limit or TWAP order.", m.name, Fmt.compactUsd(cap)))
+        }
+        if !m.isSpot && !d.reduceOnly && perpsAtOiCap.contains(m.id) {
+            throw HLError(L("{0} is at its open interest cap: only orders that reduce a position are accepted.", m.name))
+        }
         if d.type.needsPrice && (d.price ?? 0) <= 0 { throw HLError(L("Enter a price")) }
         if d.type.needsTrigger && (d.triggerPx ?? 0) <= 0 { throw HLError(L("Enter a trigger price")) }
         if d.type == .scale {
             guard let a = d.scaleStart, let b = d.scaleEnd, a > 0, b > 0 else { throw HLError(L("Enter the grid price range")) }
-            guard d.scaleCount >= 2 && d.scaleCount <= 50 else { throw HLError(L("Number of orders: 2 to 50")) }
+            guard d.scaleCount >= 2 && d.scaleCount <= 100 else { throw HLError(L("Number of orders: 2 to 100")) }
             if sz * min(a, b) / Double(d.scaleCount) < 10 { throw HLError(L("Each grid order must be at least $10")) }
         }
         if d.type == .twap {
@@ -103,6 +109,10 @@ extension AppModel {
         try validate(d)
         let m = d.market
         let sz = m.roundSize(d.size, mode: .plain)
+        // HIP-3 on a standard account: cross margin is rejected, switch the market to isolated first.
+        if !m.isSpot && !crossAllowed(m) && m.id == selectedCoin && activeAsset.isCross && position(m.id) == nil {
+            try await updateLeverage(m, leverage: max(1, min(activeAsset.leverage, m.maxLeverage)), isCross: false)
+        }
 
         switch d.type {
         case .twap:
@@ -170,7 +180,25 @@ extension AppModel {
         return L("Order ") + parts.joined(separator: "; ")
     }
 
+    /// Max notional of one market order (maxMarketOrderNtls: by the market's max leverage).
+    func maxMarketNotional(_ m: Market) -> Double? {
+        maxMarketNtls.sorted { $0.leverage > $1.leverage }.first { m.maxLeverage >= $0.leverage }?.notional
+    }
+
+    func loadLimits() async {
+        if let j = try? await api.info(type: "maxMarketOrderNtls") {
+            let list = j.array.compactMap { e -> (leverage: Int, notional: Double)? in
+                guard let l = e[0].int else { return nil }
+                return (l, e[1].dbl)
+            }
+            if !list.isEmpty { maxMarketNtls = list }
+        }
+    }
+
     // MARK: Position actions
+
+    /// Market closes use at least 8% max slippage (as app.hyperliquid.xyz), so they fill in fast markets.
+    var closeSlippage: Double { max(slippage, 0.08) }
 
     func closePosition(_ p: Position, fraction: Double = 1, limitPx: Double? = nil) async throws -> String {
         guard let m = market(p.coin) else { throw HLError(L("Market {0} not found", p.coin)) }
@@ -181,7 +209,7 @@ extension AppModel {
         if let limitPx {
             o = wire(m, isBuy: isBuy, px: m.roundPrice(limitPx), sz: sz, reduceOnly: true, kind: .limit(tif: .gtc))
         } else {
-            o = wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy), sz: sz, reduceOnly: true, kind: .limit(tif: .ioc))
+            o = wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: sz, reduceOnly: true, kind: .limit(tif: .ioc))
         }
         let data = try await submit(HLAction.order([o]))
         Task { await refreshAccount(); await refreshOrders() }
@@ -192,7 +220,7 @@ extension AppModel {
         let wires: [OrderWire] = positions.compactMap { p in
             guard let m = market(p.coin) else { return nil }
             let isBuy = !p.isLong
-            return wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy), sz: Decimal(string: HLNum.wire(p.size)) ?? 0,
+            return wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: Decimal(string: HLNum.wire(p.size)) ?? 0,
                         reduceOnly: true, kind: .limit(tif: .ioc))
         }
         guard !wires.isEmpty else { throw HLError(L("No open positions")) }
@@ -205,7 +233,7 @@ extension AppModel {
         guard let m = market(p.coin) else { throw HLError(L("Market not found")) }
         let isBuy = !p.isLong
         let sz = m.roundSize(p.size * 2, mode: .plain)
-        let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
+        let data = try await submit(HLAction.order([wire(m, isBuy: isBuy, px: marketPx(m, isBuy: isBuy, slippage: closeSlippage), sz: sz, reduceOnly: false, kind: .limit(tif: .ioc))]))
         Task { await refreshAccount() }
         return summarize(data, count: 1)
     }

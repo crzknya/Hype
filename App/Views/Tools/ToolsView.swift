@@ -109,7 +109,7 @@ struct PnlCalculator: View {
         let lev = max(1, Fmt.parse(leverageText) ?? 1)
         let pnl = (exit - entry) * size * (isLong ? 1 : -1)
         let margin = entry * size / lev
-        let fees = (entry + exit) * size * model.takerFee
+        let fees = (entry + exit) * size * (model.selectedMarket.map { model.fees(for: $0).taker } ?? model.takerFee)
         Form {
             Picker("", selection: $isLong) { Text(L("Long")).tag(true); Text(L("Short")).tag(false) }.pickerStyle(.segmented)
             NumField(title: L("Entry"), text: $entryText)

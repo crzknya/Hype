@@ -100,7 +100,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Trade"))
                 } footer: {
-                    Text(L("A market order on Hyperliquid is an IOC limit at the best price ± slippage."))
+                    Text(L("A market order on Hyperliquid is an IOC limit at the best price ± slippage.") + " " + L("Closing positions uses at least 8%, market TP/SL 10%."))
                 }
 
                 Section(L("Security")) {

@@ -28,6 +28,11 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Closing positions uses at least 8%, market TP/SL 10%.": "Закрытие позиций — не меньше 8%, рыночные TP/SL — 10%.",
+        "Cross margin on HIP-3 is not supported for a standard account. Use isolated margin or switch to a unified account (Portfolio → account type).": "Кросс-маржа на HIP-3 недоступна для стандартного аккаунта. Используйте изолированную маржу или переключитесь на единый аккаунт (Портфель → тип аккаунта).",
+        "Market orders on {0} are limited to {1}. Use a limit or TWAP order.": "Рыночные ордера на {0} ограничены суммой {1}. Используйте лимитный ордер или TWAP.",
+        "Number of orders: 2 to 100": "Количество ордеров: от 2 до 100",
+        "{0} is at its open interest cap: only orders that reduce a position are accepted.": "{0} достиг лимита открытого интереса: принимаются только ордера на сокращение позиции.",
         "Balances": "Балансы",
         "Account type": "Тип аккаунта",
         "Account type changed": "Тип аккаунта изменён",
