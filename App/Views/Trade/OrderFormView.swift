@@ -249,7 +249,7 @@ struct OrderFormView: View {
                     Menu {
                         ForEach([0.005, 0.01, 0.02, 0.05], id: \.self) { p in
                             Button(L("{0}% of balance", Fmt.num(p * 100, 1))) {
-                                riskText = Fmt.input(model.summary.accountValue * p, 2)
+                                riskText = Fmt.input(model.tradingEquity * p, 2)
                             }
                         }
                     } label: { Image(systemName: "percent").font(.caption) }
@@ -426,7 +426,7 @@ struct OrderFormView: View {
         if !market.isSpot {
             lines.append(SummaryLine(L("Margin"), value > 0 ? Fmt.usd(value / Double(currentLeverage)) : "—", .primary))
             if value > 0, !d.reduceOnly,
-               let liq = model.estimateLiq(m: market, isBuy: d.isBuy, entry: px, size: d.size, leverage: currentLeverage,
+               let liq = model.estimateLiq(m: market, isBuy: d.isBuy, price: px, size: d.size, leverage: currentLeverage,
                                            isCross: model.activeAsset.isCross && !market.onlyIsolated) {
                 lines.append(SummaryLine(L("Liquidation ≈"), Fmt.price(liq), .orange))
             }

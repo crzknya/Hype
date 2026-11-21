@@ -370,6 +370,15 @@ extension AppModel {
         Task { await refreshAccount(); await refreshHistory() }
     }
 
+    /// Switches the account type ("unifiedAccount", "portfolioMargin" or "disabled"), signed by the main wallet.
+    func setAbstraction(_ mode: String) async throws {
+        guard let acc = account else { throw HLError(L("No account connected")) }
+        try await submitUser(HLAction.userSetAbstraction(user: acc.address, abstraction: mode, nonce: nextNonce(),
+                                                         mainnet: network.isMainnet, chainId: userSignChainId))
+        abstraction = mode
+        Task { await refreshAllAccounts() }
+    }
+
     func sendUsd(amount: Double, destination: String) async throws {
         try await submitUser(HLAction.usdSend(destination: destination, amount: HLNum.wire(amount, maxDecimals: 6), time: nextNonce(), mainnet: network.isMainnet, chainId: userSignChainId))
         Task { await refreshAccount(); await refreshHistory() }
@@ -413,21 +422,70 @@ extension AppModel {
 
     // MARK: Estimates
 
-    /// Rough liquidation price estimate for a new position (isolated-style using max-leverage MMR).
-    func estimateLiq(m: Market, isBuy: Bool, entry: Double, size: Double, leverage: Int, isCross: Bool) -> Double? {
-        guard entry > 0, size > 0, !m.isSpot else { return nil }
-        let mmr = 1 / (2 * Double(max(m.maxLeverage, 1)))
+    /// Liquidation price estimate for the position after this order, using the same method as
+    /// app.hyperliquid.xyz: margin tiers, cross collateral (the unified balance on unified accounts)
+    /// or the isolated margin, assuming other prices stay constant. `price` is the order price.
+    func estimateLiq(m: Market, isBuy: Bool, price: Double, size: Double, leverage: Int, isCross: Bool) -> Double? {
+        guard size > 0, !m.isSpot else { return nil }
+        let tiers = m.marginTiers.isEmpty
+            ? [MarginTier(lowerBound: 0, upperBound: nil, maxLeverage: max(m.maxLeverage, 1), deduction: 0)] : m.marginTiers
+        var mark = m.markPx > 0 ? m.markPx : mid(m.id)
+        guard mark > 0 else { return nil }
+        let pos = position(m.id)
+        let current = pos?.szi ?? 0
         let side: Double = isBuy ? 1 : -1
-        let margin: Double
+        let total = current + side * size
+        let absTotal = abs(total)
+        guard absTotal > 0 else { return nil }
+        // Maintenance margin already held for the existing position at the current mark.
+        let existingNtl = abs(current) * mark
+        let existingMM = tiers.tier(for: existingNtl)?.maintenance(existingNtl) ?? 0
+        // A resting limit order fills at its price; a marketable one at about the mark.
+        if price > 0, (price > mark) != isBuy { mark = price }
+        let notional = mark * absTotal
+        let floatSide: Double = total > 0 ? 1 : -1
+
+        let accountValue: Double
         if isCross {
-            let free = max(0, summary.accountValue - summary.maintenanceMargin)
-            margin = free + (position(m.id).map { $0.marginUsed } ?? 0)
+            let free: Double
+            if isUnified {
+                let token = collateral(of: m.dex)?.index ?? 0
+                free = availableAfterMaintenance[token] ?? spotAvailable(collateralName(m.dex))
+            } else {
+                let s = m.isHip3 ? (dexSummaries[m.dex] ?? AccountSummary()) : summary
+                free = s.crossAccountValue - s.maintenanceMargin
+            }
+            accountValue = free + existingMM
         } else {
-            margin = entry * size / Double(max(leverage, 1))
+            // Isolated: margin of the existing isolated position adjusted by this order (web's algorithm).
+            var delta = side * size
+            var raw = pos.map { $0.isIsolated ? $0.rawUsd : 0 } ?? 0
+            var szi = (pos?.isIsolated ?? false) ? current : 0
+            if szi != 0, (delta > 0) != (szi > 0) {
+                let t = min(abs(delta), abs(szi))
+                let n = delta < 0 ? -t : t
+                raw -= (raw + mark * szi) * (t / abs(szi))
+                delta -= n
+                szi += n
+                raw -= mark * n
+            }
+            if szi == 0 || (delta > 0) == (szi > 0) {
+                raw += abs(mark * delta) / Double(max(leverage, 1))
+                szi += delta
+                raw -= mark * delta
+            }
+            if szi == 0 { raw = 0 }
+            accountValue = total * mark + raw
         }
-        let totalSize = size + (position(m.id).map { ($0.isLong == isBuy) ? $0.size : -$0.size } ?? 0)
-        guard totalSize > 0 else { return nil }
-        let liq = (entry - side * margin / size) / (1 - side * mmr)
-        return liq > 0 ? liq : nil
+        guard let base = tiers.tier(for: notional) else { return nil }
+        let collateral = max(accountValue, notional / Double(min(max(leverage, 1), base.maxLeverage)))
+        for t in tiers {
+            let a = 1 - floatSide / Double(2 * t.maxLeverage)
+            let liq = mark - floatSide * (collateral - t.maintenance(notional)) / absTotal / a
+            if liq <= 0 || liq > 1e15 { continue }
+            let ntl = liq * absTotal
+            if ntl >= t.lowerBound && (t.upperBound == nil || ntl < t.upperBound!) { return liq }
+        }
+        return nil
     }
 }

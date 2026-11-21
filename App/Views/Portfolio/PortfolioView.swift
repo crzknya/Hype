@@ -2,15 +2,40 @@ import SwiftUI
 import Charts
 import HyperCore
 
+/// Portfolio laid out like app.hyperliquid.xyz/portfolio: total equity, account type, the equity/PnL
+/// chart with ranges, actions (Deposit, Withdraw, Send, Perps ⇄ Spot only for standard accounts)
+/// and the account tables starting with Balances.
 struct PortfolioView: View {
     @Environment(AppModel.self) private var model
-    @State private var tab: Tab = .positions
+    @State private var tab: Tab = .balances
     @State private var transfer: TransferKind?
     @State private var pending: PendingConfirm?
+    @State private var showAccountType = false
+    @State private var range: ChartRange = .month
+    @State private var graph: Graph = .value
 
     enum Tab: String, CaseIterable, Identifiable {
-        case positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", funding = "Funding", spot = "Spot", ledger = "Transfers"
+        case balances = "Balances", positions = "Positions", orders = "Orders", twap = "TWAP", fills = "Trades", funding = "Funding", ledger = "Transfers"
         var id: String { rawValue }
+    }
+
+    enum ChartRange: String, CaseIterable, Identifiable {
+        case day, week, month, allTime
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .day: return L("24h")
+            case .week: return L("7d")
+            case .month: return L("30d")
+            case .allTime: return L("All")
+            }
+        }
+    }
+
+    enum Graph: String, CaseIterable, Identifiable {
+        case value, pnl
+        var id: String { rawValue }
+        var title: String { self == .value ? L("Account value") : L("PnL") }
     }
 
     var body: some View {
@@ -22,7 +47,7 @@ struct PortfolioView: View {
                         Button(L("Open Settings")) { model.tab = .settings }.buttonStyle(.borderedProminent).tint(.hlAccent)
                     } else {
                         summaryCard
-                        if !model.portfolioHistory.isEmpty { equityChart }
+                        chartCard
                         actions
                         tabs
                         content
@@ -41,18 +66,22 @@ struct PortfolioView: View {
                 ToolbarItem(placement: .principal) { AccountSwitcher() }
             }
             .sheet(item: $transfer) { TransferSheet(kind: $0) }
+            .sheet(isPresented: $showAccountType) { AccountTypeSheet() }
             .confirmDialog($pending)
         }
     }
 
+    // MARK: Summary
+
     private var summaryCard: some View {
-        let s = model.summary
-        let spotValue = model.spotValue
+        let unified = model.isUnified
+        let ratio = model.marginRatio
         return Card {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("Account value (perps)")).font(.caption).foregroundStyle(Color.hlMuted)
-                    Text(Fmt.usd(s.accountValue)).font(.system(size: 28, weight: .bold, design: .monospaced))
+                    Text(L("Total equity")).font(.caption).foregroundStyle(Color.hlMuted)
+                    Text(Fmt.usd(model.totalEquity)).font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -61,24 +90,52 @@ struct PortfolioView: View {
                         .foregroundStyle(Color.pnl(model.unrealizedPnl))
                 }
             }
+            Button { showAccountType = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: unified ? "square.stack.3d.up.fill" : "square.split.2x1")
+                    Text(model.accountModeTitle)
+                    Image(systemName: "chevron.right").font(.caption2)
+                }
+                .font(.caption.bold())
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Color.hlAccent.opacity(0.15), in: Capsule())
+                .foregroundStyle(Color.hlAccent)
+            }
+            .buttonStyle(.plain)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                GridRow {
-                    Stat(title: L("Spot"), value: Fmt.usd(spotValue))
-                    Stat(title: L("Withdrawable"), value: Fmt.usd(s.withdrawable))
-                    Stat(title: L("Margin"), value: Fmt.usd(s.totalMarginUsed))
+                if unified {
+                    GridRow {
+                        Stat(title: L("Trading equity"), value: Fmt.usd(model.tradingEquity))
+                        Stat(title: L("Available"), value: Fmt.usd(model.withdrawableUSDC))
+                        Stat(title: L("Margin used"), value: Fmt.usd(model.marginUsed))
+                    }
+                } else {
+                    GridRow {
+                        Stat(title: L("Perps equity"), value: Fmt.usd(model.totalPerpValue))
+                        Stat(title: L("Spot equity"), value: Fmt.usd(model.spotValue))
+                        Stat(title: L("Withdrawable"), value: Fmt.usd(model.summary.withdrawable))
+                    }
                 }
                 GridRow {
-                    Stat(title: L("Positions"), value: Fmt.compactUsd(s.totalNtlPos))
-                    Stat(title: L("Account leverage"), value: Fmt.num(s.leverage, 2) + "x")
-                    Stat(title: L("Margin ratio"), value: Fmt.pct(s.marginRatio, 1, signed: false),
-                         color: s.marginRatio > 0.8 ? .hlRed : s.marginRatio > 0.5 ? .orange : .hlGreen)
+                    Stat(title: L("Positions"), value: Fmt.compactUsd(model.positionsNotional))
+                    Stat(title: L("Leverage"), value: Fmt.num(model.accountLeverage, 2) + "x")
+                    Stat(title: L("Margin ratio"), value: Fmt.pct(ratio, 1, signed: false),
+                         color: ratio > 0.8 ? .hlRed : ratio > 0.5 ? .orange : .hlGreen)
                 }
             }
-            let dexNames: [String] = model.dexSummaries.keys.sorted().filter { (k: String) -> Bool in (model.dexSummaries[k]?.accountValue ?? 0) > 0 }
-            if !dexNames.isEmpty {
+            if model.vaultEquity > 0 || model.stakedHype > 0 {
                 HStack(spacing: 12) {
-                    ForEach(dexNames, id: \.self) { k in
-                        Stat(title: "HIP-3 · \(k)", value: Fmt.usd(model.dexSummaries[k]?.accountValue ?? 0))
+                    if model.vaultEquity > 0 { Stat(title: L("Vaults"), value: Fmt.usd(model.vaultEquity)) }
+                    if model.stakedHype > 0 { Stat(title: L("Staking"), value: Fmt.num(model.stakedHype, 2) + " HYPE") }
+                }
+            }
+            if !unified {
+                let dexNames: [String] = model.dexSummaries.keys.sorted().filter { (k: String) -> Bool in (model.dexSummaries[k]?.accountValue ?? 0) > 0 }
+                if !dexNames.isEmpty {
+                    HStack(spacing: 12) {
+                        ForEach(dexNames, id: \.self) { k in
+                            Stat(title: "HIP-3 · \(k)", value: Fmt.usd(model.dexSummaries[k]?.accountValue ?? 0))
+                        }
                     }
                 }
             }
@@ -88,30 +145,66 @@ struct PortfolioView: View {
         }
     }
 
-    private var equityChart: some View {
-        Card {
-            Text(L("Account value, 30 days")).font(.caption).foregroundStyle(Color.hlMuted)
-            let pts = model.portfolioHistory
-            let first = pts.first?.1 ?? 0, last = pts.last?.1 ?? 0
-            Chart {
-                ForEach(Array(pts.enumerated()), id: \.offset) { _, p in
-                    LineMark(x: .value(L("Date"), p.0), y: .value("USD", p.1))
-                        .foregroundStyle(last >= first ? Color.hlGreen : Color.hlRed)
-                        .interpolationMethod(.monotone)
+    // MARK: Chart
+
+    private var chartCard: some View {
+        let r = model.portfolioRanges[range.rawValue]
+        let pts: [(Date, Double)] = (graph == .value ? r?.accountValue : r?.pnl) ?? []
+        let first = pts.first?.1 ?? 0, last = pts.last?.1 ?? 0
+        return Card {
+            HStack {
+                Picker("", selection: $graph) {
+                    ForEach(Graph.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented).fixedSize()
+                Spacer()
+                Menu {
+                    Picker("", selection: $range) { ForEach(ChartRange.allCases) { Text($0.title).tag($0) } }
+                } label: {
+                    HStack(spacing: 3) { Text(range.title); Image(systemName: "chevron.down").font(.caption2) }
+                        .font(.caption.bold()).foregroundStyle(Color.hlAccent)
                 }
             }
-            .chartYScale(domain: .automatic(includesZero: false))
-            .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.day().month()) } }
-            .frame(height: 120)
+            if pts.count > 1 {
+                Chart {
+                    ForEach(Array(pts.enumerated()), id: \.offset) { _, p in
+                        LineMark(x: .value(L("Date"), p.0), y: .value("USD", p.1))
+                            .foregroundStyle(last >= first ? Color.hlGreen : Color.hlRed)
+                            .interpolationMethod(.monotone)
+                    }
+                }
+                .chartYScale(domain: .automatic(includesZero: false))
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: axisFormat) }
+                }
+                .frame(height: 120)
+            } else {
+                Text(L("No history yet")).font(.caption).foregroundStyle(Color.hlMuted)
+                    .frame(maxWidth: .infinity, minHeight: 60)
+            }
+            if let r {
+                HStack(spacing: 12) {
+                    Stat(title: L("PnL"), value: Fmt.signedUsd(r.pnlChange), color: Color.pnl(r.pnlChange))
+                    Stat(title: L("Volume"), value: Fmt.usd(r.volume))
+                }
+            }
         }
     }
 
+    private var axisFormat: Date.FormatStyle {
+        range == .day ? .dateTime.hour().minute() : .dateTime.day().month()
+    }
+
+    // MARK: Actions
+
     private var actions: some View {
         HStack(spacing: 8) {
-            actionTile(L("Transfer"), "arrow.left.arrow.right") { transfer = .classTransfer }
-            actionTile(L("Withdrawal"), "arrow.up.circle") { transfer = .withdraw }
-            actionTile(L("Send"), "paperplane") { transfer = .send }
             actionTile(L("Deposit"), "arrow.down.circle") { transfer = .deposit }
+            actionTile(L("Withdraw"), "arrow.up.circle") { transfer = .withdraw }
+            actionTile(L("Send"), "paperplane") { transfer = .send }
+            if !model.isUnified && model.abstraction != nil {
+                actionTile(L("Perps ⇄ Spot"), "arrow.left.arrow.right") { transfer = .classTransfer }
+            }
         }
     }
 
@@ -119,13 +212,15 @@ struct PortfolioView: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon).font(.title3)
-                Text(title).font(.caption)
+                Text(title).font(.caption).lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 10)
             .themedCard()
         }
         .buttonStyle(.plain)
     }
+
+    // MARK: Tables
 
     private var tabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -156,6 +251,8 @@ struct PortfolioView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
+        case .balances:
+            BalancesSection()
         case .positions:
             if model.positions.isEmpty { EmptyState(text: L("No open positions")) }
             else {
@@ -195,28 +292,6 @@ struct PortfolioView: View {
             FillsSection()
         case .funding:
             FundingSection()
-        case .spot:
-            if model.spotBalances.isEmpty { EmptyState(text: L("No spot balances")) }
-            ForEach(model.spotBalances) { b in
-                let px: Double = model.spotPrice(b.coin)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(b.coin).font(.subheadline.bold())
-                        if b.hold > 0 { Text(L("In orders: {0}", Fmt.num(b.hold, 4))).font(.caption2).foregroundStyle(Color.hlMuted) }
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(Fmt.num(b.total, 4)).font(.system(size: 14, design: .monospaced))
-                        Text(Fmt.usd(b.total * px)).font(.caption2.monospaced()).foregroundStyle(Color.hlMuted)
-                        if b.entryNtl > 0 && px > 0 && b.coin != "USDC" {
-                            let pnl = b.total * px - b.entryNtl
-                            Text(Fmt.signedUsd(pnl)).font(.caption2.monospaced()).foregroundStyle(Color.pnl(pnl))
-                        }
-                    }
-                }
-                .padding(10)
-                .themedCard()
-            }
         case .ledger:
             if model.ledger.isEmpty { EmptyState(text: L("No deposits or transfers")) }
             ForEach(model.ledger.prefix(100)) { e in
@@ -231,6 +306,175 @@ struct PortfolioView: View {
                 .padding(10)
                 .themedCard()
             }
+        }
+    }
+}
+
+/// Balances table as on the web: coin, total, available (total − hold), USD value and PnL.
+/// Standard accounts get a "USDC · Perps" row (and one per funded HIP-3 dex); unified accounts
+/// have a single balance per token shared by spot and perps.
+struct BalancesSection: View {
+    @Environment(AppModel.self) private var model
+
+    struct Row: Identifiable {
+        let id: String
+        let coin: String
+        let place: String
+        let total: Double
+        let available: Double
+        let usd: Double
+        let pnl: Double?
+        let roe: Double?
+        let decimals: Int
+    }
+
+    private var rows: [Row] {
+        var out: [Row] = []
+        let unified = model.isUnified
+        if !unified {
+            let s = model.summary
+            if s.accountValue != 0 {
+                out.append(Row(id: "perps", coin: "USDC", place: L("Perps"), total: s.accountValue, available: s.withdrawable,
+                               usd: s.accountValue, pnl: nil, roe: nil, decimals: 2))
+            }
+            for (dex, sum) in model.dexSummaries.sorted(by: { $0.key < $1.key }) where sum.accountValue != 0 {
+                let c = model.collateralName(dex)
+                out.append(Row(id: "dex-\(dex)", coin: c, place: "HIP-3 · \(dex)", total: sum.accountValue, available: sum.withdrawable,
+                               usd: sum.accountValue * model.spotPrice(c), pnl: nil, roe: nil, decimals: 2))
+            }
+        }
+        for b in model.spotBalances {
+            let px = model.spotPrice(b.coin)
+            let value = b.total * px
+            let isStable = b.coin == "USDC"
+            let pnl: Double? = (!isStable && b.entryNtl > 0 && px > 0) ? value - b.entryNtl : nil
+            let decimals = model.spotTokens[b.token]?.szDecimals ?? 4
+            out.append(Row(id: "spot-\(b.coin)", coin: b.coin, place: unified ? L("Unified") : L("Spot"),
+                           total: b.total, available: max(0, b.available), usd: value,
+                           pnl: pnl, roe: pnl.map { $0 / b.entryNtl }, decimals: isStable ? 2 : max(decimals, 2)))
+        }
+        return out.sorted { $0.usd > $1.usd }
+    }
+
+    var body: some View {
+        let rows = self.rows
+        VStack(spacing: 8) {
+            if rows.isEmpty { EmptyState(text: L("No balances yet")) }
+            ForEach(rows) { r in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(r.coin).font(.subheadline.bold())
+                        Text(r.place).font(.caption2).foregroundStyle(Color.hlMuted)
+                        Spacer()
+                        Text(Fmt.usd(r.usd)).font(.system(size: 14, weight: .medium, design: .monospaced))
+                    }
+                    HStack(spacing: 12) {
+                        Stat(title: L("Total"), value: Fmt.num(r.total, r.decimals))
+                        Stat(title: L("Available"), value: Fmt.num(r.available, r.decimals))
+                        Spacer()
+                        if let pnl = r.pnl {
+                            Stat(title: L("PnL (ROE)"), value: Fmt.signedUsd(pnl) + (r.roe.map { " (" + Fmt.pct($0, 1) + ")" } ?? ""),
+                                 color: Color.pnl(pnl), align: .trailing)
+                        }
+                    }
+                }
+                .padding(10)
+                .themedCard()
+            }
+            if model.isUnified && !rows.isEmpty {
+                Text(L("Unified account: spot and perps share one balance per token. The available amount can be withdrawn or sent; the order form shows what is available to trade for each market."))
+                    .font(.caption2).foregroundStyle(Color.hlMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// Account type picker (app.hyperliquid.xyz → Portfolio → Account Type).
+struct AccountTypeSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected = "unifiedAccount"
+    @State private var busy = false
+    @State private var pending: PendingConfirm?
+
+    private struct Option: Identifiable {
+        let id: String
+        let title: String
+        let text: String
+    }
+
+    private var options: [Option] {
+        [Option(id: "unifiedAccount", title: L("Unified account (recommended)"),
+                text: L("Spot and perps balances are merged for all tokens, and cross margin works on every market, including HIP-3. All USDC is used as cross margin.")),
+         Option(id: "portfolioMargin", title: L("Portfolio margin"),
+                text: L("For advanced users: eligible assets such as HYPE and BTC can be used directly as collateral for perps. Borrowing and supplying happen automatically and accrue interest. Only for eligible accounts.")),
+         Option(id: "disabled", title: L("Standard account"),
+                text: L("Only recommended for automated traders. Perps, spot and every HIP-3 dex have separate balances; move USDC between them with Perps ⇄ Spot transfers."))]
+    }
+
+    private var current: String {
+        switch model.abstraction {
+        case "unifiedAccount", "portfolioMargin": return model.abstraction!
+        default: return "disabled"
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ForEach(options) { o in
+                        Button { selected = o.id } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: selected == o.id ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(selected == o.id ? Color.hlAccent : Color.hlMuted)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(o.title).font(.subheadline.bold())
+                                        if o.id == current { Badge(text: L("Current"), color: .hlGreen) }
+                                    }
+                                    Text(o.text).font(.caption).foregroundStyle(Color.hlMuted)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } footer: {
+                    if !(model.account?.kind.canTransfer ?? false) {
+                        Text(L("Changing the account type is signed by the main wallet. An API wallet cannot do it."))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                Section {
+                    PrimaryButton(title: L("Apply"), busy: busy,
+                                  disabled: selected == current || !(model.account?.kind.canTransfer ?? false)) {
+                        let title = options.first { $0.id == selected }?.title ?? selected
+                        pending = PendingConfirm(title: L("Change account type"), message: title, button: L("Apply")) {
+                            busy = true
+                            Task {
+                                do {
+                                    try await model.setAbstraction(selected)
+                                    model.show(.success, L("Account type changed"))
+                                    Haptics.success(enabled: model.haptics)
+                                    dismiss()
+                                } catch {
+                                    model.show(.error, error.localizedDescription)
+                                    Haptics.error(enabled: model.haptics)
+                                }
+                                busy = false
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle(L("Account type"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
+            .onAppear { selected = current }
+            .confirmDialog($pending)
         }
     }
 }

@@ -53,7 +53,7 @@ struct PositionSizeCalculator: View {
     @State private var leverageText = "10"
 
     var body: some View {
-        let balance = Fmt.parse(balanceText) ?? model.summary.accountValue
+        let balance = Fmt.parse(balanceText) ?? model.tradingEquity
         let risk = balance * (Fmt.parse(riskPctText) ?? 0) / 100
         let entry = Fmt.parse(entryText) ?? 0
         let stop = Fmt.parse(stopText) ?? 0
@@ -66,7 +66,7 @@ struct PositionSizeCalculator: View {
         let reward = target > 0 ? abs(target - entry) * size : 0
         Form {
             Section(L("Parameters")) {
-                NumField(title: L("Balance $"), text: $balanceText, placeholder: Fmt.input(model.summary.accountValue, 2))
+                NumField(title: L("Balance $"), text: $balanceText, placeholder: Fmt.input(model.tradingEquity, 2))
                 NumField(title: L("Risk %"), text: $riskPctText)
                 NumField(title: L("Entry"), text: $entryText) {
                     Button("Mid") { entryText = Fmt.input(model.mid(model.selectedCoin), 6) }.font(.caption.bold())

@@ -58,6 +58,11 @@ user("approveAgent", {"type":"approveAgent","agentAddress":"0x5e9ee1089755c34351
             {"name": "agentName", "type": "string"},
             {"name": "nonce", "type": "uint64"}], "HyperliquidTransaction:ApproveAgent", True)
 user("sendAsset", {"type":"sendAsset","destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","sourceDex":"","destinationDex":"xyz","token":"USDC:0x6d1e7cde53ba9467b783cb7c530ce054","amount":"25.5","fromSubAccount":"","nonce":nonce}, S.SEND_ASSET_SIGN_TYPES, "HyperliquidTransaction:SendAsset", True)
+user("setAbstraction", {"type":"userSetAbstraction","user":"0x5e9ee1089755c3435139848e47e6635505d5a13a","abstraction":"unifiedAccount","nonce":nonce}, [
+            {"name": "hyperliquidChain", "type": "string"},
+            {"name": "user", "type": "address"},
+            {"name": "abstraction", "type": "string"},
+            {"name": "nonce", "type": "uint64"}], "HyperliquidTransaction:UserSetAbstraction", True)
 # Signed on Arbitrum (as an external wallet like Rabby would do).
 arb = {"type":"approveAgent","agentAddress":"0x5e9ee1089755c3435139848e47e6635505d5a13a","agentName":"Hype iOS","nonce":nonce,
        "signatureChainId":"0xa4b1","hyperliquidChain":"Mainnet"}

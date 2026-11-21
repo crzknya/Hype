@@ -201,4 +201,17 @@ public enum HLAction {
             values: ["hyperliquidChain": .string(chain(mainnet)), "agentAddress": .address(agent), "agentName": .string(agentName), "nonce": .uint(nonce)],
             nonce: nonce, chainId: chainId)
     }
+    /// Account type: "unifiedAccount", "portfolioMargin" or "disabled" (manual perps/spot balances).
+    public static func userSetAbstraction(user: String, abstraction: String, nonce: UInt64, mainnet: Bool,
+                                 chainId: UInt64 = HLSigning.userSignChainId) -> UserSignedAction {
+        let u = user.lowercased()
+        return UserSignedAction(
+            action: .map([("type", .str("userSetAbstraction")), ("signatureChainId", .str(HLSigning.hex(chainId))),
+                          ("hyperliquidChain", .str(chain(mainnet))), ("user", .str(u)),
+                          ("abstraction", .str(abstraction)), ("nonce", .int(Int64(nonce)))]),
+            primaryType: "HyperliquidTransaction:UserSetAbstraction",
+            fields: [.init("hyperliquidChain", "string"), .init("user", "address"), .init("abstraction", "string"), .init("nonce", "uint64")],
+            values: ["hyperliquidChain": .string(chain(mainnet)), "user": .address(u), "abstraction": .string(abstraction), "nonce": .uint(nonce)],
+            nonce: nonce, chainId: chainId)
+    }
 }

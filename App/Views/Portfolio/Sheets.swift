@@ -154,7 +154,7 @@ struct MarginSheet: View {
                 .pickerStyle(.segmented)
                 NumField(title: L("Amount $"), text: $amountText)
                 LabeledContent(L("Current margin"), value: Fmt.usd(position.marginUsed))
-                LabeledContent(L("Available"), value: Fmt.usd(model.summary.withdrawable))
+                LabeledContent(L("Available"), value: Fmt.usd(model.market(position.coin).map { model.withdrawable(for: $0) } ?? model.withdrawableUSDC))
                 PrimaryButton(title: L("Apply"), busy: busy) {
                     guard let a = Fmt.parse(amountText), a > 0 else { return }
                     busy = true

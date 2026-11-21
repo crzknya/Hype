@@ -91,7 +91,15 @@ final class AppModel {
     var takerFee: Double = 0.00045
     var makerFee: Double = 0.00015
     var portfolioHistory: [(Date, Double)] = []
+    /// "day" / "week" / "month" / "allTime" → account value & PnL history from the `portfolio` request.
+    var portfolioRanges: [String: PortfolioRange] = [:]
     var accountError: String?
+    /// Account mode from `userAbstraction`: "unifiedAccount", "portfolioMargin", "disabled", "dexAbstraction", "default".
+    var abstraction: String?
+    /// Spot token index → amount available after maintenance margin (unified / portfolio margin accounts).
+    var availableAfterMaintenance: [Int: Double] = [:]
+    var vaultEquity: Double = 0
+    var stakedHype: Double = 0
 
     // MARK: UI
     var tab: AppTab = .markets
@@ -276,7 +284,8 @@ final class AppModel {
     private func clearAccountState() {
         summary = AccountSummary(); positions = []; openOrders = []; fills = []; fundingHistory = []
         mainPositions = []; dexPositions = [:]; dexSummaries = [:]; activeDexes = []
-        ledger = []; spotBalances = []; twaps = []; portfolioHistory = []; accountError = nil
+        ledger = []; spotBalances = []; twaps = []; portfolioHistory = []; portfolioRanges = [:]; accountError = nil
+        abstraction = nil; availableAfterMaintenance = [:]; vaultEquity = 0; stakedHype = 0
         activeAsset = ActiveAssetData()
     }
 
@@ -491,6 +500,11 @@ final class AppModel {
     private func parsePerpUniverse(_ j: JSON, offset: Int, dex: String) -> [Market] {
         let universe = j[0]["universe"].array
         let ctxs = j[1].array
+        var tables: [Int: [(lowerBound: Double, maxLeverage: Int)]] = [:]
+        for t in j[0]["marginTables"].array {
+            guard let id = t[0].int else { continue }
+            tables[id] = t[1]["marginTiers"].array.map { (lowerBound: $0["lowerBound"].dbl, maxLeverage: $0["maxLeverage"].int ?? 1) }
+        }
         var out: [Market] = []
         for (i, u) in universe.enumerated() {
             if u["isDelisted"].bool == true { continue }
@@ -501,6 +515,7 @@ final class AppModel {
             var m = Market(id: coin, name: short, base: short, quote: "USD", asset: offset + i, isSpot: false,
                            szDecimals: u["szDecimals"].int ?? 0, maxLeverage: u["maxLeverage"].int ?? 1,
                            onlyIsolated: isolatedOnly, dex: dex)
+            m.marginTiers = MarginTier.tiers(tableId: u["marginTableId"].int, maxLeverage: m.maxLeverage, tables: tables)
             if i < ctxs.count { apply(ctx: ctxs[i], to: &m) }
             out.append(m)
         }
@@ -556,13 +571,19 @@ final class AppModel {
             async let spReq = api.info(type: "spotClearinghouseState", [("user", .str(user))])
             let (ch, sp) = try await (chReq, spReq)
             guard user == userAddress else { return }
-            let ms = ch["marginSummary"], cs = ch["crossMarginSummary"]
-            summary = AccountSummary(accountValue: ms["accountValue"].dbl, totalNtlPos: ms["totalNtlPos"].dbl,
-                                     totalMarginUsed: ms["totalMarginUsed"].dbl, withdrawable: ch["withdrawable"].dbl,
-                                     maintenanceMargin: ch["crossMaintenanceMarginUsed"].dbl,
-                                     crossAccountValue: cs["accountValue"].dbl)
+            summary = AccountSummary(ch)
             mainPositions = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
             spotBalances = sp["balances"].array.map(SpotBalance.init).filter { $0.total != 0 }
+            var avail: [Int: Double] = [:]
+            for e in sp["tokenToAvailableAfterMaintenance"].array {
+                if let t = e[0].int { avail[t] = e[1].dbl }
+            }
+            availableAfterMaintenance = avail
+            if abstraction == nil || tick % 10 == 0 {
+                if let a = await tryInfo("userAbstraction", [("user", .str(user))]), user == userAddress, let v = a.string {
+                    abstraction = v
+                }
+            }
             accountError = nil
             if tick % 3 == 0 { await refreshDexAccounts(user) }
             positions = mainPositions + perpDexs.flatMap { dexPositions[$0.name] ?? [] }
@@ -577,11 +598,7 @@ final class AppModel {
     private func refreshDexAccounts(_ user: String) async {
         for d in perpDexs {
             guard let ch = await tryInfo("clearinghouseState", [("user", .str(user)), ("dex", .str(d.name))]), user == userAddress else { continue }
-            let ms = ch["marginSummary"], cs = ch["crossMarginSummary"]
-            let sum = AccountSummary(accountValue: ms["accountValue"].dbl, totalNtlPos: ms["totalNtlPos"].dbl,
-                                     totalMarginUsed: ms["totalMarginUsed"].dbl, withdrawable: ch["withdrawable"].dbl,
-                                     maintenanceMargin: ch["crossMaintenanceMarginUsed"].dbl,
-                                     crossAccountValue: cs["accountValue"].dbl)
+            let sum = AccountSummary(ch)
             let pos = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
             dexSummaries[d.name] = sum
             dexPositions[d.name] = pos
@@ -612,10 +629,84 @@ final class AppModel {
         await refreshOrders()
     }
 
-    /// Withdrawable margin for the dex a market trades on.
+    /// Free collateral for the dex a market trades on (unified accounts: the spot balance of the collateral token).
     func withdrawable(for m: Market) -> Double {
-        m.isHip3 ? (dexSummaries[m.dex]?.withdrawable ?? 0) : summary.withdrawable
+        if isUnified { return spotAvailable(collateralName(m.dex)) }
+        return m.isHip3 ? (dexSummaries[m.dex]?.withdrawable ?? 0) : summary.withdrawable
     }
+
+    // MARK: Account mode (as app.hyperliquid.xyz)
+
+    /// Unified account or portfolio margin: one balance per token shared by spot and every perp dex.
+    var isUnified: Bool { abstraction == "unifiedAccount" || abstraction == "portfolioMargin" }
+    var isPortfolioMargin: Bool { abstraction == "portfolioMargin" }
+
+    var accountModeTitle: String {
+        switch abstraction {
+        case "unifiedAccount": return L("Unified account")
+        case "portfolioMargin": return L("Portfolio margin")
+        case "disabled", "dexAbstraction": return L("Standard account")
+        case nil: return "…"
+        default: return L("Standard account")
+        }
+    }
+
+    func collateralName(_ dex: String) -> String { collateral(of: dex)?.name ?? "USDC" }
+
+    /// total − hold of a spot token (what the web shows as "Available Balance").
+    func spotAvailable(_ coin: String) -> Double {
+        max(0, spotBalances.first { $0.coin == coin }?.available ?? 0)
+    }
+
+    /// USDC that can be withdrawn / sent: the spot balance on unified accounts, perps withdrawable otherwise.
+    var withdrawableUSDC: Double { isUnified ? spotAvailable("USDC") : summary.withdrawable }
+
+    /// Spot + perps equity used for trading (web: "Trading equity" on unified accounts).
+    var tradingEquity: Double { isUnified ? spotValue : totalPerpValue }
+
+    /// Total equity as computed by app.hyperliquid.xyz: vaults + spot + staking (+ perps unless unified).
+    var totalEquity: Double {
+        let staking = stakedHype * spotPrice("HYPE")
+        return vaultEquity + spotValue + staking + (isUnified ? 0 : totalPerpValue)
+    }
+
+    var allSummaries: [AccountSummary] { [summary] + Array(dexSummaries.values) }
+
+    /// Cross maintenance margin over all perp dexes.
+    var crossMaintenance: Double { allSummaries.reduce(0) { $0 + $1.maintenanceMargin } }
+
+    /// Unified: max over collateral tokens of cross maintenance / (balance − isolated margin);
+    /// standard: cross maintenance / cross account value of the main dex.
+    var marginRatio: Double {
+        guard isUnified else { return summary.marginRatio }
+        var mm: [String: Double] = [:], iso: [String: Double] = [:]
+        mm[collateralName("")] = summary.maintenanceMargin
+        for p in mainPositions where p.isIsolated { iso[collateralName(""), default: 0] += p.marginUsed }
+        for d in perpDexs {
+            let c = collateralName(d.name)
+            mm[c, default: 0] += dexSummaries[d.name]?.maintenanceMargin ?? 0
+            for p in dexPositions[d.name] ?? [] where p.isIsolated { iso[c, default: 0] += p.marginUsed }
+        }
+        var ratio = 0.0
+        for (c, m) in mm {
+            let free = (spotBalances.first { $0.coin == c }?.total ?? 0) - (iso[c] ?? 0)
+            if free > 0 { ratio = max(ratio, m / free) }
+        }
+        return min(ratio, 1)
+    }
+
+    /// Unified: cross notional / collateral balances; standard: notional / perps account value.
+    var accountLeverage: Double {
+        guard isUnified else { return summary.leverage }
+        let ntl = allSummaries.reduce(0) { $0 + $1.crossNtlPos }
+        var collateral = Set<String>(["USDC"])
+        for d in perpDexs { collateral.insert(collateralName(d.name)) }
+        let bal = collateral.reduce(0.0) { acc, c in acc + (spotBalances.first { $0.coin == c }?.total ?? 0) * spotPrice(c) }
+        return bal > 0 ? ntl / bal : 0
+    }
+
+    var marginUsed: Double { positions.reduce(0) { $0 + $1.marginUsed } }
+    var positionsNotional: Double { positions.reduce(0) { $0 + $1.positionValue } }
 
     /// Value of all perp accounts (main + HIP-3 dexes).
     var totalPerpValue: Double {
@@ -631,8 +722,15 @@ final class AppModel {
         async let l = tryInfo("userNonFundingLedgerUpdates", [("user", .str(user)), ("startTime", .int(Int64(now - 52 * week)))])
         async let t = tryInfo("twapHistory", [("user", .str(user))])
         async let p = tryInfo("portfolio", [("user", .str(user))])
+        async let ve = tryInfo("userVaultEquities", [("user", .str(user))])
+        async let ds = tryInfo("delegatorSummary", [("user", .str(user))])
         let (fills, funding, ledger, twap, portfolio) = await (f, fu, l, t, p)
+        let (vaults, staking) = await (ve, ds)
         guard user == userAddress else { return }
+        if let vaults { vaultEquity = vaults.array.reduce(0) { $0 + $1["equity"].dbl } }
+        if let staking {
+            stakedHype = staking["delegated"].dbl + staking["undelegated"].dbl + staking["totalPendingWithdrawal"].dbl
+        }
         if let fills { self.fills = fills.array.map(Fill.init).sorted { $0.time > $1.time } }
         if let funding { fundingHistory = funding.array.map(FundingEntry.init).sorted { $0.time > $1.time } }
         if let ledger { self.ledger = ledger.array.map(LedgerEntry.init).sorted { $0.time > $1.time } }
@@ -662,11 +760,14 @@ final class AppModel {
 
     private func parsePortfolio(_ j: JSON) {
         // [["day", {...}], ["week", {...}], ["month", {...}], ["allTime", {...}], ...]
-        for entry in j.array where entry[0].str == "month" {
-            portfolioHistory = entry[1]["accountValueHistory"].array.map {
-                (Date(timeIntervalSince1970: $0[0].dbl / 1000), $0[1].dbl)
-            }
+        var ranges: [String: PortfolioRange] = [:]
+        for entry in j.array {
+            let pts: (JSON) -> [(Date, Double)] = { arr in arr.array.map { (Date(timeIntervalSince1970: $0[0].dbl / 1000), $0[1].dbl) } }
+            ranges[entry[0].str] = PortfolioRange(accountValue: pts(entry[1]["accountValueHistory"]),
+                                                  pnl: pts(entry[1]["pnlHistory"]), volume: entry[1]["vlm"].dbl)
         }
+        portfolioRanges = ranges
+        portfolioHistory = ranges["month"]?.accountValue ?? []
     }
 
     func refreshFees() async {

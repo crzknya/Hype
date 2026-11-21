@@ -54,6 +54,12 @@ struct TransferSheet: View {
     }
 
     @ViewBuilder private var classTransfer: some View {
+        if model.isUnified {
+            Section {
+                Label(L("Unified account: spot and perps already share one balance, so no transfer is needed."), systemImage: "info.circle")
+                    .font(.caption)
+            }
+        }
         Section {
             Picker(L("From"), selection: $fromAcc) {
                 ForEach(accountsList, id: \.self) { Text(accountTitle($0)).tag($0) }
@@ -115,11 +121,12 @@ struct TransferSheet: View {
                 .font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never)
             Button(L("My address")) { destination = model.account?.address ?? "" }.font(.caption)
             NumField(title: "USDC", text: $amountText) {
-                Button("MAX") { amountText = Fmt.input(model.summary.withdrawable, 2) }.font(.caption.bold())
+                Button("MAX") { amountText = Fmt.input(floor(model.withdrawableUSDC * 100) / 100, 2) }.font(.caption.bold())
             }
-            LabeledContent(L("Available"), value: Fmt.usd(model.summary.withdrawable))
+            LabeledContent(L("Available"), value: Fmt.usd(model.withdrawableUSDC))
         } footer: {
-            Text(L("Withdraws USDC to Arbitrum. Hyperliquid network fee is $1. Usually takes a few minutes."))
+            Text(L("Withdraws USDC to Arbitrum. Hyperliquid network fee is $1. Usually takes a few minutes.")
+                 + (model.isUnified ? "\n" + L("Unified account: withdrawn from your USDC balance (shared by spot and perps).") : ""))
         }
         Section {
             submitButton(L("Withdraw")) {
@@ -134,8 +141,14 @@ struct TransferSheet: View {
     @ViewBuilder private var send: some View {
         Section {
             Picker(L("Asset"), selection: $tokenIndex) {
-                Text(L("USDC (perp balance)")).tag(-1)
-                ForEach(model.spotBalances) { b in Text(L("{0} (spot)", b.coin)).tag(b.token) }
+                if !model.isUnified { Text(L("USDC (perp balance)")).tag(-1) }
+                ForEach(model.spotBalances) { b in Text(model.isUnified ? b.coin : L("{0} (spot)", b.coin)).tag(b.token) }
+            }
+            .onAppear {
+                // Unified accounts keep USDC in the spot balance: send it as a spot token.
+                if model.isUnified && tokenIndex == -1 {
+                    tokenIndex = model.spotBalances.first { $0.coin == "USDC" }?.token ?? model.spotBalances.first?.token ?? 0
+                }
             }
             TextField(L("Recipient address (0x…)"), text: $destination)
                 .font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never)
@@ -162,7 +175,7 @@ struct TransferSheet: View {
     }
 
     private var maxSend: Double {
-        tokenIndex == -1 ? model.summary.withdrawable : (model.spotBalances.first { $0.token == tokenIndex }?.available ?? 0)
+        tokenIndex == -1 ? model.summary.withdrawable : max(0, model.spotBalances.first { $0.token == tokenIndex }?.available ?? 0)
     }
 
     @ViewBuilder private var deposit: some View {

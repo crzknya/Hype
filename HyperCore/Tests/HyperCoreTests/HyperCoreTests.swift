@@ -77,6 +77,7 @@ final class HyperCoreTests: XCTestCase {
             case "sendAsset": action = HLAction.sendAsset(destination: a["destination"].str, sourceDex: a["sourceDex"].str, destinationDex: a["destinationDex"].str,
                                                           token: a["token"].str, amount: a["amount"].str, fromSubAccount: a["fromSubAccount"].str,
                                                           nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
+            case "setAbstraction": action = HLAction.userSetAbstraction(user: a["user"].str, abstraction: a["abstraction"].str, nonce: UInt64(a["nonce"].int64!), mainnet: mainnet)
             case "approveAgentArb":
                 action = HLAction.approveAgent(agentAddress: a["agentAddress"].str, agentName: a["agentName"].str,
                                                nonce: UInt64(a["nonce"].int64!), mainnet: mainnet, chainId: 0xa4b1)

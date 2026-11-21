@@ -206,6 +206,21 @@
    "v": "27"
   },
   {
+   "name": "setAbstraction",
+   "action": {
+    "type": "userSetAbstraction",
+    "user": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+    "abstraction": "unifiedAccount",
+    "nonce": 1700000000000,
+    "signatureChainId": "0x66eee",
+    "hyperliquidChain": "Mainnet"
+   },
+   "digest": "ba1028175b6b7ab00e1e5b303949511b9e8afa66869a280b1835b4cea077a266",
+   "r": "984629fe91fd3b4104e8579eacd7ace258f70a79742598409e3685c3793919ec",
+   "s": "056fb8404cc7468a826a1e5ec53661f8651581f796e214adb8b348863cbb0d97",
+   "v": "28"
+  },
+  {
    "name": "approveAgentArb",
    "action": {
     "type": "approveAgent",

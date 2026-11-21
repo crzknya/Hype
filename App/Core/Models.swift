@@ -12,6 +12,7 @@ struct Market: Identifiable, Hashable {
     let maxLeverage: Int
     let onlyIsolated: Bool
     var dex: String = ""     // "" = main perp dex, otherwise HIP-3 builder dex name (e.g. "xyz")
+    var marginTiers: [MarginTier] = []   // from the dex meta's marginTables (empty = single tier at maxLeverage)
     var markPx: Double = 0
     var midPx: Double = 0
     var oraclePx: Double = 0
@@ -60,6 +61,42 @@ struct SpotToken: Identifiable, Hashable {
     var wire: String { "\(name):\(tokenId)" }
 }
 
+/// One margin tier of a market (notional ≥ lowerBound uses maxLeverage). `deduction` is the
+/// maintenance deduction that keeps the maintenance margin continuous across tiers.
+struct MarginTier: Hashable {
+    let lowerBound: Double
+    let upperBound: Double?
+    let maxLeverage: Int
+    let deduction: Double
+
+    /// Builds tiers the way app.hyperliquid.xyz does: ids ≤ 50 are a single tier at that leverage.
+    static func tiers(tableId: Int?, maxLeverage: Int, tables: [Int: [(lowerBound: Double, maxLeverage: Int)]]) -> [MarginTier] {
+        var raw: [(lowerBound: Double, maxLeverage: Int)] = [(0, max(maxLeverage, 1))]
+        if let id = tableId {
+            if id <= 50 { raw = [(0, max(id, 1))] } else if let t = tables[id], !t.isEmpty { raw = t }
+        }
+        var out: [MarginTier] = []
+        var deduction = 0.0
+        for (i, t) in raw.enumerated() {
+            let next = i + 1 < raw.count ? raw[i + 1] : nil
+            out.append(MarginTier(lowerBound: t.lowerBound, upperBound: next?.lowerBound, maxLeverage: max(t.maxLeverage, 1), deduction: deduction))
+            if let n = next {
+                deduction += n.lowerBound * (1 / Double(2 * max(n.maxLeverage, 1)) - 1 / Double(2 * max(t.maxLeverage, 1)))
+            }
+        }
+        return out
+    }
+
+    /// Maintenance margin for a position of `notional` in this tier.
+    func maintenance(_ notional: Double) -> Double { notional / Double(2 * maxLeverage) - deduction }
+}
+
+extension Array where Element == MarginTier {
+    func tier(for notional: Double) -> MarginTier? {
+        first { notional >= $0.lowerBound && ($0.upperBound == nil || notional < $0.upperBound!) } ?? last
+    }
+}
+
 struct Position: Identifiable, Hashable {
     let coin: String
     let szi: Double
@@ -73,7 +110,9 @@ struct Position: Identifiable, Hashable {
     let leverage: Int
     let maxLeverage: Int
     let fundingSinceOpen: Double
+    let rawUsd: Double      // isolated positions: margin "raw USD" (see clearinghouseState)
     var id: String { coin }
+    var isIsolated: Bool { leverageType == "isolated" }
     var isLong: Bool { szi > 0 }
     var size: Double { abs(szi) }
 
@@ -91,16 +130,31 @@ struct Position: Identifiable, Hashable {
         leverage = p["leverage"]["value"].int ?? 1
         maxLeverage = p["maxLeverage"].int ?? 1
         fundingSinceOpen = p["cumFunding"]["sinceOpen"].dbl
+        rawUsd = p["leverage"]["rawUsd"].dbl
     }
 }
 
 struct AccountSummary: Equatable {
     var accountValue: Double = 0
+    var crossNtlPos: Double = 0
     var totalNtlPos: Double = 0
     var totalMarginUsed: Double = 0
     var withdrawable: Double = 0
     var maintenanceMargin: Double = 0
     var crossAccountValue: Double = 0
+
+    init() {}
+
+    init(_ ch: JSON) {
+        let ms = ch["marginSummary"], cs = ch["crossMarginSummary"]
+        accountValue = ms["accountValue"].dbl
+        totalNtlPos = ms["totalNtlPos"].dbl
+        totalMarginUsed = ms["totalMarginUsed"].dbl
+        withdrawable = ch["withdrawable"].dbl
+        maintenanceMargin = ch["crossMaintenanceMarginUsed"].dbl
+        crossAccountValue = cs["accountValue"].dbl
+        crossNtlPos = cs["totalNtlPos"].dbl
+    }
 
     var leverage: Double { accountValue > 0 ? totalNtlPos / accountValue : 0 }
     var marginRatio: Double { crossAccountValue > 0 ? maintenanceMargin / crossAccountValue : 0 }
@@ -375,4 +429,13 @@ struct PriceAlert: Identifiable, Codable, Hashable {
     var above: Bool
     var repeating: Bool = false
     var created = Date()
+}
+
+/// One time range of the `portfolio` info request.
+struct PortfolioRange {
+    var accountValue: [(Date, Double)]
+    var pnl: [(Date, Double)]
+    var volume: Double
+    /// PnL over the range (last − first point of the cumulative PnL history).
+    var pnlChange: Double { (pnl.last?.1 ?? 0) - (pnl.first?.1 ?? 0) }
 }
