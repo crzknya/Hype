@@ -119,6 +119,10 @@ final class AppModel {
     @ObservationIgnored private var lastNonce: UInt64 = 0
     @ObservationIgnored private var lastAlertCheck = Date.distantPast
     @ObservationIgnored private var tick = 0
+    /// Last WebSocket account / open-orders snapshot; REST polling only runs while these are stale.
+    @ObservationIgnored private var accountStreamAt = Date.distantPast
+    @ObservationIgnored private var ordersStreamAt = Date.distantPast
+    var accountStreamLive: Bool { Date().timeIntervalSince(accountStreamAt) < 8 }
 
     init() {
         let d = UserDefaults.standard
@@ -258,7 +262,8 @@ final class AppModel {
         })
         loops.append(Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refreshAccount()
+                // REST fallback while the account streams are silent (reconnect, older servers).
+                if self?.accountStreamLive != true { await self?.refreshAccount() }
                 try? await Task.sleep(for: .seconds(3))
             }
         })
@@ -309,18 +314,32 @@ final class AppModel {
         }
     }
 
+    /// Live account streams used by app.hyperliquid.xyz: user state (account type, OI caps, vaults),
+    /// clearinghouse states of every perp dex, spot balances, open orders and TWAPs on all dexes.
+    private func accountSubs(_ u: String) -> [MP] {
+        [.map([("type", .str("webData3")), ("user", .str(u))]),
+         .map([("type", .str("allDexsClearinghouseState")), ("user", .str(u))]),
+         .map([("type", .str("spotState")), ("user", .str(u))]),
+         .map([("type", .str("openOrders")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))]),
+         .map([("type", .str("twapStates")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))])]
+    }
+
     private func subscribeUser() {
         if let u = subscribedUser {
             for t in ["userFills", "orderUpdates", "notification", "userEvents"] {
                 socket.unsubscribe(.map([("type", .str(t)), ("user", .str(u))]))
             }
+            for sub in accountSubs(u) { socket.unsubscribe(sub) }
             socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(selectedCoin))]))
         }
         subscribedUser = userAddress
+        accountStreamAt = .distantPast
+        ordersStreamAt = .distantPast
         guard let u = userAddress else { return }
         for t in ["userFills", "orderUpdates", "notification"] {
             socket.subscribe(.map([("type", .str(t)), ("user", .str(u))]))
         }
+        for sub in accountSubs(u) { socket.subscribe(sub) }
         if marketById[selectedCoin]?.isSpot == false {
             socket.subscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(selectedCoin))]))
         }
@@ -782,18 +801,22 @@ final class AppModel {
         try? await api.info(type: type, extra)
     }
 
+    private func twapState(id: Int64, _ s: JSON) -> TwapState {
+        TwapState(id: id, coin: s["coin"].str, isBuy: s["side"].str == "B", sz: s["sz"].dbl,
+                  executedSz: s["executedSz"].dbl, executedNtl: s["executedNtl"].dbl,
+                  minutes: s["minutes"].int ?? 0,
+                  started: Date(timeIntervalSince1970: s["timestamp"].dbl / 1000),
+                  reduceOnly: s["reduceOnly"].bool ?? false)
+    }
+
     private func parseTwaps(_ j: JSON) {
+        // The live twapStates stream is authoritative once it has delivered.
+        guard !accountStreamLive else { return }
         var out: [TwapState] = []
         for e in j.array {
             let status = e["status"]["status"].string ?? e["status"].str
-            guard status == "activated" else { continue }
-            let s = e["state"]
-            guard let id = e["twapId"].int64 else { continue }
-            out.append(TwapState(id: id, coin: s["coin"].str, isBuy: s["side"].str == "B", sz: s["sz"].dbl,
-                                 executedSz: s["executedSz"].dbl, executedNtl: s["executedNtl"].dbl,
-                                 minutes: s["minutes"].int ?? 0,
-                                 started: Date(timeIntervalSince1970: s["timestamp"].dbl / 1000),
-                                 reduceOnly: s["reduceOnly"].bool ?? false))
+            guard status == "activated", let id = e["twapId"].int64 else { continue }
+            out.append(twapState(id: id, e["state"]))
         }
         twaps = out.filter { $0.endsAt > Date() }
     }
@@ -892,7 +915,59 @@ final class AppModel {
             Haptics.success(enabled: haptics)
             Task { await refreshAccount(); await refreshOrders() }
         case "orderUpdates":
-            Task { await refreshOrders() }
+            if Date().timeIntervalSince(ordersStreamAt) > 8 { Task { await refreshOrders() } }
+        case "webData3":
+            let us = data["userState"]
+            guard us["user"].str.lowercased() == userAddress else { return }
+            if let a = us["abstraction"].string { abstraction = a }
+            var capped = Set<String>()
+            var vaults = 0.0
+            for st in data["perpDexStates"].array {
+                for c in st["perpsAtOpenInterestCap"].array { capped.insert(c.str) }
+                vaults += st["totalVaultEquity"].dbl
+            }
+            if capped != perpsAtOiCap { perpsAtOiCap = capped }
+            vaultEquity = vaults
+        case "allDexsClearinghouseState":
+            guard data["user"].str.lowercased() == userAddress else { return }
+            for e in data["clearinghouseStates"].array {
+                let dex = e[0].str, ch = e[1]
+                let sum = AccountSummary(ch)
+                let pos = ch["assetPositions"].array.map(Position.init).filter { $0.szi != 0 }
+                if dex.isEmpty {
+                    if sum != summary { summary = sum }
+                    mainPositions = pos
+                } else {
+                    if dexSummaries[dex] != sum { dexSummaries[dex] = sum }
+                    dexPositions[dex] = pos
+                    if sum.accountValue > 0 || !pos.isEmpty { activeDexes.insert(dex) }
+                }
+            }
+            let all = mainPositions + perpDexs.flatMap { dexPositions[$0.name] ?? [] }
+            if all != positions { positions = all }
+            accountStreamAt = Date()
+            accountError = nil
+        case "spotState":
+            guard data["user"].str.lowercased() == userAddress else { return }
+            let st = data["spotState"]
+            let bals = st["balances"].array.map(SpotBalance.init).filter { $0.total != 0 }
+            if bals != spotBalances { spotBalances = bals }
+            var avail: [Int: Double] = [:]
+            for e in st["tokenToAvailableAfterMaintenance"].array {
+                if let t = e[0].int { avail[t] = e[1].dbl }
+            }
+            if avail != availableAfterMaintenance { availableAfterMaintenance = avail }
+        case "openOrders":
+            guard data["user"].str.lowercased() == userAddress else { return }
+            var seen = Set<Int64>()
+            let list = data["orders"].array.map(OpenOrder.init).filter { seen.insert($0.oid).inserted }
+            if list != openOrders { openOrders = list }
+            ordersStreamAt = Date()
+        case "twapStates":
+            guard data["user"].str.lowercased() == userAddress else { return }
+            twaps = data["states"].array.compactMap { e in
+                e[0].int64.map { twapState(id: $0, e[1]) }
+            }.filter { $0.endsAt > Date() }
         case "notification":
             let text = data["notification"].str
             if !text.isEmpty { show(.info, text) }

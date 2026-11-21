@@ -221,7 +221,8 @@ final class WeakSocketRef: @unchecked Sendable {
 /// Thread-safe buffer between the socket's background queue and the main actor.
 final class SocketInbox: @unchecked Sendable {
     /// Channels where only the newest message matters (full snapshots / latest values).
-    private static let coalesced: Set<String> = ["l2Book", "bbo", "activeAssetCtx", "activeSpotAssetCtx", "activeAssetData"]
+    private static let coalesced: Set<String> = ["l2Book", "bbo", "activeAssetCtx", "activeSpotAssetCtx", "activeAssetData",
+                                                    "webData3", "allDexsClearinghouseState", "spotState", "openOrders", "twapStates"]
     private let lock = NSLock()
     private var queue: [(String, JSON)] = []
     private var latest: [String: JSON] = [:]
