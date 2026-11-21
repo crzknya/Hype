@@ -156,7 +156,7 @@ struct OrderFormView: View {
             Text(buy ? (market.isSpot ? L("Buy") : L("Long")) : (market.isSpot ? L("Sell") : L("Short")))
                 .font(.system(size: 14, weight: .bold))
                 .frame(maxWidth: .infinity).frame(height: 34)
-                .foregroundStyle(isBuy == buy ? .black : Color.hlMuted)
+                .foregroundStyle(isBuy == buy ? Color.hlOnAccent : Color.hlMuted)
                 .background(isBuy == buy ? (buy ? Color.hlGreen : Color.hlRed) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)

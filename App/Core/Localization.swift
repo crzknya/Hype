@@ -28,6 +28,7 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Light": "Светлая",
         "The wallet signed with a different account. Select {0} in the wallet and try again.": "Кошелёк подписал другим аккаунтом. Выберите {0} в кошельке и повторите.",
         "Ambiguous number: write it without the comma or with a dot": "Неоднозначное число: напишите без запятой или через точку",
         "Limit price {0} is {1} {2} the market ({3}) and would execute immediately at worse prices. Check the price or use a market order.": "Лимитная цена {0} на {1} {2} рынка ({3}) — ордер сразу исполнится по худшим ценам. Проверьте цену или используйте рыночный ордер.",

@@ -141,9 +141,16 @@ enum Fmt {
 /// Visual themes. Classic is the original Hyperliquid-like look; Neon is a purple/cyan
 /// glassy style (inspired by Straddle).
 enum AppTheme: String, CaseIterable, Identifiable, Codable {
-    case classic, neon
+    case classic, neon, light
     var id: String { rawValue }
-    var title: String { self == .classic ? L("Classic") : L("Neon") }
+    var title: String {
+        switch self {
+        case .classic: return L("Classic")
+        case .neon: return L("Neon")
+        case .light: return L("Light")
+        }
+    }
+    var isDark: Bool { self != .light }
 
     /// Read by the color palette below; set from AppModel.theme.
     static var current: AppTheme = AppTheme(rawValue: UserDefaults.standard.string(forKey: "theme") ?? "") ?? .classic
@@ -152,17 +159,29 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable {
 }
 
 extension Color {
-    private static var neon: Bool { AppTheme.current == .neon }
+    private static var theme: AppTheme { AppTheme.current }
 
-    static var hlGreen: Color { neon ? Color(red: 0.20, green: 0.90, blue: 0.68) : Color(red: 0.16, green: 0.83, blue: 0.62) }
-    static var hlRed: Color { neon ? Color(red: 1.0, green: 0.35, blue: 0.48) : Color(red: 0.94, green: 0.29, blue: 0.36) }
-    static var hlAccent: Color { neon ? Color(red: 0.62, green: 0.30, blue: 1.0) : Color(red: 0.34, green: 0.92, blue: 0.80) }
+    private static func pick(_ classic: Color, _ neon: Color, _ light: Color) -> Color {
+        switch theme {
+        case .classic: return classic
+        case .neon: return neon
+        case .light: return light
+        }
+    }
+
+    static var hlGreen: Color { pick(Color(red: 0.16, green: 0.83, blue: 0.62), Color(red: 0.20, green: 0.90, blue: 0.68), Color(red: 0.0, green: 0.60, blue: 0.43)) }
+    static var hlRed: Color { pick(Color(red: 0.94, green: 0.29, blue: 0.36), Color(red: 1.0, green: 0.35, blue: 0.48), Color(red: 0.85, green: 0.17, blue: 0.27)) }
+    static var hlAccent: Color { pick(Color(red: 0.34, green: 0.92, blue: 0.80), Color(red: 0.62, green: 0.30, blue: 1.0), Color(red: 0.0, green: 0.55, blue: 0.50)) }
     /// Secondary accent (cyan in Neon).
-    static var hlAccent2: Color { neon ? Color(red: 0.14, green: 0.87, blue: 0.96) : Color(red: 0.34, green: 0.92, blue: 0.80) }
-    static var hlBg: Color { neon ? Color(red: 0.025, green: 0.025, blue: 0.045) : Color(red: 0.04, green: 0.08, blue: 0.09) }
-    static var hlCard: Color { neon ? Color(red: 0.075, green: 0.07, blue: 0.11) : Color(red: 0.08, green: 0.13, blue: 0.14) }
-    static var hlCard2: Color { neon ? Color(red: 0.11, green: 0.10, blue: 0.15) : Color(red: 0.11, green: 0.17, blue: 0.18) }
-    static var hlMuted: Color { neon ? Color.white.opacity(0.62) : Color(white: 0.55) }
+    static var hlAccent2: Color { pick(Color(red: 0.34, green: 0.92, blue: 0.80), Color(red: 0.14, green: 0.87, blue: 0.96), Color(red: 0.0, green: 0.55, blue: 0.50)) }
+    static var hlBg: Color { pick(Color(red: 0.04, green: 0.08, blue: 0.09), Color(red: 0.025, green: 0.025, blue: 0.045), Color(red: 0.95, green: 0.96, blue: 0.97)) }
+    static var hlCard: Color { pick(Color(red: 0.08, green: 0.13, blue: 0.14), Color(red: 0.075, green: 0.07, blue: 0.11), .white) }
+    static var hlCard2: Color { pick(Color(red: 0.11, green: 0.17, blue: 0.18), Color(red: 0.11, green: 0.10, blue: 0.15), Color(red: 0.91, green: 0.93, blue: 0.94)) }
+    static var hlMuted: Color { pick(Color(white: 0.55), Color.white.opacity(0.62), Color(white: 0.42)) }
+    /// Main ink: lines, crosshair and outlines (white on dark themes, near-black on light).
+    static var hlInk: Color { theme.isDark ? .white : Color(white: 0.08) }
+    /// Text on accent / green / red fills.
+    static var hlOnAccent: Color { theme == .light ? .white : .black }
 
     static func pnl(_ x: Double) -> Color { x > 0 ? .hlGreen : x < 0 ? .hlRed : .primary }
 }

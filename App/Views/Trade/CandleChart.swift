@@ -45,7 +45,7 @@ struct CandleChart: View {
                     Text(info)
                         .font(.system(size: 10, design: .monospaced))
                         .padding(4)
-                        .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
+                        .background(Color.hlCard.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
                         .padding(4)
                 }
             }
@@ -196,7 +196,7 @@ struct CandleChart: View {
         }
 
         // Grid + price axis
-        let gridColor = Color.white.opacity(0.06)
+        let gridColor = Color.hlInk.opacity(AppTheme.current.isDark ? 0.06 : 0.08)
         for k in 0...4 {
             let p = price(atFraction: 1 - Double(k) / 4)
             let yy = y(p)
@@ -264,7 +264,7 @@ struct CandleChart: View {
             main.stroke(path, with: .color(color.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
             if yy > 0 && yy < mainH {
                 ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: yy - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(color))
-                ctx.draw(Text(Fmt.price(last.c, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
+                ctx.draw(Text(Fmt.price(last.c, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlOnAccent),
                          at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
                 // Time left until the current candle closes.
                 let remaining = Int(last.t / 1000 + intervalSeconds - now.timeIntervalSince1970)
@@ -276,7 +276,7 @@ struct CandleChart: View {
                     let box = Path(roundedRect: CGRect(x: plotW + 1, y: ty - 7, width: axisW - 2, height: 14), cornerRadius: 3)
                     ctx.fill(box, with: .color(.hlBg))
                     ctx.fill(box, with: .color(color.opacity(0.3)))
-                    ctx.draw(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(.white),
+                    ctx.draw(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(.hlInk),
                              at: CGPoint(x: plotW + 4, y: ty), anchor: .leading)
                 }
             }
@@ -323,11 +323,11 @@ struct CandleChart: View {
             var path = Path()
             path.move(to: CGPoint(x: p.x, y: 0)); path.addLine(to: CGPoint(x: p.x, y: size.height - timeH))
             path.move(to: CGPoint(x: 0, y: p.y)); path.addLine(to: CGPoint(x: plotW, y: p.y))
-            ctx.stroke(path, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            ctx.stroke(path, with: .color(Color.hlInk.opacity(0.4)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             if p.y < mainH {
                 let crossPrice = price(atFraction: Double(p.y / mainH))
-                ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: p.y - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(.white))
-                ctx.draw(Text(Fmt.price(crossPrice, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
+                ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: p.y - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(.hlInk))
+                ctx.draw(Text(Fmt.price(crossPrice, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlBg),
                          at: CGPoint(x: plotW + 4, y: p.y), anchor: .leading)
             }
         }
@@ -387,7 +387,7 @@ struct CandleChart: View {
         // Separator
         var sep = Path()
         sep.move(to: CGPoint(x: 0, y: top)); sep.addLine(to: CGPoint(x: plotW + axisW, y: top))
-        ctx.stroke(sep, with: .color(.white.opacity(0.12)), lineWidth: 1)
+        ctx.stroke(sep, with: .color(Color.hlInk.opacity(0.12)), lineWidth: 1)
 
         var lo: Double, hi: Double
         if let fr = pane.fixedRange {
@@ -408,7 +408,7 @@ struct CandleChart: View {
         for lv in pane.levels {
             var path = Path()
             path.move(to: CGPoint(x: 0, y: y(lv))); path.addLine(to: CGPoint(x: plotW, y: y(lv)))
-            pctx.stroke(path, with: .color(.white.opacity(0.18)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            pctx.stroke(path, with: .color(Color.hlInk.opacity(0.18)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             ctx.draw(Text(Fmt.input(lv, 2)).font(.system(size: 8, design: .monospaced)).foregroundColor(.hlMuted),
                      at: CGPoint(x: plotW + 4, y: y(lv)), anchor: .leading)
         }

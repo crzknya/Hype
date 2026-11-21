@@ -80,7 +80,7 @@ enum IndicatorPalette {
         Color(red: 1.00, green: 0.55, blue: 0.25),   // orange
         Color(red: 0.95, green: 0.45, blue: 0.65),   // pink
         Color(red: 0.60, green: 0.90, blue: 0.45),   // lime
-        Color(white: 0.85),                          // white
+        Color.primary,                               // white (black in the light theme)
     ]
     static func color(_ i: Int) -> Color { colors[((i % colors.count) + colors.count) % colors.count] }
 }

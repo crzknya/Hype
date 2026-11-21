@@ -339,7 +339,7 @@ struct IndicatorEditor: View {
                         Circle()
                             .fill(IndicatorPalette.color(i))
                             .frame(width: 28, height: 28)
-                            .overlay(Circle().stroke(Color.white, lineWidth: config.color == i ? 2 : 0))
+                            .overlay(Circle().stroke(Color.hlInk, lineWidth: config.color == i ? 2 : 0))
                             .onTapGesture { config.color = i }
                     }
                 }

@@ -148,9 +148,9 @@ struct PrimaryButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                if busy { ProgressView().tint(.black) } else {
+                if busy { ProgressView().tint(Color.hlOnAccent) } else {
                     Text(title).font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(AppTheme.current == .neon && color == .hlAccent ? .white : .black)
+                        .foregroundStyle(AppTheme.current == .neon && color == .hlAccent ? .white : Color.hlOnAccent)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -248,15 +248,16 @@ extension View {
 
 
 extension View {
-    /// Card surface: flat in Classic; larger radius with a hairline border in Neon.
+    /// Card surface: flat in Classic; larger radius with a hairline border in Neon; hairline and soft shadow in Light.
     func themedCard(_ fill: Color = .hlCard) -> some View {
         let r = AppTheme.current.cardRadius
         return self
             .background(fill, in: RoundedRectangle(cornerRadius: r, style: .continuous))
             .overlay {
-                if AppTheme.current == .neon {
-                    RoundedRectangle(cornerRadius: r, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 1)
+                if AppTheme.current != .classic {
+                    RoundedRectangle(cornerRadius: r, style: .continuous).stroke(Color.hlInk.opacity(0.07), lineWidth: 1)
                 }
             }
+            .shadow(color: AppTheme.current == .light ? Color.black.opacity(0.05) : .clear, radius: 6, y: 2)
     }
 }

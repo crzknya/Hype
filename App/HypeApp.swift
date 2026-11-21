@@ -16,7 +16,7 @@ struct HypeApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(model.theme.isDark ? .dark : .light)
                 .task { model.start() }
                 .onChange(of: phase) { _, p in
                     model.sceneActive(p == .active)
