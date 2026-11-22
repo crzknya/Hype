@@ -232,6 +232,14 @@ final class AppModel {
         return account.map { ($0.vaultAddress?.isEmpty == false ? $0.vaultAddress! : $0.address).lowercased() }
     }
     var canTrade: Bool { account?.kind.canTrade ?? false }
+    /// Display names for addresses in the transfer history: sub-accounts and the master account.
+    var ledgerNames: [String: String] {
+        var n: [String: String] = [:]
+        for sub in subAccounts { n[sub.address] = L("sub-account {0}", sub.name) }
+        if let m = masterAddress, activeSubAccount != nil { n[m] = L("master account") }
+        return n
+    }
+
     /// The master account address (never a sub-account / vault).
     var masterAddress: String? { account?.address.lowercased() }
     var selectedMarket: Market? { marketById[selectedCoin] }
@@ -375,7 +383,8 @@ final class AppModel {
          .map([("type", .str("allDexsClearinghouseState")), ("user", .str(u))]),
          .map([("type", .str("spotState")), ("user", .str(u))]),
          .map([("type", .str("openOrders")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))]),
-         .map([("type", .str("twapStates")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))])]
+         .map([("type", .str("twapStates")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))]),
+         .map([("type", .str("userNonFundingLedgerUpdates")), ("user", .str(u))])]
     }
 
     private func subscribeUser() {
@@ -883,7 +892,10 @@ final class AppModel {
         }
         if let fills { self.fills = fills.array.map(Fill.init).sorted { $0.time > $1.time } }
         if let funding { fundingHistory = funding.array.map(FundingEntry.init).sorted { $0.time > $1.time } }
-        if let ledger { self.ledger = ledger.array.map(LedgerEntry.init).sorted { $0.time > $1.time } }
+        if let ledger {
+            let names = ledgerNames
+            self.ledger = ledger.array.map { LedgerEntry($0, me: user, names: names) }.sorted { $0.time > $1.time }
+        }
         if let twap { parseTwaps(twap) }
         if let portfolio { parsePortfolio(portfolio) }
     }
@@ -1058,6 +1070,16 @@ final class AppModel {
             if list != openOrders { openOrders = list }
             ordersStreamAt = Date()
             ordersUpdatedAt = Date()
+        case "userNonFundingLedgerUpdates":
+            // Deposits, withdrawals and transfers as they happen (the snapshot is covered by the REST history).
+            guard let me = userAddress, data["user"].str.lowercased() == me, data["isSnapshot"].bool != true else { return }
+            let names = ledgerNames
+            let new = data["nonFundingLedgerUpdates"].array.map { LedgerEntry($0, me: me, names: names) }
+            let known = Set(ledger.map(\.id))
+            let fresh = new.filter { !known.contains($0.id) }
+            guard !fresh.isEmpty else { return }
+            ledger = (fresh + ledger).sorted { $0.time > $1.time }
+            if let e = fresh.first, e.type == "deposit" || e.type == "withdraw" { show(.success, "\(e.detail): \(Fmt.signedUsd(e.usdc))") }
         case "twapStates":
             guard data["user"].str.lowercased() == userAddress else { return }
             twaps = data["states"].array.compactMap { e in

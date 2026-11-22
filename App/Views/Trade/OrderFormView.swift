@@ -10,31 +10,8 @@ struct OrderFormView: View {
     /// Called after an order was placed successfully (the sheet closes itself).
     var onPlaced: (() -> Void)? = nil
 
-    @State private var isBuy = true
-    @State private var type: OrderTypeUI = .market
-    @State private var priceText = ""
-    @State private var triggerText = ""
-    @State private var sizeText = ""
-    @State private var sizeInUsd = true
-    @State private var pct: Double = 0
-    @State private var reduceOnly = false
-    @State private var tif: TIF = .gtc
-    @State private var tpslOn = false
-    @State private var tpText = ""
-    @State private var slText = ""
-    @State private var riskOn = false
-    @State private var riskText = ""
-    @State private var scaleStartText = ""
-    @State private var scaleEndText = ""
-    @State private var scaleCount = 5
-    @State private var scaleSkew = 1.0
-    @State private var twapMinutes = 30
-    @State private var twapRandomize = true
-    @State private var trailText = ""
-    @State private var trailIsPct = true
-    @State private var trailActivationOn = false
-    @State private var trailActivationText = ""
-    @State private var chaseDistText = ""
+    /// Form fields live in a shared store so switching Chart ⇄ Order (or reopening the sheet) keeps them.
+    @Bindable private var f = OrderFormFields.shared
     @State private var busy = false
     @State private var confirm: IdentifiedDraft?
     @State private var showLeverage = false
@@ -45,37 +22,37 @@ struct OrderFormView: View {
             sideToggle
             typeMenu
 
-            if type.needsTrigger {
-                NumField(title: L("Trigger"), text: $triggerText, placeholder: Fmt.price(refMid)) { midButton { triggerText = $0 } }
+            if f.type.needsTrigger {
+                NumField(title: L("Trigger"), text: $f.triggerText, placeholder: Fmt.price(refMid)) { midButton { f.triggerText = $0 } }
             }
-            if type.needsPrice {
-                NumField(title: L("Price"), text: $priceText, placeholder: Fmt.price(refMid)) { midButton { priceText = $0 } }
+            if f.type.needsPrice {
+                NumField(title: L("Price"), text: $f.priceText, placeholder: Fmt.price(refMid)) { midButton { f.priceText = $0 } }
             }
-            if type == .scale {
-                NumField(title: L("From"), text: $scaleStartText, placeholder: Fmt.price(refMid)) { midButton { scaleStartText = $0 } }
-                NumField(title: L("To"), text: $scaleEndText, placeholder: Fmt.price(refMid))
-                Stepper(L("Orders: {0}", scaleCount), value: $scaleCount, in: 2...100).font(.caption)
+            if f.type == .scale {
+                NumField(title: L("From"), text: $f.scaleStartText, placeholder: Fmt.price(refMid)) { midButton { f.scaleStartText = $0 } }
+                NumField(title: L("To"), text: $f.scaleEndText, placeholder: Fmt.price(refMid))
+                Stepper(L("Orders: {0}", f.scaleCount), value: $f.scaleCount, in: 2...100).font(.caption)
                 HStack {
-                    Text(L("Skew {0}", Fmt.num(scaleSkew, 1))).font(.caption).frame(width: 64, alignment: .leading)
-                    Slider(value: $scaleSkew, in: 0.2...5, step: 0.1)
+                    Text(L("Skew {0}", Fmt.num(f.scaleSkew, 1))).font(.caption).frame(width: 64, alignment: .leading)
+                    Slider(value: $f.scaleSkew, in: 0.2...5, step: 0.1)
                 }
             }
-            if type == .twap {
-                Stepper(L("Duration: {0}", twapLabel), value: $twapMinutes, in: 5...1440, step: twapMinutes < 60 ? 5 : 30).font(.caption)
-                Toggle(L("Randomize intervals"), isOn: $twapRandomize).font(.caption)
+            if f.type == .twap {
+                Stepper(L("Duration: {0}", twapLabel), value: $f.twapMinutes, in: 5...1440, step: f.twapMinutes < 60 ? 5 : 30).font(.caption)
+                Toggle(L("Randomize intervals"), isOn: $f.twapRandomize).font(.caption)
             }
-            if type == .trailing { trailingFields }
-            if type == .chase {
-                NumField(title: L("Max distance %"), text: $chaseDistText, placeholder: L("none"))
+            if f.type == .trailing { trailingFields }
+            if f.type == .chase {
+                NumField(title: L("Max distance %"), text: $f.chaseDistText, placeholder: L("none"))
                 Text(L("Post-only limit kept one tick inside the spread until it fills. Runs while the app is open; stopping leaves a normal limit order."))
                     .font(.system(size: 10)).foregroundStyle(Color.hlMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             sizeField
-            Slider(value: $pct, in: 0...1)
-            .tint(isBuy ? .hlGreen : .hlRed)
-            .onChange(of: pct) { _, v in applyPct(v) }
+            Slider(value: $f.pct, in: 0...1)
+            .tint(f.isBuy ? .hlGreen : .hlRed)
+            .onChange(of: f.pct) { _, v in applyPct(v) }
 
             HStack {
                 Text(L("Available")).font(.caption2).foregroundStyle(Color.hlMuted)
@@ -84,7 +61,7 @@ struct OrderFormView: View {
             }
 
             options
-            if tpslOn && !market.isSpot && type.allowsTpsl { tpslFields }
+            if f.tpslOn && !market.isSpot && f.type.allowsTpsl { tpslFields }
             summary
 
             if !model.canTrade {
@@ -96,28 +73,30 @@ struct OrderFormView: View {
         .onChange(of: model.pendingPrice) { _, _ in applyPendingPrice() }
         .onChange(of: market.id) { _, _ in reset(); syncBar() }
         .onAppear {
-            if let b = initialBuy { isBuy = b }
+            // Fields persist across Chart ⇄ Order switches; only another market starts from scratch.
+            if f.marketId != market.id { reset() }
+            if let b = initialBuy { f.isBuy = b }
             // Remember the last order type between sheet openings.
-            if let t = OrderTypeUI(rawValue: model.lastOrderType), availableTypes.contains(t) { type = t }
+            if let t = OrderTypeUI(rawValue: model.lastOrderType), availableTypes.contains(t) { f.type = t }
             applyPendingPrice()
             syncBar()
         }
-        .onChange(of: type) { _, t in model.lastOrderType = t.rawValue }
-        .onChange(of: isBuy) { _, _ in syncBar() }
-        .onChange(of: type) { _, _ in syncBar() }
+        .onChange(of: f.type) { _, t in model.lastOrderType = t.rawValue }
+        .onChange(of: f.isBuy) { _, _ in syncBar() }
+        .onChange(of: f.type) { _, _ in syncBar() }
         .onChange(of: busy) { _, _ in syncBar() }
         .onChange(of: model.canTrade) { _, _ in syncBar() }
-        .onChange(of: sizeText) { _, _ in syncBar() }
-        .onChange(of: priceText) { _, _ in syncBar() }
-        .onChange(of: riskOn) { _, on in if on { tpslOn = true } }
-        .onChange(of: tpslOn) { _, on in if !on { riskOn = false } }
-        .onChange(of: type) { _, t in
+        .onChange(of: f.sizeText) { _, _ in syncBar() }
+        .onChange(of: f.priceText) { _, _ in syncBar() }
+        .onChange(of: f.riskOn) { _, on in if on { f.tpslOn = true } }
+        .onChange(of: f.tpslOn) { _, on in if !on { f.riskOn = false } }
+        .onChange(of: f.type) { _, t in
             // TP/SL and risk sizing only exist for plain market/limit orders.
-            if !t.allowsTpsl { riskOn = false }
-            if pct > 0 { applyPct(pct) }
+            if !t.allowsTpsl { f.riskOn = false }
+            if f.pct > 0 { applyPct(f.pct) }
         }
-        .onChange(of: isBuy) { _, _ in if pct > 0 { applyPct(pct) } }
-        .onChange(of: reduceOnly) { _, _ in if pct > 0 { applyPct(pct) } }
+        .onChange(of: f.isBuy) { _, _ in if f.pct > 0 { applyPct(f.pct) } }
+        .onChange(of: f.reduceOnly) { _, _ in if f.pct > 0 { applyPct(f.pct) } }
         .sheet(isPresented: $showLeverage) { LeverageSheet(market: market) }
         .sheet(item: $confirm) { d in
             OrderConfirmSheet(draft: d.draft, summary: summaryLines(d.draft)) { send(d.draft) }
@@ -152,12 +131,12 @@ struct OrderFormView: View {
     }
 
     private func sideButton(_ buy: Bool) -> some View {
-        Button { withAnimation(.easeOut(duration: 0.15)) { isBuy = buy } } label: {
+        Button { withAnimation(.easeOut(duration: 0.15)) { f.isBuy = buy } } label: {
             Text(buy ? (market.isSpot ? L("Buy") : L("Long")) : (market.isSpot ? L("Sell") : L("Short")))
                 .font(.system(size: 14, weight: .bold))
                 .frame(maxWidth: .infinity).frame(height: 34)
-                .foregroundStyle(isBuy == buy ? Color.hlOnAccent : Color.hlMuted)
-                .background(isBuy == buy ? (buy ? Color.hlGreen : Color.hlRed) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(f.isBuy == buy ? Color.hlOnAccent : Color.hlMuted)
+                .background(f.isBuy == buy ? (buy ? Color.hlGreen : Color.hlRed) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
@@ -165,11 +144,11 @@ struct OrderFormView: View {
     private var typeMenu: some View {
         Menu {
             ForEach(availableTypes) { t in
-                Button { type = t } label: { if t == type { Label(t.title, systemImage: "checkmark") } else { Text(t.title) } }
+                Button { f.type = t } label: { if t == f.type { Label(t.title, systemImage: "checkmark") } else { Text(t.title) } }
             }
         } label: {
             HStack {
-                Text(type.title).font(.subheadline.weight(.semibold))
+                Text(f.type.title).font(.subheadline.weight(.semibold))
                 Spacer()
                 Image(systemName: "chevron.up.chevron.down").font(.caption)
             }
@@ -193,28 +172,28 @@ struct OrderFormView: View {
     }
 
     private var sizeField: some View {
-        NumField(title: riskOn ? L("Size (risk)") : L("Size"), text: $sizeText) {
-            Button(sizeInUsd ? "USD" : market.base) {
+        NumField(title: f.riskOn ? L("Size (risk)") : L("Size"), text: $f.sizeText) {
+            Button(f.sizeInUsd ? "USD" : market.base) {
                 // Convert value to the new unit.
-                if let v = Fmt.parse(sizeText), refPrice > 0 {
-                    sizeText = sizeInUsd ? Fmt.input(v / refPrice, market.szDecimals) : Fmt.input(v * refPrice, 2)
+                if let v = Fmt.parse(f.sizeText), refPrice > 0 {
+                    f.sizeText = f.sizeInUsd ? Fmt.input(v / refPrice, market.szDecimals) : Fmt.input(v * refPrice, 2)
                 }
-                sizeInUsd.toggle()
+                f.sizeInUsd.toggle()
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Color.hlAccent)
             .lineLimit(1)
         }
-        .disabled(riskOn)
+        .disabled(f.riskOn)
     }
 
     private var options: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if !market.isSpot { Toggle("Reduce", isOn: $reduceOnly).toggleStyle(CheckToggle()) }
+                if !market.isSpot { Toggle("Reduce", isOn: $f.reduceOnly).toggleStyle(CheckToggle()) }
                 Spacer()
-                if type == .limit {
-                    Picker("TIF", selection: $tif) {
+                if f.type == .limit {
+                    Picker("TIF", selection: $f.tif) {
                         Text("GTC").tag(TIF.gtc)
                         Text("IOC").tag(TIF.ioc)
                         Text("Post").tag(TIF.alo)
@@ -223,11 +202,11 @@ struct OrderFormView: View {
                     .controlSize(.small)
                 }
             }
-            if !market.isSpot && type.allowsTpsl {
+            if !market.isSpot && f.type.allowsTpsl {
                 HStack {
-                    Toggle("TP/SL", isOn: $tpslOn).toggleStyle(CheckToggle())
+                    Toggle("TP/SL", isOn: $f.tpslOn).toggleStyle(CheckToggle())
                     Spacer()
-                    Toggle(L("Risk sizing"), isOn: $riskOn).toggleStyle(CheckToggle())
+                    Toggle(L("Risk sizing"), isOn: $f.riskOn).toggleStyle(CheckToggle())
                 }
             }
         }
@@ -236,14 +215,14 @@ struct OrderFormView: View {
 
     private var trailingFields: some View {
         VStack(alignment: .leading, spacing: 6) {
-            NumField(title: L("Retracement"), text: $trailText, placeholder: trailIsPct ? "1" : Fmt.price(refMid * 0.01)) {
-                Button(trailIsPct ? "%" : market.quote) { trailIsPct.toggle() }
+            NumField(title: L("Retracement"), text: $f.trailText, placeholder: f.trailIsPct ? "1" : Fmt.price(refMid * 0.01)) {
+                Button(f.trailIsPct ? "%" : market.quote) { f.trailIsPct.toggle() }
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.hlAccent)
             }
-            if trailIsPct {
+            if f.trailIsPct {
                 HStack(spacing: 4) {
                     ForEach([0.5, 1.0, 2.0, 5.0], id: \.self) { p in
-                        Button(Fmt.num(p, p < 1 ? 1 : 0) + "%") { trailText = Fmt.input(p, 1) }
+                        Button(Fmt.num(p, p < 1 ? 1 : 0) + "%") { f.trailText = Fmt.input(p, 1) }
                             .font(.system(size: 10, weight: .semibold))
                             .frame(maxWidth: .infinity).padding(.vertical, 5)
                             .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
@@ -251,36 +230,36 @@ struct OrderFormView: View {
                     }
                 }
             }
-            Toggle(L("Activation price"), isOn: $trailActivationOn).toggleStyle(CheckToggle()).font(.caption)
-            if trailActivationOn {
-                NumField(title: L("Activation"), text: $trailActivationText, placeholder: Fmt.price(refMid)) { midButton { trailActivationText = $0 } }
+            Toggle(L("Activation price"), isOn: $f.trailActivationOn).toggleStyle(CheckToggle()).font(.caption)
+            if f.trailActivationOn {
+                NumField(title: L("Activation"), text: $f.trailActivationText, placeholder: Fmt.price(refMid)) { midButton { f.trailActivationText = $0 } }
             }
             Text(trailingExplainer).font(.system(size: 10)).foregroundStyle(Color.hlMuted)
         }
     }
 
     private var trailingExplainer: String {
-        let r = trailText.isEmpty ? "—" : (trailIsPct ? trailText + "%" : trailText + " " + market.quote)
-        if trailActivationOn, !trailActivationText.isEmpty {
-            return L("When the mark price reaches {0}, the trailing stop activates; once the price retraces by {1} from the best price since activation, a stop market order is placed.", trailActivationText, r)
+        let r = f.trailText.isEmpty ? "—" : (f.trailIsPct ? f.trailText + "%" : f.trailText + " " + market.quote)
+        if f.trailActivationOn, !f.trailActivationText.isEmpty {
+            return L("When the mark price reaches {0}, the trailing stop activates; once the price retraces by {1} from the best price since activation, a stop market order is placed.", f.trailActivationText, r)
         }
         return L("When the mark price retraces by {0} from the best price since activation, a stop market order is placed.", r)
     }
 
     private var tpslFields: some View {
         VStack(spacing: 6) {
-            NumField(title: "TP", text: $tpText, placeholder: L("price")) {
-                Text(roeText(tpText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlGreen)
+            NumField(title: "TP", text: $f.tpText, placeholder: L("price")) {
+                Text(roeText(f.tpText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlGreen)
             }
-            NumField(title: "SL", text: $slText, placeholder: L("price")) {
-                Text(roeText(slText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlRed)
+            NumField(title: "SL", text: $f.slText, placeholder: L("price")) {
+                Text(roeText(f.slText)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlRed)
             }
             HStack(spacing: 4) {
                 ForEach([0.01, 0.02, 0.05], id: \.self) { p in
                     Button("±\(Int(p * 100))%") {
                         let e = refPrice
-                        tpText = Fmt.input(e * (isBuy ? 1 + 2 * p : 1 - 2 * p), market.priceDecimals(e))
-                        slText = Fmt.input(e * (isBuy ? 1 - p : 1 + p), market.priceDecimals(e))
+                        f.tpText = Fmt.input(e * (f.isBuy ? 1 + 2 * p : 1 - 2 * p), market.priceDecimals(e))
+                        f.slText = Fmt.input(e * (f.isBuy ? 1 - p : 1 + p), market.priceDecimals(e))
                     }
                     .font(.system(size: 10, weight: .semibold))
                     .frame(maxWidth: .infinity).padding(.vertical, 5)
@@ -289,12 +268,12 @@ struct OrderFormView: View {
                 }
             }
             Text(L("Buttons: SL at ±%, TP at double the distance (R:R 1:2)")).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
-            if riskOn {
-                NumField(title: L("Risk $"), text: $riskText, placeholder: "50") {
+            if f.riskOn {
+                NumField(title: L("Risk $"), text: $f.riskText, placeholder: "50") {
                     Menu {
                         ForEach([0.005, 0.01, 0.02, 0.05], id: \.self) { p in
                             Button(L("{0}% of balance", Fmt.num(p * 100, 1))) {
-                                riskText = Fmt.input(model.tradingEquity * p, 2)
+                                f.riskText = Fmt.input(model.tradingEquity * p, 2)
                             }
                         }
                     } label: { Image(systemName: "percent").font(.caption) }
@@ -303,9 +282,9 @@ struct OrderFormView: View {
                     .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             }
         }
-        .onChange(of: riskText) { _, _ in applyRisk() }
-        .onChange(of: slText) { _, _ in applyRisk() }
-        .onChange(of: priceText) { _, _ in applyRisk() }
+        .onChange(of: f.riskText) { _, _ in applyRisk() }
+        .onChange(of: f.slText) { _, _ in applyRisk() }
+        .onChange(of: f.priceText) { _, _ in applyRisk() }
     }
 
     private var summary: some View {
@@ -326,11 +305,11 @@ struct OrderFormView: View {
     private var refMid: Double { model.mid(market.id) }
 
     private var refPrice: Double {
-        switch type {
-        case .limit, .stopLimit, .takeLimit: return Fmt.parse(priceText) ?? refMid
-        case .stopMarket, .takeMarket: return Fmt.parse(triggerText) ?? refMid
+        switch f.type {
+        case .limit, .stopLimit, .takeLimit: return Fmt.parse(f.priceText) ?? refMid
+        case .stopMarket, .takeMarket: return Fmt.parse(f.triggerText) ?? refMid
         case .scale:
-            let a = Fmt.parse(scaleStartText) ?? refMid, b = Fmt.parse(scaleEndText) ?? a
+            let a = Fmt.parse(f.scaleStartText) ?? refMid, b = Fmt.parse(f.scaleEndText) ?? a
             return (a + b) / 2
         default: return refMid
         }
@@ -343,72 +322,72 @@ struct OrderFormView: View {
     /// Max size in coin units for the current side.
     private var maxSize: Double {
         if market.isSpot {
-            if isBuy {
+            if f.isBuy {
                 let usdc = model.spotBalances.first { $0.coin == market.quote }?.available ?? 0
                 return refPrice > 0 ? usdc / refPrice : 0
             }
             return model.spotBalances.first { $0.coin == market.base }?.available ?? 0
         }
-        if reduceOnly, let p = model.position(market.id), p.isLong != isBuy { return p.size }
-        let fromWs = isBuy ? model.activeAsset.maxBuy : model.activeAsset.maxSell
-        if fromWs > 0 && type == .market { return fromWs }
-        let avail = (isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell)
+        if f.reduceOnly, let p = model.position(market.id), p.isLong != f.isBuy { return p.size }
+        let fromWs = f.isBuy ? model.activeAsset.maxBuy : model.activeAsset.maxSell
+        if fromWs > 0 && f.type == .market { return fromWs }
+        let avail = (f.isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell)
         let margin = avail > 0 ? avail : model.withdrawable(for: market)
         return refPrice > 0 ? margin * Double(currentLeverage) / refPrice * 0.995 : 0
     }
 
     private var sizeCoin: Double {
-        guard let v = Fmt.parse(sizeText), v > 0 else { return 0 }
-        if sizeInUsd { return refPrice > 0 ? v / refPrice : 0 }
+        guard let v = Fmt.parse(f.sizeText), v > 0 else { return 0 }
+        if f.sizeInUsd { return refPrice > 0 ? v / refPrice : 0 }
         return v
     }
 
     private var availableText: String {
         if market.isSpot {
-            if isBuy {
+            if f.isBuy {
                 return Fmt.num(model.spotBalances.first { $0.coin == market.quote }?.available ?? 0, 2) + " " + market.quote
             }
             return Fmt.num(maxSize, market.szDecimals) + " " + market.base
         }
-        let avail = isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell
+        let avail = f.isBuy ? model.activeAsset.availableBuy : model.activeAsset.availableSell
         return Fmt.usd(avail > 0 ? avail : model.withdrawable(for: market))
     }
 
     private var twapLabel: String {
-        twapMinutes < 60 ? L("{0} min", twapMinutes) : L("{0}h {1}", twapMinutes / 60, twapMinutes % 60 > 0 ? L("{0}m", twapMinutes % 60) : "")
+        f.twapMinutes < 60 ? L("{0} min", f.twapMinutes) : L("{0}h {1}", f.twapMinutes / 60, f.twapMinutes % 60 > 0 ? L("{0}m", f.twapMinutes % 60) : "")
     }
 
     private func roeText(_ s: String) -> String {
         guard let px = Fmt.parse(s), refPrice > 0 else { return "" }
-        let move = (px / refPrice - 1) * (isBuy ? 1 : -1)
+        let move = (px / refPrice - 1) * (f.isBuy ? 1 : -1)
         return Fmt.pct(move * Double(currentLeverage), 1)
     }
 
     private func applyPct(_ v: Double) {
-        guard !riskOn else { return }
+        guard !f.riskOn else { return }
         let sz = maxSize * v
-        guard sz > 0 else { if v == 0 { sizeText = "" }; return }
-        sizeText = sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(NSDecimalNumber(decimal: market.roundSize(sz)).doubleValue, market.szDecimals)
+        guard sz > 0 else { if v == 0 { f.sizeText = "" }; return }
+        f.sizeText = f.sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(NSDecimalNumber(decimal: market.roundSize(sz)).doubleValue, market.szDecimals)
     }
 
     private func applyRisk() {
-        guard riskOn, let risk = Fmt.parse(riskText), let sl = Fmt.parse(slText) else { return }
+        guard f.riskOn, let risk = Fmt.parse(f.riskText), let sl = Fmt.parse(f.slText) else { return }
         let dist = abs(refPrice - sl)
         guard dist > 0 else { return }
         let sz = risk / dist
-        sizeText = sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(sz, market.szDecimals)
+        f.sizeText = f.sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(sz, market.szDecimals)
     }
 
     /// Puts a price tapped in the order book into the right field.
     private func applyPendingPrice() {
         guard let p = model.pendingPrice else { return }
         let s = Fmt.input(p, market.priceDecimals(p))
-        if type == .scale { scaleStartText = s }
-        else if type.needsTrigger && !type.needsPrice { triggerText = s }
-        else if type == .trailing { trailActivationOn = true; trailActivationText = s }
+        if f.type == .scale { f.scaleStartText = s }
+        else if f.type.needsTrigger && !f.type.needsPrice { f.triggerText = s }
+        else if f.type == .trailing { f.trailActivationOn = true; f.trailActivationText = s }
         else {
-            if type == .market || type == .twap || type == .chase { type = .limit }
-            priceText = s
+            if f.type == .market || f.type == .twap || f.type == .chase { f.type = .limit }
+            f.priceText = s
         }
         model.pendingPrice = nil
     }
@@ -416,40 +395,40 @@ struct OrderFormView: View {
     /// Publishes the primary action to the pinned bottom bar.
     private func syncBar() {
         bar.title = buttonTitle
-        bar.isBuy = isBuy
+        bar.isBuy = f.isBuy
         bar.busy = busy
         bar.enabled = model.canTrade
         let value = sizeCoin * refPrice
-        bar.detail = value > 0 ? "\(type.title) · \(Fmt.usd(value))" : ""
+        bar.detail = value > 0 ? "\(f.type.title) · \(Fmt.usd(value))" : ""
         bar.submit = { submit() }
     }
 
     private var buttonTitle: String {
-        let side = market.isSpot ? (isBuy ? L("Buy") : L("Sell")) : (isBuy ? L("Long") : L("Short"))
+        let side = market.isSpot ? (f.isBuy ? L("Buy") : L("Sell")) : (f.isBuy ? L("Long") : L("Short"))
         return "\(side) \(market.base)"
     }
 
     private func draft() -> OrderDraft {
-        var d = OrderDraft(market: market, isBuy: isBuy, type: type, size: sizeCoin)
-        d.price = Fmt.parse(priceText)
-        d.triggerPx = Fmt.parse(triggerText)
-        d.tif = tif
-        d.reduceOnly = reduceOnly
-        if tpslOn && type.allowsTpsl && !market.isSpot {
-            d.tp = Fmt.parse(tpText)
-            d.sl = Fmt.parse(slText)
+        var d = OrderDraft(market: market, isBuy: f.isBuy, type: f.type, size: sizeCoin)
+        d.price = Fmt.parse(f.priceText)
+        d.triggerPx = Fmt.parse(f.triggerText)
+        d.tif = f.tif
+        d.reduceOnly = f.reduceOnly
+        if f.tpslOn && f.type.allowsTpsl && !market.isSpot {
+            d.tp = Fmt.parse(f.tpText)
+            d.sl = Fmt.parse(f.slText)
         }
-        d.scaleStart = Fmt.parse(scaleStartText)
-        d.scaleEnd = Fmt.parse(scaleEndText)
-        d.scaleCount = scaleCount
-        d.scaleSkew = scaleSkew
-        d.twapMinutes = twapMinutes
-        d.twapRandomize = twapRandomize
-        d.trailValue = Fmt.parse(trailText)
-        d.trailIsPct = trailIsPct
-        d.trailActivation = trailActivationOn ? Fmt.parse(trailActivationText) : nil
-        d.chaseMaxDistance = (Fmt.parse(chaseDistText) ?? 0) / 100
-        if type == .scale { d.size = sizeInUsd ? (Fmt.parse(sizeText) ?? 0) / max(refPrice, 1e-12) : sizeCoin }
+        d.scaleStart = Fmt.parse(f.scaleStartText)
+        d.scaleEnd = Fmt.parse(f.scaleEndText)
+        d.scaleCount = f.scaleCount
+        d.scaleSkew = f.scaleSkew
+        d.twapMinutes = f.twapMinutes
+        d.twapRandomize = f.twapRandomize
+        d.trailValue = Fmt.parse(f.trailText)
+        d.trailIsPct = f.trailIsPct
+        d.trailActivation = f.trailActivationOn ? Fmt.parse(f.trailActivationText) : nil
+        d.chaseMaxDistance = (Fmt.parse(f.chaseDistText) ?? 0) / 100
+        if f.type == .scale { d.size = f.sizeInUsd ? (Fmt.parse(f.sizeText) ?? 0) / max(refPrice, 1e-12) : sizeCoin }
         return d
     }
 
@@ -516,8 +495,8 @@ struct OrderFormView: View {
                 let msg = try await model.place(d)
                 model.show(.success, msg)
                 Haptics.success(enabled: model.haptics)
-                sizeText = ""; pct = 0
-                if riskOn { riskText = "" }
+                f.sizeText = ""; f.pct = 0
+                if f.riskOn { f.riskText = "" }
                 onPlaced?()
             } catch {
                 model.show(.error, error.localizedDescription)
@@ -528,11 +507,44 @@ struct OrderFormView: View {
     }
 
     private func reset() {
-        priceText = ""; triggerText = ""; sizeText = ""; tpText = ""; slText = ""; pct = 0
-        scaleStartText = ""; scaleEndText = ""
-        if market.isSpot && !availableTypes.contains(type) { type = .market }
-        if market.isSpot { reduceOnly = false; tpslOn = false; riskOn = false }
+        f.marketId = market.id
+        f.priceText = ""; f.triggerText = ""; f.sizeText = ""; f.tpText = ""; f.slText = ""; f.pct = 0
+        f.scaleStartText = ""; f.scaleEndText = ""
+        if market.isSpot && !availableTypes.contains(f.type) { f.type = .market }
+        if market.isSpot { f.reduceOnly = false; f.tpslOn = false; f.riskOn = false }
     }
+}
+
+/// Order form fields, kept while the app runs (cleared when the market changes).
+@Observable
+final class OrderFormFields {
+    static let shared = OrderFormFields()
+    var marketId = ""
+    var isBuy = true
+    var type: OrderTypeUI = .market
+    var priceText = ""
+    var triggerText = ""
+    var sizeText = ""
+    var sizeInUsd = true
+    var pct: Double = 0
+    var reduceOnly = false
+    var tif: TIF = .gtc
+    var tpslOn = false
+    var tpText = ""
+    var slText = ""
+    var riskOn = false
+    var riskText = ""
+    var scaleStartText = ""
+    var scaleEndText = ""
+    var scaleCount = 5
+    var scaleSkew = 1.0
+    var twapMinutes = 30
+    var twapRandomize = true
+    var trailText = ""
+    var trailIsPct = true
+    var trailActivationOn = false
+    var trailActivationText = ""
+    var chaseDistText = ""
 }
 
 struct IdentifiedDraft: Identifiable {

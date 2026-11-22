@@ -289,32 +289,90 @@ struct FundingEntry: Identifiable, Hashable {
 struct LedgerEntry: Identifiable, Hashable {
     let time: Date
     let type: String
+    /// Signed USD value from the account's point of view (+ in, − out, 0-ish for internal moves).
     let usdc: Double
     let hash: String
     let detail: String
+    /// Token amount line for non-USDC transfers ("0.1 HYPE").
+    let tokenLine: String?
+    /// A move between the account's own balances (perps / spot / HIP-3): shown without a gain or loss color.
+    let isInternal: Bool
     var id: String { "\(hash)-\(type)-\(time.timeIntervalSince1970)" }
 
-    init(_ j: JSON) {
+    /// `me`: the account the ledger belongs to; `names`: known addresses (sub-accounts) → display names.
+    init(_ j: JSON, me: String, names: [String: String] = [:]) {
         time = Date(timeIntervalSince1970: j["time"].dbl / 1000)
         let d = j["delta"]
         type = d["type"].str
         hash = j["hash"].str
-        var amount = d["usdc"].double ?? d["amount"].double ?? 0
+        let me = me.lowercased()
+        let from = d["user"].str.lowercased(), to = d["destination"].str.lowercased()
+        let token = d["token"].string ?? "USDC"
+        let tokenAmount = d["amount"].double ?? d["usdc"].double ?? 0
+        var value = d["usdcValue"].double ?? d["usdc"].double ?? (token == "USDC" ? tokenAmount : 0)
         var det = ""
+        var internal = false
+        var line: String? = token == "USDC" ? nil : "\(Fmt.num(tokenAmount, 6)) \(token)"
+
+        func who(_ a: String) -> String {
+            if let n = names[a] { return n }
+            if LedgerEntry.isSystemAddress(a) { return "HyperEVM" }
+            return Address.short(a)
+        }
+        func dexName(_ dex: String) -> String {
+            switch dex {
+            case "": return L("Perps")
+            case "spot": return L("Spot")
+            default: return "HIP-3 · \(dex)"
+            }
+        }
+
         switch type {
-        case "withdraw": amount = -abs(amount); det = L("Withdrawal")
-        case "deposit": det = L("Deposit")
-        case "accountClassTransfer": det = (d["toPerp"].bool ?? false) ? L("Spot → Perp") : L("Perp → Spot")
+        case "withdraw":
+            value = -abs(d["usdc"].double ?? value)
+            det = L("Withdrawal")
+            if let fee = d["fee"].double, fee > 0 { det += " · " + L("fee {0}", Fmt.usd(fee)) }
+        case "deposit":
+            det = L("Deposit")
+        case "accountClassTransfer":
+            det = (d["toPerp"].bool ?? false) ? L("Spot → Perps") : L("Perps → Spot")
+            internal = true
         case "internalTransfer", "send", "spotTransfer":
-            det = L("Transfer {0} {1}", d["token"].string ?? "USDC", Address.short(d["destination"].str))
-        case "vaultDeposit": det = L("Vault deposit"); amount = -abs(amount)
-        case "vaultWithdraw": det = L("Vault withdrawal")
-        case "subAccountTransfer": det = L("Sub-account")
-        case "liquidation": det = L("Liquidation")
+            if from == to && from == me {
+                det = "\(dexName(d["sourceDex"].str)) → \(dexName(d["destinationDex"].str))"
+                internal = true
+            } else if LedgerEntry.isSystemAddress(from) && to == me {
+                det = L("From HyperEVM")
+            } else if LedgerEntry.isSystemAddress(to) && from == me {
+                det = L("To HyperEVM"); value = -abs(value)
+            } else if to == me {
+                det = L("Received from {0}", who(from))
+            } else {
+                det = L("Sent to {0}", who(to)); value = -abs(value)
+            }
+        case "subAccountTransfer":
+            let amount = d["usdc"].double ?? value
+            if to == me { det = L("From {0}", who(from)); value = abs(amount) }
+            else { det = L("To {0}", who(to)); value = -abs(amount) }
+        case "vaultDeposit": det = L("Vault deposit"); value = -abs(d["usdc"].double ?? value)
+        case "vaultWithdraw": det = L("Vault withdrawal"); value = abs(d["netWithdrawnUsd"].double ?? d["usdc"].double ?? value)
+        case "liquidation": det = L("Liquidation"); value = -abs(d["accountValue"].double ?? value)
+        case "accountActivationGas": det = L("Account activation fee"); value = -abs(value)
+        case "cStakingTransfer": det = (d["isDeposit"].bool ?? false) ? L("To staking") : L("From staking"); internal = true
+        case "rewardsClaim": det = L("Rewards claimed")
         default: det = type
         }
-        usdc = amount
+        if line == nil, value == 0, tokenAmount != 0 { line = Fmt.num(tokenAmount, 6) }
+        usdc = value
         detail = det
+        tokenLine = line
+        isInternal = internal
+    }
+
+    /// HyperCore ⇄ HyperEVM system addresses (0x20…token index, 0x2222…2222 for HYPE).
+    static func isSystemAddress(_ a: String) -> Bool {
+        let s = a.lowercased()
+        return s == "0x2222222222222222222222222222222222222222" || (s.hasPrefix("0x20") && s.count == 42 && s.dropFirst(4).hasPrefix("0000000000"))
     }
 }
 

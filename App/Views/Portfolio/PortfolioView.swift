@@ -338,7 +338,14 @@ struct PortfolioView: View {
                         Text(Fmt.dateTime(e.time)).font(.caption2).foregroundStyle(Color.hlMuted)
                     }
                     Spacer()
-                    Text(Fmt.signedUsd(e.usdc)).font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.pnl(e.usdc))
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(e.isInternal ? Fmt.usd(abs(e.usdc)) : Fmt.signedUsd(e.usdc))
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(e.isInternal ? Color.primary : Color.pnl(e.usdc))
+                        if let t = e.tokenLine {
+                            Text(t).font(.caption2.monospaced()).foregroundStyle(Color.hlMuted)
+                        }
+                    }
                 }
                 .padding(10)
                 .themedCard()

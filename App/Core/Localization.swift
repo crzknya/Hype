@@ -28,6 +28,20 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Account activation fee": "Комиссия активации аккаунта",
+        "From HyperEVM": "Из HyperEVM",
+        "From staking": "Из стейкинга",
+        "From {0}": "С {0}",
+        "Perps → Spot": "Перпы → Спот",
+        "Received from {0}": "Получено от {0}",
+        "Sent to {0}": "Отправлено на {0}",
+        "Spot → Perps": "Спот → Перпы",
+        "To HyperEVM": "В HyperEVM",
+        "To staking": "В стейкинг",
+        "To {0}": "На {0}",
+        "fee {0}": "комиссия {0}",
+        "master account": "основной аккаунт",
+        "sub-account {0}": "суб-аккаунт {0}",
         "Light": "Светлая",
         "The wallet signed with a different account. Select {0} in the wallet and try again.": "Кошелёк подписал другим аккаунтом. Выберите {0} в кошельке и повторите.",
         "Ambiguous number: write it without the comma or with a dot": "Неоднозначное число: напишите без запятой или через точку",

@@ -133,6 +133,8 @@ struct TradeView: View {
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 10)
+        // A side requested by the Long / Short buttons applies once; switching tabs back keeps the user's choice.
+        .onChange(of: page) { _, p in if p == 0 { pageSide = nil } }
         if page == 0 {
             chartSection(m)
             MarketDataTabs(market: m) { tab in depthTab = tab; depthFullScreen = true }
