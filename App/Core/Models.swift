@@ -284,6 +284,16 @@ struct FundingEntry: Identifiable, Hashable {
         rate = d["fundingRate"].dbl
         hash = j["hash"].str
     }
+
+    /// Entry of the userFundings WebSocket stream ({time, coin, usdc, szi, fundingRate}).
+    init(stream j: JSON) {
+        time = Date(timeIntervalSince1970: j["time"].dbl / 1000)
+        coin = j["coin"].str
+        usdc = j["usdc"].dbl
+        szi = j["szi"].dbl
+        rate = j["fundingRate"].dbl
+        hash = j["hash"].string ?? "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
 }
 
 struct LedgerEntry: Identifiable, Hashable {

@@ -384,7 +384,8 @@ final class AppModel {
          .map([("type", .str("spotState")), ("user", .str(u))]),
          .map([("type", .str("openOrders")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))]),
          .map([("type", .str("twapStates")), ("user", .str(u)), ("dex", .str("ALL_DEXS"))]),
-         .map([("type", .str("userNonFundingLedgerUpdates")), ("user", .str(u))])]
+         .map([("type", .str("userNonFundingLedgerUpdates")), ("user", .str(u))]),
+         .map([("type", .str("userFundings")), ("user", .str(u))])]
     }
 
     private func subscribeUser() {
@@ -865,8 +866,8 @@ final class AppModel {
         let now = UInt64(Date().timeIntervalSince1970 * 1000)
         let week: UInt64 = 7 * 24 * 3600 * 1000
         async let f = tryInfo("userFills", [("user", .str(user)), ("aggregateByTime", .bool(true))])
-        async let fu = tryInfo("userFunding", [("user", .str(user)), ("startTime", .int(Int64(now - 4 * week)))])
-        async let l = tryInfo("userNonFundingLedgerUpdates", [("user", .str(user)), ("startTime", .int(Int64(now - 52 * week)))])
+        async let fu = fetchRange("userFunding", user: user, startTime: Int64(now - 4 * week))
+        async let l = fetchRange("userNonFundingLedgerUpdates", user: user, startTime: Int64(now - 52 * week))
         async let t = tryInfo("twapHistory", [("user", .str(user))])
         async let p = tryInfo("portfolio", [("user", .str(user))])
         async let oh = tryInfo("historicalOrders", [("user", .str(user))])
@@ -891,13 +892,37 @@ final class AppModel {
             stakedHype = staking["delegated"].dbl + staking["undelegated"].dbl + staking["totalPendingWithdrawal"].dbl
         }
         if let fills { self.fills = fills.array.map(Fill.init).sorted { $0.time > $1.time } }
-        if let funding { fundingHistory = funding.array.map(FundingEntry.init).sorted { $0.time > $1.time } }
+        if let funding {
+            var seen = Set<String>()
+            fundingHistory = funding.map { FundingEntry($0) }.filter { seen.insert($0.id).inserted }.sorted { $0.time > $1.time }
+        }
         if let ledger {
             let names = ledgerNames
-            self.ledger = ledger.array.map { LedgerEntry($0, me: user, names: names) }.sorted { $0.time > $1.time }
+            var seen = Set<String>()
+            self.ledger = ledger.map { LedgerEntry($0, me: user, names: names) }.filter { seen.insert($0.id).inserted }
+                .sorted { $0.time > $1.time }
         }
         if let twap { parseTwaps(twap) }
         if let portfolio { parsePortfolio(portfolio) }
+    }
+
+    /// History requests with a start time return a limited page (500 entries) starting from the OLDEST
+    /// entry, so page forward until the present; otherwise recent funding / transfers are cut off.
+    private func fetchRange(_ type: String, user: String, startTime: Int64, maxPages: Int = 20) async -> [JSON]? {
+        var out: [JSON] = []
+        var start = startTime
+        for _ in 0..<maxPages {
+            guard let j = await tryInfo(type, [("user", .str(user)), ("startTime", .int(start))]) else {
+                return out.isEmpty ? nil : out
+            }
+            let page = j.array
+            out += page
+            guard page.count >= 500, let last = page.last?["time"].int64 else { break }
+            // Entries can share a timestamp (several coins per funding hour): restart at the last time and
+            // de-duplicate; step forward only if a whole page had the same time.
+            start = last > start ? last : last + 1
+        }
+        return out
     }
 
     private func tryInfo(_ type: String, _ extra: [(String, MP)]) async -> JSON? {
@@ -1070,6 +1095,13 @@ final class AppModel {
             if list != openOrders { openOrders = list }
             ordersStreamAt = Date()
             ordersUpdatedAt = Date()
+        case "userFundings":
+            // Hourly funding payments as they are applied (history comes from REST).
+            guard let me = userAddress, data["user"].str.lowercased() == me, data["isSnapshot"].bool != true else { return }
+            let new = data["fundings"].array.map { FundingEntry(stream: $0) }
+            let known = Set(fundingHistory.map(\.id))
+            let fresh = new.filter { !known.contains($0.id) }
+            if !fresh.isEmpty { fundingHistory = (fresh + fundingHistory).sorted { $0.time > $1.time } }
         case "userNonFundingLedgerUpdates":
             // Deposits, withdrawals and transfers as they happen (the snapshot is covered by the REST history).
             guard let me = userAddress, data["user"].str.lowercased() == me, data["isSnapshot"].bool != true else { return }

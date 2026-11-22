@@ -19,7 +19,14 @@ struct PositionRow: View {
         let tpsl = model.openOrders.filter { $0.coin == p.coin && $0.isTrigger && $0.reduceOnly }
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text(model.displayName(p.coin)).font(.headline)
+                // Tap the market name to open it on the trade screen.
+                Button { model.select(p.coin) } label: {
+                    HStack(spacing: 3) {
+                        Text(model.displayName(p.coin)).font(.headline)
+                        Image(systemName: "chevron.right").font(.caption2.bold()).foregroundStyle(Color.hlMuted)
+                    }
+                }
+                .buttonStyle(.plain)
                 SideBadge(isLong: p.isLong)
                 Badge(text: "\(p.leverage)x \(p.leverageType == "isolated" ? "Iso" : "Cross")", color: .hlMuted)
                 Spacer()
