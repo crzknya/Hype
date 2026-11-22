@@ -50,11 +50,14 @@ struct CandleChart: View {
     @State private var startLo = 0.0
     @State private var startHi = 1.0
     @State private var verticalBase: CGFloat?
+    /// Direction chosen by the first movement of a chart drag (TradingView-like axis lock).
+    @State private var panAxis: PanAxis?
     @State private var pinchStart: (spacing: CGFloat, right: CGFloat, x: CGFloat)?
     @State private var momentum: Task<Void, Never>?
     @State private var crosshair: CGPoint?
 
     private enum DragKind { case chart, priceAxis, timeAxis }
+    private enum PanAxis { case horizontal, vertical }
 
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 14
@@ -170,31 +173,41 @@ struct CandleChart: View {
                     rightOffset = clampRight(startRight, plotW: plotW)
                     requestHistoryIfNeeded(plotW: plotW)
                 case .chart:
-                    rightOffset = clampRight(startRight - v.translation.width / spacing, plotW: plotW)
-                    // Vertical panning starts after a clear vertical move, so horizontal swipes keep auto-scale.
-                    let dy = v.translation.height
-                    if verticalBase == nil, abs(dy) > 16, abs(dy) > abs(v.translation.width) * 0.6 {
-                        verticalBase = dy
-                        autoScale = false
-                        manualLo = startLo; manualHi = startHi
+                    // The first ~10 pt decide the direction: a sideways swipe only scrolls time (auto-scale
+                    // stays on and keeps fitting the visible candles); a clearly vertical drag moves the price
+                    // range and turns auto-scale off.
+                    let dx = v.translation.width, dy = v.translation.height
+                    if panAxis == nil, hypot(dx, dy) > 10 {
+                        panAxis = abs(dy) > abs(dx) * 1.5 ? .vertical : .horizontal
+                        if panAxis == .vertical {
+                            verticalBase = dy
+                            autoScale = false
+                            manualLo = startLo; manualHi = startHi
+                        }
                     }
-                    if let base = verticalBase {
-                        let shift = Double((dy - base) / mainH) * (startHi - startLo)
+                    switch panAxis {
+                    case .horizontal:
+                        rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
+                        requestHistoryIfNeeded(plotW: plotW)
+                    case .vertical:
+                        let shift = Double((dy - (verticalBase ?? 0)) / mainH) * (startHi - startLo)
                         manualLo = startLo + shift; manualHi = startHi + shift
+                    case .none:
+                        break
                     }
-                    requestHistoryIfNeeded(plotW: plotW)
                 case .none:
                     break
                 }
             }
             .onEnded { v in
-                if dragKind == .chart {
+                if dragKind == .chart && panAxis == .horizontal {
                     // Inertia: continue with the release speed and decelerate.
                     let velocity = (v.predictedEndTranslation.width - v.translation.width) * 2.5
                     startMomentum(velocity: velocity, plotW: size.width - axisW)
                 }
                 dragKind = nil
                 verticalBase = nil
+                panAxis = nil
             }
     }
 
@@ -219,9 +232,9 @@ struct CandleChart: View {
         momentum = nil
     }
 
-    /// Up to ~70% of the width as empty space on the right; at least 3 candles on screen on the left.
+    /// Up to half the width as empty space on the right; at least 3 candles on screen on the left.
     private func clampRight(_ r: CGFloat, plotW: CGFloat) -> CGFloat {
-        let maxR = plotW / spacing * 0.7
+        let maxR = plotW / spacing * 0.5
         let minR = -CGFloat(max(0, candles.count - 3))
         return min(maxR, max(minR, r))
     }
