@@ -116,10 +116,9 @@ struct CandleChart: View {
                         if pinchStart == nil { pinchStart = (spacing, rightOffset, min(v.startLocation.x, plotW)) }
                         guard let p = pinchStart else { return }
                         let s2 = min(maxSpacing, max(minSpacing, p.spacing * v.magnification))
-                        // Keep the bar under the fingers in place.
-                        let fromRight = (plotW - p.x) / p.spacing + p.right
+                        // Keep the bar under the fingers in place: last − i = (plotW − x) / spacing − rightOffset − 0.5.
                         spacing = s2
-                        rightOffset = clampRight(fromRight - (plotW - p.x) / s2, plotW: plotW)
+                        rightOffset = clampRight(p.right - (plotW - p.x) / p.spacing + (plotW - p.x) / s2, plotW: plotW)
                         requestHistoryIfNeeded(plotW: plotW)
                     }
                     .onEnded { _ in pinchStart = nil }
@@ -232,15 +231,15 @@ struct CandleChart: View {
         momentum = nil
     }
 
-    /// Up to half the width as empty space on the right; at least 3 candles on screen on the left.
+    /// Up to a third of the width as empty space on the right; at least 3 candles on screen on the left.
     private func clampRight(_ r: CGFloat, plotW: CGFloat) -> CGFloat {
-        let maxR = plotW / spacing * 0.5
+        let maxR = max(CandleChart.defaultRightOffset, plotW / spacing / 3)
         let minR = -CGFloat(max(0, candles.count - 3))
         return min(maxR, max(minR, r))
     }
 
     private func requestHistoryIfNeeded(plotW: CGFloat) {
-        let firstVisible = CGFloat(candles.count - 1) - rightOffset - plotW / spacing
+        let firstVisible = CGFloat(candles.count - 1) + rightOffset + 0.5 - plotW / spacing
         if firstVisible < 60 { onNeedHistory?() }
     }
 
@@ -267,11 +266,14 @@ struct CandleChart: View {
     }
 
     /// Visible candle indices for the current scroll / zoom.
+    /// x(i) = plotW − (last − i + rightOffset + 0.5) · spacing, so the right edge is at index
+    /// last + rightOffset + 0.5 and the left edge `plotW / spacing` bars before it.
     private func visibleRange(plotW: CGFloat) -> Range<Int> {
         let last = candles.count - 1
         guard last >= 0 else { return 0..<0 }
-        let hiIdx = min(last, Int(ceil(CGFloat(last) - rightOffset + 0.5)))
-        let loIdx = max(0, Int(floor(CGFloat(last) - rightOffset - plotW / spacing - 0.5)))
+        let rightEdge = CGFloat(last) + rightOffset + 0.5
+        let hiIdx = min(last, Int(ceil(rightEdge)))
+        let loIdx = max(0, Int(floor(rightEdge - plotW / spacing)) - 1)
         return loIdx <= hiIdx ? loIdx..<(hiIdx + 1) : 0..<0
     }
 
