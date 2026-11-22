@@ -43,7 +43,27 @@ struct OrderFormView: View {
             }
             if f.type == .trailing { trailingFields }
             if f.type == .chase {
-                NumField(title: L("Max distance %"), text: $f.chaseDistText, placeholder: L("none"))
+                NumField(title: L("Max distance %"), text: $f.chaseDistText, placeholder: L("none")) {
+                    if let d = Fmt.parse(f.chaseDistText), d > 0, refMid > 0 {
+                        Text("≈ \(Fmt.usd(refMid * d / 100))").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlMuted)
+                    }
+                }
+                HStack(spacing: 4) {
+                    ForEach([0.02, 0.05, 0.1, 0.25], id: \.self) { p in
+                        Button(Fmt.num(p, 2) + "%") { f.chaseDistText = Fmt.input(p, 2) }
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 5)
+                            .background(Fmt.parse(f.chaseDistText) == p ? Color.hlAccent.opacity(0.25) : Color.hlCard2,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .buttonStyle(.plain)
+                    }
+                    Button(L("none")) { f.chaseDistText = "" }
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
+                        .background(f.chaseDistText.isEmpty ? Color.hlAccent.opacity(0.25) : Color.hlCard2,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .buttonStyle(.plain)
+                }
                 Text(L("Post-only limit kept one tick inside the spread until it fills. Runs while the app is open; stopping leaves a normal limit order."))
                     .font(.system(size: 10)).foregroundStyle(Color.hlMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
