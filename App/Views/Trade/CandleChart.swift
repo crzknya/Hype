@@ -7,6 +7,21 @@ struct PriceLine: Identifiable {
     let label: String
 }
 
+/// Values from the last draw, read by gestures (a reference so drawing does not invalidate the view).
+final class ChartViewportCache {
+    var lo = 0.0, hi = 1.0          // price range in scale units (log when log scale)
+    var plotW: CGFloat = 300
+    var mainH: CGFloat = 200
+}
+
+/// Candle chart that behaves like TradingView:
+/// - auto-scale (the "A" button) fits the visible candles; dragging the price axis or the chart vertically
+///   switches it off and the price range then stays where you put it; double tap on the price axis or "A"
+///   turns it back on;
+/// - smooth horizontal scroll with inertia, pinch-zoom around the fingers, drag on the time axis zooms from
+///   the right edge; while scrolled back in history new candles do not move the view; older candles are
+///   loaded when you reach the left edge;
+/// - round price levels and time labels on hour / day boundaries.
 struct CandleChart: View {
     let candles: [Candle]
     let lines: [PriceLine]
@@ -15,25 +30,41 @@ struct CandleChart: View {
     var showVolume = true
     var logScale = false
     var intervalSeconds: Double = 3600
+    /// Called when the view nears the oldest loaded candle.
+    var onNeedHistory: (() -> Void)? = nil
 
-    @State private var visible = 70
-    @State private var offset = 0          // candles hidden on the right
-    @State private var dragStartOffset: Int?
-    @State private var zoomStart: Int?
+    static let defaultSpacing: CGFloat = 6
+    static let defaultRightOffset: CGFloat = 4
+
+    /// Pixels per bar and empty bars to the right of the last candle (negative = scrolled back in history).
+    @State private var spacing: CGFloat = CandleChart.defaultSpacing
+    @State private var rightOffset: CGFloat = CandleChart.defaultRightOffset
+    @State private var autoScale = true
+    @State private var manualLo = 0.0
+    @State private var manualHi = 1.0
+    @State private var cache = ChartViewportCache()
+    // Gesture state
+    @State private var dragKind: DragKind?
+    @State private var startSpacing: CGFloat = 0
+    @State private var startRight: CGFloat = 0
+    @State private var startLo = 0.0
+    @State private var startHi = 1.0
+    @State private var verticalBase: CGFloat?
+    @State private var pinchStart: (spacing: CGFloat, right: CGFloat, x: CGFloat)?
+    @State private var momentum: Task<Void, Never>?
     @State private var crosshair: CGPoint?
-    /// Manual vertical zoom of the price scale (1 = auto). >1 compresses, <1 stretches.
-    @State private var yScale: Double = 1
-    @State private var yScaleStart: Double?
-    /// Vertical pan as a fraction of the visible price range (0 = auto-centered).
-    @State private var yPan: Double = 0
-    @State private var yPanStart: Double?
+
+    private enum DragKind { case chart, priceAxis, timeAxis }
 
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 14
+    private let minSpacing: CGFloat = 1.5
+    private let maxSpacing: CGFloat = 40
 
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
+            let mainH = layout(size).mainH
             ZStack(alignment: .topLeading) {
                 // Redraw every second for the candle-close countdown.
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
@@ -48,43 +79,47 @@ struct CandleChart: View {
                         .background(Color.hlCard.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
                         .padding(4)
                 }
+                // Auto-scale toggle, as TradingView's "A" under the price scale.
+                Button {
+                    autoScale = true
+                } label: {
+                    Text("A")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 18, height: 18)
+                        .foregroundStyle(autoScale ? Color.hlOnAccent : Color.hlMuted)
+                        .background(autoScale ? Color.hlAccent : Color.hlCard2, in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .position(x: size.width - 12, y: max(10, mainH - 12))
             }
             .contentShape(Rectangle())
-            // Pan in both directions (wins over the page scroll while the finger is on the chart).
-            // One drag gesture for the whole chart: started on the price axis it scales the price
-            // range (TradingView-style), elsewhere it pans in both directions.
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { v in
-                        guard crosshair == nil else { return }
-                        let mainH = max(1, layout(size).mainH)
-                        let onAxis = v.startLocation.x > size.width - axisW && v.startLocation.y < mainH
-                        if onAxis {
-                            if yScaleStart == nil { yScaleStart = yScale }
-                            // Drag down compresses (wider range), drag up stretches.
-                            yScale = min(20, max(0.05, (yScaleStart ?? 1) * exp(Double(v.translation.height) / 160)))
-                        } else {
-                            if dragStartOffset == nil { dragStartOffset = offset; yPanStart = yPan }
-                            let cw = (size.width - axisW) / CGFloat(visible)
-                            let delta = Int((v.translation.width / max(cw, 1)).rounded())
-                            offset = clampOffset((dragStartOffset ?? 0) + delta)
-                            yPan = (yPanStart ?? 0) + Double(v.translation.height / mainH)
-                        }
+            .highPriorityGesture(dragGesture(size))
+            .simultaneousGesture(
+                SpatialTapGesture(count: 2).onEnded { v in
+                    if v.location.x > size.width - axisW && v.location.y < mainH {
+                        autoScale = true                              // double tap on the price axis
+                    } else {
+                        stopMomentum()
+                        autoScale = true
+                        rightOffset = CandleChart.defaultRightOffset  // back to the latest candles
                     }
-                    .onEnded { _ in dragStartOffset = nil; yPanStart = nil; yScaleStart = nil }
+                }
             )
-            .simultaneousGesture(TapGesture(count: 2).onEnded {
-                // Back to the default view: latest candles, auto price scale.
-                offset = 0; yPan = 0; yScale = 1
-            })
             .simultaneousGesture(
                 MagnifyGesture()
                     .onChanged { v in
-                        if zoomStart == nil { zoomStart = visible }
-                        visible = min(300, max(15, Int(Double(zoomStart ?? 70) / v.magnification)))
-                        offset = clampOffset(offset)
+                        stopMomentum()
+                        let plotW = size.width - axisW
+                        if pinchStart == nil { pinchStart = (spacing, rightOffset, min(v.startLocation.x, plotW)) }
+                        guard let p = pinchStart else { return }
+                        let s2 = min(maxSpacing, max(minSpacing, p.spacing * v.magnification))
+                        // Keep the bar under the fingers in place.
+                        let fromRight = (plotW - p.x) / p.spacing + p.right
+                        spacing = s2
+                        rightOffset = clampRight(fromRight - (plotW - p.x) / s2, plotW: plotW)
+                        requestHistoryIfNeeded(plotW: plotW)
                     }
-                    .onEnded { _ in zoomStart = nil }
+                    .onEnded { _ in pinchStart = nil }
             )
             .simultaneousGesture(
                 LongPressGesture(minimumDuration: 0.25)
@@ -94,20 +129,109 @@ struct CandleChart: View {
                     }
                     .onEnded { _ in crosshair = nil }
             )
+            .onChange(of: candles.last?.t) { old, new in
+                // A new candle while scrolled back in history: keep the same candles on screen.
+                guard let old, let new, new > old, rightOffset < 0 else { return }
+                let added = max(1, Int(((new - old) / 1000 / max(intervalSeconds, 1)).rounded()))
+                rightOffset -= CGFloat(added)
+            }
+            .onChange(of: logScale) { _, _ in autoScale = true }
         }
     }
 
-    /// Negative offset = empty space to the right of the latest candle (up to half the screen).
-    private func clampOffset(_ o: Int) -> Int { max(-visible / 2, min(o, max(0, candles.count - 10))) }
+    // MARK: Gestures
 
-    /// Empty candle slots shown to the right of the latest candle.
-    private var futureSlots: Int { max(0, -offset) }
-
-    private var range: Range<Int> {
-        let end = max(0, candles.count - max(0, offset))
-        let start = max(0, end - (visible - futureSlots))
-        return start..<end
+    private func dragGesture(_ size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { v in
+                guard crosshair == nil else { return }
+                let plotW = size.width - axisW
+                let mainH = max(1, layout(size).mainH)
+                if dragKind == nil {
+                    stopMomentum()
+                    let p = v.startLocation
+                    dragKind = p.x > plotW && p.y < mainH ? .priceAxis : (p.y > size.height - timeH ? .timeAxis : .chart)
+                    startSpacing = spacing
+                    startRight = rightOffset
+                    startLo = autoScale ? cache.lo : manualLo
+                    startHi = autoScale ? cache.hi : manualHi
+                    verticalBase = nil
+                }
+                switch dragKind {
+                case .priceAxis:
+                    // Drag down compresses (wider range), up stretches — around the middle of the scale.
+                    autoScale = false
+                    let factor = exp(Double(v.translation.height) / 150)
+                    let c = (startLo + startHi) / 2, half = max(1e-12, (startHi - startLo) / 2 * factor)
+                    manualLo = c - half; manualHi = c + half
+                case .timeAxis:
+                    // Drag right = fewer, wider bars; anchored to the right edge.
+                    spacing = min(maxSpacing, max(minSpacing, startSpacing * exp(v.translation.width / 150)))
+                    rightOffset = clampRight(startRight, plotW: plotW)
+                    requestHistoryIfNeeded(plotW: plotW)
+                case .chart:
+                    rightOffset = clampRight(startRight - v.translation.width / spacing, plotW: plotW)
+                    // Vertical panning starts after a clear vertical move, so horizontal swipes keep auto-scale.
+                    let dy = v.translation.height
+                    if verticalBase == nil, abs(dy) > 16, abs(dy) > abs(v.translation.width) * 0.6 {
+                        verticalBase = dy
+                        autoScale = false
+                        manualLo = startLo; manualHi = startHi
+                    }
+                    if let base = verticalBase {
+                        let shift = Double((dy - base) / mainH) * (startHi - startLo)
+                        manualLo = startLo + shift; manualHi = startHi + shift
+                    }
+                    requestHistoryIfNeeded(plotW: plotW)
+                case .none:
+                    break
+                }
+            }
+            .onEnded { v in
+                if dragKind == .chart {
+                    // Inertia: continue with the release speed and decelerate.
+                    let velocity = (v.predictedEndTranslation.width - v.translation.width) * 2.5
+                    startMomentum(velocity: velocity, plotW: size.width - axisW)
+                }
+                dragKind = nil
+                verticalBase = nil
+            }
     }
+
+    private func startMomentum(velocity: CGFloat, plotW: CGFloat) {
+        stopMomentum()
+        guard abs(velocity) > 60 else { return }
+        momentum = Task { @MainActor in
+            var vx = velocity
+            while !Task.isCancelled && abs(vx) > 20 {
+                let before = rightOffset
+                rightOffset = clampRight(rightOffset - vx / 60 / spacing, plotW: plotW)
+                if rightOffset == before { break }
+                requestHistoryIfNeeded(plotW: plotW)
+                vx *= 0.93
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
+    private func stopMomentum() {
+        momentum?.cancel()
+        momentum = nil
+    }
+
+    /// Up to ~70% of the width as empty space on the right; at least 3 candles on screen on the left.
+    private func clampRight(_ r: CGFloat, plotW: CGFloat) -> CGFloat {
+        let maxR = plotW / spacing * 0.7
+        let minR = -CGFloat(max(0, candles.count - 3))
+        return min(maxR, max(minR, r))
+    }
+
+    private func requestHistoryIfNeeded(plotW: CGFloat) {
+        let firstVisible = CGFloat(candles.count - 1) - rightOffset - plotW / spacing
+        if firstVisible < 60 { onNeedHistory?() }
+    }
+
+    // MARK: Layout
 
     private struct Layout {
         var plotW: CGFloat
@@ -129,84 +253,101 @@ struct CandleChart: View {
         return Layout(plotW: size.width - axisW, mainH: mainH, volTop: mainH, volH: volH, paneTops: tops, paneH: paneH)
     }
 
+    /// Visible candle indices for the current scroll / zoom.
+    private func visibleRange(plotW: CGFloat) -> Range<Int> {
+        let last = candles.count - 1
+        guard last >= 0 else { return 0..<0 }
+        let hiIdx = min(last, Int(ceil(CGFloat(last) - rightOffset + 0.5)))
+        let loIdx = max(0, Int(floor(CGFloat(last) - rightOffset - plotW / spacing - 0.5)))
+        return loIdx <= hiIdx ? loIdx..<(hiIdx + 1) : 0..<0
+    }
+
+    /// Round step (1, 2, 2.5, 5 × 10^k) at least `raw`.
+    static func niceStep(_ raw: Double) -> Double {
+        guard raw > 0, raw.isFinite else { return 1 }
+        let p = pow(10, floor(log10(raw)))
+        let m = raw / p
+        let n: Double = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10
+        return n * p
+    }
+
+    private static let timeFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("dMMM")
+        return f
+    }()
+
+    // MARK: Drawing
+
     private func draw(ctx: inout GraphicsContext, size: CGSize, now: Date) {
-        let r = range
-        guard !r.isEmpty else { return }
         let L0 = layout(size)
         let plotW = L0.plotW
+        let r = visibleRange(plotW: plotW)
+        guard !r.isEmpty else { return }
+        let lastIdx = candles.count - 1
+        let cw = spacing
         let s = candles[r]
-        let cw = plotW / CGFloat(visible)
-        let leftPad = CGFloat(visible - s.count - futureSlots) * cw
         let dec = decimals ?? Fmt.autoDecimals(s.last?.c ?? 1)
-        func x(_ i: Int) -> CGFloat { leftPad + CGFloat(i - r.lowerBound) * cw + cw / 2 }
+        func x(_ i: Int) -> CGFloat { plotW - (CGFloat(lastIdx - i) + rightOffset + 0.5) * spacing }
+        let log = logScale && (s.map(\.l).min() ?? 0) > 0
+        func toScale(_ p: Double) -> Double { log ? Foundation.log(max(p, 1e-12)) : p }
+        func fromScale(_ v: Double) -> Double { log ? Foundation.exp(v) : v }
 
-        // Price range: candles + Bollinger bands.
-        var lo = s.map(\.l).min() ?? 0
-        var hi = s.map(\.h).max() ?? 1
-        for b in layers.bands {
-            for i in r {
-                if let u = b.up[i] { hi = max(hi, u) }
-                if let l = b.low[i] { lo = min(lo, l) }
+        // Price range in scale units: auto (visible candles + bands, TradingView margins 10% / 8%) or manual.
+        var loS: Double, hiS: Double
+        if autoScale {
+            var lo = Double.greatestFiniteMagnitude, hi = -Double.greatestFiniteMagnitude
+            for i in r where x(i) > -cw && x(i) < plotW + cw {
+                lo = min(lo, candles[i].l); hi = max(hi, candles[i].h)
             }
-        }
-        if hi <= lo { hi = lo * 1.01 + 1e-9; lo = lo * 0.99 }
-        let log = logScale && lo > 0
-        if yScale != 1 {
-            if log {
-                let c = (Foundation.log(hi) + Foundation.log(lo)) / 2, half = (Foundation.log(hi) - Foundation.log(lo)) / 2 * yScale
-                lo = Foundation.exp(c - half); hi = Foundation.exp(c + half)
-            } else {
-                let c = (hi + lo) / 2, half = (hi - lo) / 2 * yScale
-                lo = c - half; hi = c + half
+            for b in layers.bands {
+                for i in r {
+                    if i < b.up.count, let u = b.up[i] { hi = max(hi, u) }
+                    if i < b.low.count, let l = b.low[i] { lo = min(lo, l) }
+                }
             }
-        }
-        if yPan != 0 {
-            if log {
-                let shift = (Foundation.log(hi) - Foundation.log(lo)) * yPan
-                lo *= Foundation.exp(shift); hi *= Foundation.exp(shift)
-            } else {
-                let shift = (hi - lo) * yPan
-                lo += shift; hi += shift
-            }
-        }
-        if log {
-            let span = Foundation.log(hi / lo)
-            lo = lo * Foundation.exp(-span * 0.06); hi = hi * Foundation.exp(span * 0.06)
+            if lo > hi { lo = s.map(\.l).min() ?? 0; hi = s.map(\.h).max() ?? 1 }
+            loS = toScale(lo); hiS = toScale(hi)
+            if hiS <= loS { let d = max(abs(hiS) * 0.01, 1e-9); loS -= d; hiS += d }
+            let span = hiS - loS
+            hiS += span * 0.10 / 0.82
+            loS -= span * 0.08 / 0.82
         } else {
-            let pad = (hi - lo) * 0.06
-            lo -= pad; hi += pad
+            loS = manualLo; hiS = manualHi
         }
+        cache.lo = loS; cache.hi = hiS; cache.plotW = plotW; cache.mainH = L0.mainH
         let mainH = L0.mainH
-        let logLo = Foundation.log(max(lo, 1e-12)), logHi = Foundation.log(max(hi, 1e-12))
-        func y(_ p: Double) -> CGFloat {
-            if log { return CGFloat((logHi - Foundation.log(max(p, 1e-12))) / (logHi - logLo)) * mainH }
-            return CGFloat((hi - p) / (hi - lo)) * mainH
-        }
-        /// Inverse of y(): price at a fraction 0 (top) … 1 (bottom) of the main pane.
-        func price(atFraction f: Double) -> Double {
-            if log { return Foundation.exp(logHi - f * (logHi - logLo)) }
-            return hi - f * (hi - lo)
-        }
+        func y(_ p: Double) -> CGFloat { CGFloat((hiS - toScale(p)) / (hiS - loS)) * mainH }
+        let lo = fromScale(loS), hi = fromScale(hiS)
+        /// Price at a fraction 0 (top) … 1 (bottom) of the main pane.
+        func price(atFraction f: Double) -> Double { fromScale(hiS - f * (hiS - loS)) }
 
         // Axis rows taken by the last-price tag and the countdown under it.
+        let lastVisible = r.contains(lastIdx)
         var reservedY: [CGFloat] = []
-        if let last = s.last, offset <= 0 {
+        if let last = candles.last, lastVisible {
             let ly = y(last.c)
             reservedY = [ly, ly + 16 <= mainH - 7 ? ly + 16 : ly - 16]
         }
 
-        // Grid + price axis
+        // Grid + price axis on round levels (about one every 45 pt).
         let gridColor = Color.hlInk.opacity(AppTheme.current.isDark ? 0.06 : 0.08)
-        for k in 0...4 {
-            let p = price(atFraction: 1 - Double(k) / 4)
-            let yy = y(p)
-            var path = Path()
-            path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
-            ctx.stroke(path, with: .color(gridColor), lineWidth: 1)
-            let labelY = min(max(yy, 6), mainH - 6)
-            if !reservedY.contains(where: { abs($0 - labelY) < 13 }) {
-                ctx.draw(Text(Fmt.price(p, decimals: dec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
-                         at: CGPoint(x: plotW + 4, y: labelY), anchor: .leading)
+        let step = CandleChart.niceStep((hi - lo) / Double(max(2, mainH / 45)))
+        let stepDec = step < 1 ? Int(ceil(-log10(step) - 1e-9)) : 0
+        let labelDec = max(dec, min(stepDec, 8))
+        if step > 0, (hi - lo) / step < 60 {
+            var p = (lo / step).rounded(.up) * step
+            while p <= hi {
+                let yy = y(p)
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
+                ctx.stroke(path, with: .color(gridColor), lineWidth: 1)
+                if yy > 6, yy < mainH - 6, !reservedY.contains(where: { abs($0 - yy) < 13 }) {
+                    ctx.draw(Text(Fmt.price(p, decimals: labelDec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
+                             at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
+                }
+                p += step
             }
         }
 
@@ -218,8 +359,8 @@ struct CandleChart: View {
         for b in layers.bands {
             var path = Path()
             var started = false
-            for i in r { if let u = b.up[i] { let p = CGPoint(x: x(i), y: y(u)); if started { path.addLine(to: p) } else { path.move(to: p); started = true } } }
-            for i in r.reversed() { if let l = b.low[i] { path.addLine(to: CGPoint(x: x(i), y: y(l))) } }
+            for i in r { if i < b.up.count, let u = b.up[i] { let p = CGPoint(x: x(i), y: y(u)); if started { path.addLine(to: p) } else { path.move(to: p); started = true } } }
+            for i in r.reversed() { if i < b.low.count, let l = b.low[i] { path.addLine(to: CGPoint(x: x(i), y: y(l))) } }
             if started { path.closeSubpath(); main.fill(path, with: .color(b.color.opacity(0.07))) }
         }
 
@@ -255,8 +396,8 @@ struct CandleChart: View {
                       at: CGPoint(x: plotW - 4, y: yy - 7), anchor: .trailing)
         }
 
-        // Last price tag
-        if let last = s.last, offset <= 0 {
+        // Last price tag (also while scrolled back, as TradingView keeps it on the scale)
+        if let last = candles.last {
             let yy = y(last.c)
             let color = last.c >= last.o ? Color.hlGreen : Color.hlRed
             var path = Path()
@@ -268,7 +409,7 @@ struct CandleChart: View {
                          at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
                 // Time left until the current candle closes.
                 let remaining = Int(last.t / 1000 + intervalSeconds - now.timeIntervalSince1970)
-                if remaining > 0 {
+                if remaining > 0 && lastVisible {
                     let text = remaining >= 3600 ? Fmt.countdown(remaining) : String(format: "%02d:%02d", remaining / 60, remaining % 60)
                     // Below the price tag, or above it near the bottom edge.
                     let ty = yy + 16 <= mainH - 7 ? yy + 16 : yy - 16
@@ -294,12 +435,14 @@ struct CandleChart: View {
 
         // Volume
         if showVolume && L0.volH > 0 {
+            var vctx = ctx
+            vctx.clip(to: Path(CGRect(x: 0, y: L0.volTop, width: plotW, height: L0.volH)))
             let maxV = s.map(\.v).max() ?? 1
             for i in r {
                 let c = candles[i]
                 let h = maxV > 0 ? CGFloat(c.v / maxV) * (L0.volH - 2) : 0
                 let rect = CGRect(x: x(i) - cw * 0.35, y: L0.volTop + L0.volH - h, width: max(1, cw * 0.7), height: h)
-                ctx.fill(Path(rect), with: .color((c.c >= c.o ? Color.hlGreen : Color.hlRed).opacity(0.3)))
+                vctx.fill(Path(rect), with: .color((c.c >= c.o ? Color.hlGreen : Color.hlRed).opacity(0.3)))
             }
         }
 
@@ -308,14 +451,25 @@ struct CandleChart: View {
             drawPane(&ctx, pane, top: L0.paneTops[pi], height: L0.paneH, plotW: plotW, r: r, x: x)
         }
 
-        // Time axis
-        let fmt = DateFormatter()
-        let span = (s.last?.t ?? 0) - (s.first?.t ?? 0)
-        fmt.dateFormat = span > 3 * 86_400_000 ? "dd.MM" : "HH:mm"
-        let step = max(1, s.count / 4)
-        for i in r where (i - r.lowerBound) % step == step / 2 {
-            ctx.draw(Text(fmt.string(from: Date(timeIntervalSince1970: candles[i].t / 1000))).font(.system(size: 9)).foregroundColor(.hlMuted),
-                     at: CGPoint(x: x(i), y: size.height - timeH / 2))
+        // Time axis: labels on round boundaries (hours / days), at least ~70 pt apart, on the candle grid.
+        let units: [Double] = [60, 300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 604800, 2_592_000]
+        let iv = max(intervalSeconds, 1)
+        let unit = units.first { $0 >= iv && CGFloat($0 / iv) * spacing >= 70 } ?? max(iv, Double(Int(ceil(70 / spacing))) * iv)
+        let barsPerLabel = max(1, Int((unit / iv).rounded()))
+        var prevDay: Int?
+        let cal = Calendar.current
+        for i in r {
+            let t = candles[i].t / 1000
+            guard Int((t / iv).rounded()) % barsPerLabel == 0 else { continue }
+            let xx = x(i)
+            guard xx > 12, xx < plotW - 12 else { continue }
+            let date = Date(timeIntervalSince1970: t)
+            let day = cal.ordinality(of: .day, in: .era, for: date) ?? 0
+            let showDay = unit >= 86400 || (prevDay != nil && prevDay != day) || cal.component(.hour, from: date) == 0 && cal.component(.minute, from: date) == 0
+            prevDay = day
+            let text = showDay ? CandleChart.dayFormatter.string(from: date) : CandleChart.timeFormatter.string(from: date)
+            ctx.draw(Text(text).font(.system(size: 9, weight: showDay && unit < 86400 ? .semibold : .regular)).foregroundColor(.hlMuted),
+                     at: CGPoint(x: xx, y: size.height - timeH / 2))
         }
 
         // Crosshair
@@ -327,7 +481,7 @@ struct CandleChart: View {
             if p.y < mainH {
                 let crossPrice = price(atFraction: Double(p.y / mainH))
                 ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: p.y - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(.hlInk))
-                ctx.draw(Text(Fmt.price(crossPrice, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlBg),
+                ctx.draw(Text(Fmt.price(crossPrice, decimals: labelDec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlBg),
                          at: CGPoint(x: plotW + 4, y: p.y), anchor: .leading)
             }
         }
@@ -414,7 +568,7 @@ struct CandleChart: View {
         }
 
         if let h = pane.histogram {
-            let cw = plotW / CGFloat(visible)
+            let cw = spacing
             let zero = y(0)
             for i in r where i < h.count {
                 guard let v = h[i] else { continue }
@@ -444,14 +598,11 @@ struct CandleChart: View {
     }
 
     private func crosshairInfo(size: CGSize) -> String? {
-        guard let p = crosshair else { return nil }
-        let r = range
-        guard !r.isEmpty else { return nil }
+        guard let p = crosshair, !candles.isEmpty else { return nil }
         let plotW = size.width - axisW
-        let cw = plotW / CGFloat(visible)
-        let leftPad = CGFloat(visible - r.count - futureSlots) * cw
-        let idx = r.lowerBound + Int((p.x - leftPad) / cw)
-        guard r.contains(idx) else { return nil }
+        let lastIdx = candles.count - 1
+        let idx = lastIdx - Int(((plotW - p.x) / spacing - rightOffset - 0.5).rounded())
+        guard candles.indices.contains(idx) else { return nil }
         let c = candles[idx]
         let d = decimals ?? Fmt.autoDecimals(c.c)
         let ch = c.o > 0 ? c.c / c.o - 1 : 0

@@ -10,7 +10,8 @@ struct PriceChartView: View {
             CandleChart(candles: model.candles, lines: model.chartLines(market),
                         layers: ChartLayers.build(model.candles, configs: model.indicators, interval: model.interval),
                         decimals: nil, showVolume: model.showVolume,
-                        logScale: model.logScale, intervalSeconds: model.interval.seconds)
+                        logScale: model.logScale, intervalSeconds: model.interval.seconds,
+                        onNeedHistory: { Task { await model.loadOlderCandles() } })
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
         }

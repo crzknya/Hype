@@ -543,7 +543,7 @@ final class AppModel {
             if loops.isEmpty { start() }
             else {
                 socket.connect()
-                Task { await refreshAccount(); await refreshMarkets() }
+                Task { await refreshAccount(); await refreshMarkets(); await loadCandles() }
             }
         } else {
             if biometricLock { locked = true }
@@ -981,7 +981,35 @@ final class AppModel {
         let req = MP.map([("coin", .str(coin)), ("interval", .str(iv.rawValue)),
                           ("startTime", .int(Int64(start))), ("endTime", .int(Int64(end)))])
         guard let j = try? await api.info(type: "candleSnapshot", [("req", req)]), coin == selectedCoin, iv == interval else { return }
-        candles = j.array.map(Candle.init).sorted { $0.t < $1.t }
+        let fresh = j.array.map(Candle.init).sorted { $0.t < $1.t }
+        // Keep older history already loaded by scrolling back; replace the recent part (fills gaps after
+        // the app was in the background).
+        if let first = fresh.first, let have = candles.first, have.t < first.t {
+            candles = candles.filter { $0.t < first.t } + fresh
+        } else {
+            candles = fresh
+        }
+    }
+
+    @ObservationIgnored private var olderCandlesLoading = false
+    @ObservationIgnored private var candleHistoryEnd = ""
+
+    /// Loads 500 older candles in front of the loaded ones (scrolling back in the chart).
+    func loadOlderCandles() async {
+        let coin = selectedCoin, iv = interval
+        let key = "\(coin)|\(iv.rawValue)"
+        guard !olderCandlesLoading, candleHistoryEnd != key, let first = candles.first else { return }
+        olderCandlesLoading = true
+        defer { olderCandlesLoading = false }
+        let end = first.t - 1
+        let start = end - iv.seconds * 1000 * 500
+        let req = MP.map([("coin", .str(coin)), ("interval", .str(iv.rawValue)),
+                          ("startTime", .int(Int64(start))), ("endTime", .int(Int64(end)))])
+        guard let j = try? await api.info(type: "candleSnapshot", [("req", req)]), coin == selectedCoin, iv == interval,
+              let current = candles.first else { return }
+        let older = j.array.map(Candle.init).filter { $0.t < current.t }.sorted { $0.t < $1.t }
+        if older.isEmpty { candleHistoryEnd = key; return }      // the exchange keeps a limited history
+        candles = older + candles
     }
 
     // MARK: WebSocket
