@@ -57,7 +57,7 @@ struct CandleChart: View {
     @State private var crosshair: CGPoint?
 
     private enum DragKind { case chart, priceAxis, timeAxis }
-    private enum PanAxis { case horizontal, vertical }
+    private enum PanAxis { case horizontal, vertical, free }
 
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 14
@@ -176,6 +176,11 @@ struct CandleChart: View {
                     // stays on and keeps fitting the visible candles); a clearly vertical drag moves the price
                     // range and turns auto-scale off.
                     let dx = v.translation.width, dy = v.translation.height
+                    // Auto-scale already off: free panning in both directions at once.
+                    if panAxis == nil && !autoScale {
+                        panAxis = .free
+                        verticalBase = 0
+                    }
                     if panAxis == nil, hypot(dx, dy) > 10 {
                         panAxis = abs(dy) > abs(dx) * 1.5 ? .vertical : .horizontal
                         if panAxis == .vertical {
@@ -191,6 +196,11 @@ struct CandleChart: View {
                     case .vertical:
                         let shift = Double((dy - (verticalBase ?? 0)) / mainH) * (startHi - startLo)
                         manualLo = startLo + shift; manualHi = startHi + shift
+                    case .free:
+                        rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
+                        let shift = Double(dy / mainH) * (startHi - startLo)
+                        manualLo = startLo + shift; manualHi = startHi + shift
+                        requestHistoryIfNeeded(plotW: plotW)
                     case .none:
                         break
                     }
@@ -199,7 +209,7 @@ struct CandleChart: View {
                 }
             }
             .onEnded { v in
-                if dragKind == .chart && panAxis == .horizontal {
+                if dragKind == .chart && (panAxis == .horizontal || panAxis == .free) {
                     // Inertia: continue with the release speed and decelerate.
                     let velocity = (v.predictedEndTranslation.width - v.translation.width) * 2.5
                     startMomentum(velocity: velocity, plotW: size.width - axisW)
