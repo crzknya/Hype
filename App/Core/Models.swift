@@ -289,7 +289,7 @@ struct FundingEntry: Identifiable, Hashable {
 struct LedgerEntry: Identifiable, Hashable {
     let time: Date
     let type: String
-    /// Signed USD value from the account's point of view (+ in, − out, 0-ish for internal moves).
+    /// Signed USD value from the account's point of view (+ in, − out, 0-ish for ownMove moves).
     let usdc: Double
     let hash: String
     let detail: String
@@ -311,7 +311,7 @@ struct LedgerEntry: Identifiable, Hashable {
         let tokenAmount = d["amount"].double ?? d["usdc"].double ?? 0
         var value = d["usdcValue"].double ?? d["usdc"].double ?? (token == "USDC" ? tokenAmount : 0)
         var det = ""
-        var internal = false
+        var ownMove = false
         var line: String? = token == "USDC" ? nil : "\(Fmt.num(tokenAmount, 6)) \(token)"
 
         func who(_ a: String) -> String {
@@ -336,11 +336,11 @@ struct LedgerEntry: Identifiable, Hashable {
             det = L("Deposit")
         case "accountClassTransfer":
             det = (d["toPerp"].bool ?? false) ? L("Spot → Perps") : L("Perps → Spot")
-            internal = true
+            ownMove = true
         case "internalTransfer", "send", "spotTransfer":
             if from == to && from == me {
                 det = "\(dexName(d["sourceDex"].str)) → \(dexName(d["destinationDex"].str))"
-                internal = true
+                ownMove = true
             } else if LedgerEntry.isSystemAddress(from) && to == me {
                 det = L("From HyperEVM")
             } else if LedgerEntry.isSystemAddress(to) && from == me {
@@ -358,7 +358,7 @@ struct LedgerEntry: Identifiable, Hashable {
         case "vaultWithdraw": det = L("Vault withdrawal"); value = abs(d["netWithdrawnUsd"].double ?? d["usdc"].double ?? value)
         case "liquidation": det = L("Liquidation"); value = -abs(d["accountValue"].double ?? value)
         case "accountActivationGas": det = L("Account activation fee"); value = -abs(value)
-        case "cStakingTransfer": det = (d["isDeposit"].bool ?? false) ? L("To staking") : L("From staking"); internal = true
+        case "cStakingTransfer": det = (d["isDeposit"].bool ?? false) ? L("To staking") : L("From staking"); ownMove = true
         case "rewardsClaim": det = L("Rewards claimed")
         default: det = type
         }
@@ -366,7 +366,7 @@ struct LedgerEntry: Identifiable, Hashable {
         usdc = value
         detail = det
         tokenLine = line
-        isInternal = internal
+        isInternal = ownMove
     }
 
     /// HyperCore ⇄ HyperEVM system addresses (0x20…token index, 0x2222…2222 for HYPE).
