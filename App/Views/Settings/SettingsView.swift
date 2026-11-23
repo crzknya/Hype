@@ -87,6 +87,15 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(L("Performance overlay"), isOn: $model.perfOverlay)
+                    PerfDetails()
+                } header: {
+                    Text(L("Performance"))
+                } footer: {
+                    Text(L("CPU is the app's own load (100% = one core fully busy). Thermal state is the whole iPhone's. Leave the overlay off normally: measuring frame rate keeps the display refreshing."))
+                }
+
+                Section {
                     VStack(alignment: .leading) {
                         Text(L("Market order slippage: {0}", Fmt.pct(model.slippage, 1, signed: false)))
                         Slider(value: $model.slippage, in: 0.001...0.1, step: 0.001)
@@ -443,5 +452,43 @@ struct SocketRatesRow: View {
                     text = line
                 }
             }
+    }
+}
+
+/// Floating CPU / memory / FPS / thermal readout.
+struct PerfOverlay: View {
+    @State private var perf = PerfMonitor.shared
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text("CPU \(Int(perf.cpu))% · \(Int(perf.memoryMB)) MB")
+            Text("\(perf.fps) fps · \(perf.thermalTitle)")
+            Text(L("chart {0}/s · ws {1}/s", perf.chartDrawsPerSec, perf.messagesPerSec))
+        }
+        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+        .foregroundStyle(perf.thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue || perf.cpu > 60 ? Color.hlRed : Color.hlInk)
+        .padding(.horizontal, 6).padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .onAppear { perf.start() }
+        .onDisappear { perf.stop() }
+    }
+}
+
+/// Live numbers in Settings (sampled only while this screen is open).
+struct PerfDetails: View {
+    @State private var perf = PerfMonitor.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent(L("CPU (app)"), value: "\(Int(perf.cpu))%")
+            LabeledContent(L("Memory"), value: "\(Int(perf.memoryMB)) MB")
+            LabeledContent(L("Thermal state"), value: perf.thermalTitle)
+            LabeledContent(L("Frame rate"), value: "\(perf.fps) fps")
+            LabeledContent(L("Chart redraws"), value: "\(perf.chartDrawsPerSec)/s")
+            LabeledContent(L("WebSocket messages"), value: "\(perf.messagesPerSec)/s")
+        }
+        .font(.caption)
+        .onAppear { perf.start() }
+        .onDisappear { perf.stop() }
     }
 }

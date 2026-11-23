@@ -39,6 +39,15 @@ struct RootView: View {
                     .zIndex(10)
             }
 
+            if model.perfOverlay {
+                PerfOverlay()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 8)
+                    .padding(.top, 48)
+                    .allowsHitTesting(false)
+                    .zIndex(15)
+            }
+
             if model.locked {
                 LockView().zIndex(20)
             }

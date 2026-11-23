@@ -311,6 +311,7 @@ struct CandleChart: View {
     // MARK: Drawing
 
     private func draw(ctx: inout GraphicsContext, size: CGSize, now: Date) {
+        PerfMonitor.chartDraws += 1
         let L0 = layout(size)
         let plotW = L0.plotW
         let r = visibleRange(plotW: plotW)

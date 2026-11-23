@@ -28,6 +28,20 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "CPU (app)": "CPU (приложение)",
+        "CPU is the app's own load (100% = one core fully busy). Thermal state is the whole iPhone's. Leave the overlay off normally: measuring frame rate keeps the display refreshing.": "CPU — нагрузка самого приложения (100% = одно ядро полностью занято). Тепловое состояние — всего iPhone. Обычно держите оверлей выключенным: измерение частоты кадров заставляет экран постоянно обновляться.",
+        "Chart redraws": "Перерисовки графика",
+        "Frame rate": "Частота кадров",
+        "Memory": "Память",
+        "Performance": "Производительность",
+        "Performance overlay": "Оверлей производительности",
+        "Thermal state": "Тепловое состояние",
+        "WebSocket messages": "Сообщения WebSocket",
+        "chart {0}/s · ws {1}/s": "график {0}/с · ws {1}/с",
+        "critical": "критично",
+        "hot": "горячо",
+        "normal": "норма",
+        "warm": "тепло",
         "Account activation fee": "Комиссия активации аккаунта",
         "From HyperEVM": "Из HyperEVM",
         "From staking": "Из стейкинга",

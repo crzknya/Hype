@@ -37,6 +37,8 @@ final class AppModel {
     var confirmOrders = true { didSet { save() } }
     var haptics = true { didSet { save() } }
     /// Fill notifications: in-app toast, sound, and a local notification while the app is in the background.
+    /// Small CPU / memory / FPS overlay for diagnosing heat and battery use.
+    var perfOverlay = false
     var fillToasts = true { didSet { save() } }
     var fillSound = false { didSet { save() } }
     var backgroundFillAlerts = false { didSet { save() } }
@@ -441,6 +443,55 @@ final class AppModel {
         func parse(_ a: JSON) -> [BookLevel] { a.array.map { BookLevel(px: $0["px"].dbl, sz: $0["sz"].dbl, n: $0["n"].int ?? 0) } }
         book = OrderBook(bids: parse(lv[0]), asks: parse(lv[1]), time: Date(timeIntervalSince1970: data["time"].dbl / 1000))
         bookReceivedAt = Date()
+    }
+
+    /// Indicators are recomputed only when the candles or settings change, not on every view refresh.
+    @ObservationIgnored private var layersCache: (key: String, layers: ChartLayers)?
+
+    func chartLayers() -> ChartLayers {
+        let last = candles.last
+        let key = "\(candles.count)|\(candles.first?.t ?? 0)|\(last?.t ?? 0)|\(last?.c ?? 0)|\(last?.h ?? 0)|\(last?.l ?? 0)|\(last?.v ?? 0)|\(interval.rawValue)|\(indicators.hashValue)"
+        if let c = layersCache, c.key == key { return c.layers }
+        let layers = ChartLayers.build(candles, configs: indicators, interval: interval)
+        layersCache = (key, layers)
+        return layers
+    }
+
+    @ObservationIgnored private var pendingBbo: (coin: String, value: BestBidAsk)?
+    @ObservationIgnored private var bboFlushScheduled = false
+    @ObservationIgnored private var pendingCandles: [Double: Candle] = [:]
+    @ObservationIgnored private var pendingCandlesKey = ""
+    @ObservationIgnored private var candleFlushScheduled = false
+
+    private func scheduleBboFlush() {
+        guard !bboFlushScheduled else { return }
+        bboFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self else { return }
+            self.bboFlushScheduled = false
+            if let p = self.pendingBbo, p.coin == self.selectedCoin, p.value != self.bbo { self.bbo = p.value }
+            self.pendingBbo = nil
+        }
+    }
+
+    private func scheduleCandleFlush() {
+        guard !candleFlushScheduled else { return }
+        candleFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self else { return }
+            self.candleFlushScheduled = false
+            let batch = self.pendingCandles.values.sorted { $0.t < $1.t }
+            self.pendingCandles = [:]
+            guard self.pendingCandlesKey == "\(self.selectedCoin)|\(self.interval.rawValue)", !batch.isEmpty else { return }
+            var list = self.candles
+            for c in batch {
+                if let last = list.last, last.t == c.t { list[list.count - 1] = c }
+                else if list.last.map({ c.t > $0.t }) ?? true { list.append(c) }
+            }
+            self.candles = list
+        }
     }
 
     private func scheduleMidsFlush() {
@@ -1021,6 +1072,7 @@ final class AppModel {
     // MARK: WebSocket
 
     private func handle(channel: String, data: JSON) {
+        PerfMonitor.messages += 1
         switch channel {
         case "fastAssetCtxs":
             // {coin: {markPx, midPx}}; later messages may carry only changed coins.
@@ -1037,7 +1089,11 @@ final class AppModel {
             // always comes from the latest consistent l2Book snapshot (patching it made levels vanish).
             guard data["coin"].str == selectedCoin else { return }
             let pair = data["bbo"]
-            if let b = pair[0]["px"].double, let a = pair[1]["px"].double, a >= b { bbo = BestBidAsk(bid: b, ask: a) }
+            // Up to ~50 updates/s: apply at most 10 times a second (each update redraws the trade screen).
+            if let b = pair[0]["px"].double, let a = pair[1]["px"].double, a >= b {
+                pendingBbo = (selectedCoin, BestBidAsk(bid: b, ask: a))
+                scheduleBboFlush()
+            }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
             applyBookSnapshot(data, fromSocket: true)
@@ -1052,9 +1108,12 @@ final class AppModel {
             trades = Array((fresh + trades).prefix(500))
         case "candle":
             guard data["s"].str == selectedCoin, data["i"].str == interval.rawValue else { return }
+            // One update per trade: batch them (4 per second) so the chart and indicators are not
+            // recomputed on every trade.
             let c = Candle(data)
-            if let last = candles.last, last.t == c.t { candles[candles.count - 1] = c }
-            else if candles.last.map({ c.t > $0.t }) ?? true { candles.append(c) }
+            pendingCandles[c.t] = c
+            pendingCandlesKey = "\(selectedCoin)|\(interval.rawValue)"
+            scheduleCandleFlush()
         case "activeAssetCtx", "activeSpotAssetCtx":
             let coin = data["coin"].str
             guard var m = marketById[coin] else { return }

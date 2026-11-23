@@ -8,7 +8,7 @@ struct PriceChartView: View {
     var body: some View {
         ZStack {
             CandleChart(candles: model.candles, lines: model.chartLines(market),
-                        layers: ChartLayers.build(model.candles, configs: model.indicators, interval: model.interval),
+                        layers: model.chartLayers(),
                         decimals: nil, showVolume: model.showVolume,
                         logScale: model.logScale, intervalSeconds: model.interval.seconds,
                         onNeedHistory: { Task { await model.loadOlderCandles() } },
