@@ -94,6 +94,13 @@ struct TradeView: View {
             }
             .keyboardDoneToolbar()
             .sheet(isPresented: $showPicker) { MarketPickerSheet() }
+            .onChange(of: model.tradeTabReselected) { _, _ in
+                switch model.tradeLayout {
+                case .tabs: withAnimation { page = page == 0 ? 1 : 0 }
+                case .sheet: orderSheet = orderSheet == nil ? OrderSheetRequest(isBuy: lastSide) : nil
+                case .classic: break
+                }
+            }
             .sheet(item: $orderSheet) { req in
                 if let m = model.selectedMarket { OrderSheet(market: m, isBuy: req.isBuy) }
             }

@@ -136,6 +136,8 @@ final class AppModel {
 
     // MARK: UI
     var tab: AppTab = .markets
+    /// Bumped when the user taps the Trade tab while it is already open (switches Chart ⇄ Order).
+    var tradeTabReselected = 0
     var toast: Toast?
     var locked = false
     var pendingPrice: Double?      // price tapped in order book -> order form

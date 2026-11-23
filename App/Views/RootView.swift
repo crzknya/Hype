@@ -6,7 +6,11 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         ZStack(alignment: .top) {
-            TabView(selection: $model.tab) {
+            // Tapping the open Trade tab again toggles Chart ⇄ Order (the binding is set on every tap).
+            TabView(selection: Binding(get: { model.tab }, set: { new in
+                if new == model.tab && new == .trade { model.tradeTabReselected += 1 }
+                model.tab = new
+            })) {
                 MarketsView()
                     .tabItem { Label(L("Markets"), systemImage: "chart.bar.xaxis") }
                     .tag(AppTab.markets)
