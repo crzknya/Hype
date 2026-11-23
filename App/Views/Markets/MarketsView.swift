@@ -121,7 +121,9 @@ struct MarketsView: View {
         case .name: sorted = base.sorted { $0.name > $1.name }
         case .price: sorted = base.sorted { $0.markPx < $1.markPx }
         }
-        return descending ? sorted.reversed() : sorted
+        let ordered = descending ? Array(sorted.reversed()) : sorted
+        // Favorites first, each group keeping the chosen sort order.
+        return ordered.filter { model.favorites.contains($0.id) } + ordered.filter { !model.favorites.contains($0.id) }
     }
 }
 
@@ -206,12 +208,13 @@ struct MarketPickerSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
-    @State private var kind = 0   // 0 perps, 1 HIP-3, 2 spot
+    @AppStorage("marketPickerKind") private var kind = 0   // 3 favorites, 0 perps, 1 HIP-3, 2 spot
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("", selection: $kind) {
+                    Text("★").tag(3)
                     Text(L("Perps")).tag(0)
                     Text("HIP-3").tag(1)
                     Text(L("Spot")).tag(2)
@@ -233,7 +236,11 @@ struct MarketPickerSheet: View {
 
     var list: [Market] {
         let q = search.uppercased()
-        let source: [Market] = q.isEmpty ? [model.perps, model.hip3, model.spots][kind] : model.perps + model.hip3 + model.spots
+        let all: [Market] = model.perps + model.hip3 + model.spots
+        let source: [Market]
+        if !q.isEmpty { source = all }
+        else if kind == 3 { source = model.favorites.compactMap { model.marketById[$0] } }
+        else { source = [model.perps, model.hip3, model.spots][min(max(kind, 0), 2)] }
         let base: [Market] = source.map { model.marketById[$0.id] ?? $0 }
         let filtered: [Market] = q.isEmpty ? base.filter { kind != 2 || $0.dayNtlVlm > 0 } : base.filter { $0.name.uppercased().contains(q) || $0.id.uppercased().contains(q) }
         let favs = filtered.filter { model.favorites.contains($0.id) }.sorted { $0.dayNtlVlm > $1.dayNtlVlm }
