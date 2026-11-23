@@ -49,6 +49,10 @@ final class AppModel {
     var indicators: [IndicatorConfig] = IndicatorConfig.defaults { didSet { save() } }
     var showVolume = true { didSet { save() } }
     var chartHeight: Double = 250 { didSet { save() } }
+    /// Chart bar width (zoom), kept when switching markets or intervals; stored on its own key (changes often).
+    @ObservationIgnored var chartSpacing: CGFloat = CGFloat(UserDefaults.standard.object(forKey: "chartSpacing") as? Double ?? 6) {
+        didSet { UserDefaults.standard.set(Double(chartSpacing), forKey: "chartSpacing") }
+    }
     var logScale = false { didSet { save() } }
     var tradeLayout: TradeLayout = .sheet { didSet { save() } }
     var lastOrderType = "market" { didSet { save() } }

@@ -32,6 +32,9 @@ struct CandleChart: View {
     var intervalSeconds: Double = 3600
     /// Called when the view nears the oldest loaded candle.
     var onNeedHistory: (() -> Void)? = nil
+    /// Bar width to start with (kept across markets and intervals, as TradingView) and its change callback.
+    var initialSpacing: CGFloat? = nil
+    var onSpacingChange: ((CGFloat) -> Void)? = nil
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -138,6 +141,8 @@ struct CandleChart: View {
                 rightOffset -= CGFloat(added)
             }
             .onChange(of: logScale) { _, _ in autoScale = true }
+            .onAppear { if let s0 = initialSpacing { spacing = min(maxSpacing, max(minSpacing, s0)) } }
+            .onChange(of: spacing) { _, s1 in onSpacingChange?(s1) }
         }
     }
 

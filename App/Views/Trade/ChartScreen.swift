@@ -11,7 +11,9 @@ struct PriceChartView: View {
                         layers: ChartLayers.build(model.candles, configs: model.indicators, interval: model.interval),
                         decimals: nil, showVolume: model.showVolume,
                         logScale: model.logScale, intervalSeconds: model.interval.seconds,
-                        onNeedHistory: { Task { await model.loadOlderCandles() } })
+                        onNeedHistory: { Task { await model.loadOlderCandles() } },
+                        initialSpacing: model.chartSpacing,
+                        onSpacingChange: { model.chartSpacing = $0 })
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
         }
