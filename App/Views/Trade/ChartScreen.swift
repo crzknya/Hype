@@ -15,7 +15,8 @@ struct PriceChartView: View {
                         onNeedHistory: { Task { await model.loadOlderCandles() } },
                         initialSpacing: model.chartSpacing,
                         onSpacingChange: { model.chartSpacing = $0 },
-                        verticalSwipeScrollsPage: inScrollingPage)
+                        verticalSwipeScrollsPage: inScrollingPage,
+                        clockInterval: model.energySaving ? 5 : 1)
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
         }

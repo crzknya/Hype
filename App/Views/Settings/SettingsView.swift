@@ -87,12 +87,13 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(L("Energy saving (experimental)"), isOn: $model.energySaving)
                     Toggle(L("Performance overlay"), isOn: $model.perfOverlay)
                     PerfDetails()
                 } header: {
                     Text(L("Performance"))
                 } footer: {
-                    Text(L("CPU is the app's own load (100% = one core fully busy). Thermal state is the whole iPhone's. Leave the overlay off normally: measuring frame rate keeps the display refreshing."))
+                    Text(L("Energy saving: the order book, trades and candles stream only while the Trade tab is open; prices, the book and trades refresh about once a second, the chart countdown every 5 s. Orders, positions and fills stay live.") + "\n\n" + L("CPU is the app's own load (100% = one core fully busy). Thermal state is the whole iPhone's. Leave the overlay off normally: measuring frame rate keeps the display refreshing."))
                 }
 
                 Section {
@@ -120,7 +121,7 @@ struct SettingsView: View {
                     Text(L("A market order on Hyperliquid is an IOC limit at the best price ± slippage.") + " " + L("Closing positions uses at least 8%, market TP/SL 10%."))
                 }
 
-                Section(L("Security")) {
+                Section {
                     Toggle(L("{0} lock", Biometrics.name), isOn: Binding(
                         get: { model.biometricLock },
                         set: { v in
@@ -131,6 +132,11 @@ struct SettingsView: View {
                             }
                         }))
                     .disabled(!Biometrics.available)
+                    Toggle(L("Certificate pinning"), isOn: $model.certPinning)
+                } header: {
+                    Text(L("Security"))
+                } footer: {
+                    Text(L("Connections to api.hyperliquid.xyz are accepted only with a certificate from the CAs Hyperliquid uses, so a certificate installed on the phone or by the network cannot intercept them. Turn off only if the app cannot connect on a network you trust."))
                 }
 
                 Section(L("About")) {

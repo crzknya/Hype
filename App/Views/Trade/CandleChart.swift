@@ -39,6 +39,8 @@ struct CandleChart: View {
     var onSpacingChange: ((CGFloat) -> Void)? = nil
     /// Inside a scrolling page: with auto-scale on, a vertical swipe scrolls the page instead of the price range.
     var verticalSwipeScrollsPage = false
+    /// Seconds between redraws for the candle-close countdown (longer in energy saving).
+    var clockInterval: Double = 1
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -76,8 +78,8 @@ struct CandleChart: View {
             let size = geo.size
             let mainH = layout(size).mainH
             ZStack(alignment: .topLeading) {
-                // Redraw every second for the candle-close countdown.
-                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                // Redraw every second (every few in energy saving) for the candle-close countdown.
+                TimelineView(.periodic(from: .now, by: clockInterval)) { timeline in
                     Canvas { ctx, sz in draw(ctx: &ctx, size: sz, now: timeline.date) }
                 }
                 // No cross-fade between redraws (it made the countdown text look doubled).

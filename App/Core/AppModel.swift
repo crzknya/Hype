@@ -39,6 +39,15 @@ final class AppModel {
     /// Fill notifications: in-app toast, sound, and a local notification while the app is in the background.
     /// Small CPU / memory / FPS overlay for diagnosing heat and battery use.
     var perfOverlay = false
+    /// Experimental energy saving: market streams only while the Trade tab is open, slower UI updates.
+    var energySaving = false { didSet { save(); if oldValue != energySaving { updateMarketStreams() } } }
+    /// Certificate pinning for the Hyperliquid API (Settings → Security); read by the session delegate.
+    var certPinning = CertificatePinning.enabled {
+        didSet {
+            UserDefaults.standard.set(certPinning, forKey: CertificatePinning.enabledKey)
+            if oldValue != certPinning { reconnectSocket() }
+        }
+    }
     var fillToasts = true { didSet { save() } }
     var fillSound = false { didSet { save() } }
     var backgroundFillAlerts = false { didSet { save() } }
@@ -141,7 +150,7 @@ final class AppModel {
     var stakedHype: Double = 0
 
     // MARK: UI
-    var tab: AppTab = .markets
+    var tab: AppTab = .markets { didSet { if oldValue != tab { updateMarketStreams() } } }
     /// Bumped when the user taps the Trade tab while it is already open (switches Chart ⇄ Order).
     var tradeTabReselected = 0
     var toast: Toast?
@@ -176,6 +185,7 @@ final class AppModel {
         fillSound = d.bool(forKey: "fillSound")
         backgroundFillAlerts = d.bool(forKey: "backgroundFillAlerts")
         biometricLock = d.bool(forKey: "biometricLock")
+        energySaving = d.bool(forKey: "energySaving")
         if d.object(forKey: "showChart") != nil { showChart = d.bool(forKey: "showChart") }
         minTradeUsd = d.double(forKey: "minTradeUsd")
         if let data = d.data(forKey: "indicators"), let ind = try? JSONDecoder().decode([IndicatorConfig].self, from: data) { indicators = ind }
@@ -198,7 +208,9 @@ final class AppModel {
             self?.wsConnected = c
             if c { self?.wsError = nil }
         }
-        socket.onError = { [weak self] e in self?.wsError = e }
+        socket.onError = { [weak self] e in
+            self?.wsError = CertificatePinning.failedRecently ? CertificatePinning.failureMessage : e
+        }
     }
 
     @ObservationIgnored private var loading = true
@@ -217,6 +229,7 @@ final class AppModel {
         d.set(fillSound, forKey: "fillSound")
         d.set(backgroundFillAlerts, forKey: "backgroundFillAlerts")
         d.set(biometricLock, forKey: "biometricLock")
+        d.set(energySaving, forKey: "energySaving")
         d.set(showChart, forKey: "showChart")
         d.set(selectedCoin, forKey: "selectedCoin")
         d.set(interval.rawValue, forKey: "interval")
@@ -305,6 +318,7 @@ final class AppModel {
         // Prices for every market (perps, HIP-3, spot) once a second — the stream the web app uses;
         // the documented allMids stream only pushes every ~10 s.
         socket.subscribe(.map([("type", .str("fastAssetCtxs"))]))
+        marketStreamsPaused = energySaving && tab != .trade
         subscribeCoin(selectedCoin)
         subscribeUser()
         loops.append(Task { [weak self] in
@@ -417,14 +431,19 @@ final class AppModel {
         }
     }
 
-    private func coinSubs(_ coin: String) -> [MP] {
-        var subs: [MP] = [
+    /// Book, trades, candles and best bid/ask: only needed on the Trade tab (paused there in energy saving).
+    private func marketSubs(_ coin: String) -> [MP] {
+        [
             l2Sub(coin, bookSigFigs),
             .map([("type", .str("trades")), ("coin", .str(coin))]),
             .map([("type", .str("candle")), ("coin", .str(coin)), ("interval", .str(interval.rawValue))]),
-            .map([("type", .str("activeAssetCtx")), ("coin", .str(coin))]),
             .map([("type", .str("bbo")), ("coin", .str(coin))]),
         ]
+    }
+
+    private func coinSubs(_ coin: String) -> [MP] {
+        var subs: [MP] = marketStreamsPaused ? [] : marketSubs(coin)
+        subs.append(.map([("type", .str("activeAssetCtx")), ("coin", .str(coin))]))
         if let u = userAddress, marketById[coin]?.isSpot != true {
             subs.append(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(coin))]))
         }
@@ -467,7 +486,7 @@ final class AppModel {
         guard !bboFlushScheduled else { return }
         bboFlushScheduled = true
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: self?.batchDelay(100, saving: 500) ?? .milliseconds(100))
             guard let self else { return }
             self.bboFlushScheduled = false
             if let p = self.pendingBbo, p.coin == self.selectedCoin, p.value != self.bbo { self.bbo = p.value }
@@ -479,7 +498,7 @@ final class AppModel {
         guard !candleFlushScheduled else { return }
         candleFlushScheduled = true
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: self?.batchDelay(250, saving: 1000) ?? .milliseconds(250))
             guard let self else { return }
             self.candleFlushScheduled = false
             let batch = self.pendingCandles.values.sorted { $0.t < $1.t }
@@ -498,7 +517,7 @@ final class AppModel {
         guard !midsFlushScheduled else { return }
         midsFlushScheduled = true
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: self?.batchDelay(300, saving: 1000) ?? .milliseconds(300))
             self?.flushMids()
         }
     }
@@ -542,6 +561,71 @@ final class AppModel {
 
     private func subscribeCoin(_ coin: String) { coinSubs(coin).forEach { socket.subscribe($0) } }
 
+    // MARK: Energy saving
+
+    @ObservationIgnored private var marketStreamsPaused = false
+    @ObservationIgnored private var pendingBook: JSON?
+    @ObservationIgnored private var bookFlushScheduled = false
+    @ObservationIgnored private var pendingTrades: [PublicTrade] = []
+    @ObservationIgnored private var tradesFlushScheduled = false
+
+    /// UI batching interval: normal, or slower in energy saving.
+    private func batchDelay(_ normalMs: Int, saving savingMs: Int) -> Duration {
+        .milliseconds(energySaving ? savingMs : normalMs)
+    }
+
+    /// In energy saving the book / trades / candles / bbo streams run only while the Trade tab is open;
+    /// coming back resubscribes (the book and trades arrive as fresh snapshots) and reloads candles.
+    private func updateMarketStreams() {
+        guard !loading else { return }
+        let pause = energySaving && tab != .trade
+        guard pause != marketStreamsPaused else { return }
+        marketStreamsPaused = pause
+        if pause {
+            marketSubs(selectedCoin).forEach { socket.unsubscribe($0) }
+        } else {
+            marketSubs(selectedCoin).forEach { socket.subscribe($0) }
+            Task { await loadCandles() }
+        }
+    }
+
+    /// Energy saving: the book is redrawn at most once a second (normally on every snapshot, ~2/s).
+    private func scheduleBookFlush(_ data: JSON) {
+        pendingBook = data
+        guard !bookFlushScheduled else { return }
+        bookFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self else { return }
+            self.bookFlushScheduled = false
+            if let b = self.pendingBook, b["coin"].str == self.selectedCoin { self.applyBookSnapshot(b, fromSocket: true) }
+            self.pendingBook = nil
+        }
+    }
+
+    private func addTrades(_ new: [PublicTrade]) {
+        var seen = Set(trades.map(\.tid))
+        let fresh = new.reversed().filter { seen.insert($0.tid).inserted }
+        guard !fresh.isEmpty else { return }
+        trades = Array((fresh + trades).prefix(500))
+    }
+
+    /// Energy saving: trades are added once a second instead of on every message.
+    private func scheduleTradesFlush(_ new: [PublicTrade]) {
+        pendingTrades.append(contentsOf: new)
+        guard !tradesFlushScheduled else { return }
+        tradesFlushScheduled = true
+        let coin = selectedCoin
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self else { return }
+            self.tradesFlushScheduled = false
+            let batch = self.pendingTrades
+            self.pendingTrades = []
+            if coin == self.selectedCoin { self.addTrades(batch) }
+        }
+    }
+
     private func coinChanged(old: String) {
         guard !loading else { return }
         let oldInterval = interval
@@ -560,7 +644,9 @@ final class AppModel {
     private func intervalChanged(old: CandleInterval) {
         guard !loading else { return }
         socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(old.rawValue))]))
-        socket.subscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(interval.rawValue))]))
+        if !marketStreamsPaused {
+            socket.subscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(interval.rawValue))]))
+        }
         candles = []
         Task { await loadCandles() }
     }
@@ -568,7 +654,7 @@ final class AppModel {
     private func bookAggChanged(old: Int?) {
         socket.unsubscribe(l2Sub(selectedCoin, old))
         book = OrderBook()
-        socket.subscribe(l2Sub(selectedCoin, bookSigFigs))
+        if !marketStreamsPaused { socket.subscribe(l2Sub(selectedCoin, bookSigFigs)) }
     }
 
     func toggleIntervalVisibility(_ iv: CandleInterval) {
@@ -1096,16 +1182,14 @@ final class AppModel {
             }
         case "l2Book":
             guard data["coin"].str == selectedCoin else { return }
-            applyBookSnapshot(data, fromSocket: true)
+            if energySaving { scheduleBookFlush(data) } else { applyBookSnapshot(data, fromSocket: true) }
         case "trades":
             let new = data.array.filter { $0["coin"].str == selectedCoin }.map {
                 PublicTrade(px: $0["px"].dbl, sz: $0["sz"].dbl, isBuy: $0["side"].str == "B",
                             time: Date(timeIntervalSince1970: $0["time"].dbl / 1000), tid: $0["tid"].int64 ?? Int64.random(in: 0...Int64.max))
             }
             guard !new.isEmpty else { return }
-            var seen = Set(trades.map(\.tid))
-            let fresh = new.reversed().filter { seen.insert($0.tid).inserted }
-            trades = Array((fresh + trades).prefix(500))
+            if energySaving { scheduleTradesFlush(new) } else { addTrades(new) }
         case "candle":
             guard data["s"].str == selectedCoin, data["i"].str == interval.rawValue else { return }
             // One update per trade: batch them (4 per second) so the chart and indicators are not

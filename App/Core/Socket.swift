@@ -10,7 +10,7 @@ final class HLSocket {
 
     private var url: URL
     private var task: URLSessionWebSocketTask?
-    private let session = URLSession(configuration: .default)
+    private let session = URLSession(configuration: .default, delegate: PinnedSessionDelegate.shared, delegateQueue: nil)
     private var subs: [String: MP] = [:]     // key -> subscription object
     private var pingTimer: Timer?
     private var reconnectDelay: TimeInterval = 1

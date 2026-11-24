@@ -298,6 +298,7 @@ struct UnitDepositView: View {
     @Environment(AppModel.self) private var model
     @State private var choice = UnitAsset.all[0]
     @State private var address: String?
+    @State private var guardians = 0
     @State private var error: String?
     @State private var loading = false
 
@@ -321,6 +322,9 @@ struct UnitDepositView: View {
                         UIPasteboard.general.string = address
                         model.show(.success, L("Address copied"))
                     } label: { Label(L("Copy address"), systemImage: "doc.on.doc") }
+                    Label(L("Verified by {0} of {1} Unit guardians", guardians, UnitGuardians.mainnet.count),
+                          systemImage: "checkmark.seal.fill")
+                        .font(.caption).foregroundStyle(Color.hlGreen)
                     Link(destination: URL(string: "https://app.hyperunit.xyz")!) {
                         Label(L("Verify the address and minimums on Unit"), systemImage: "checkmark.shield")
                     }
@@ -351,6 +355,13 @@ struct UnitDepositView: View {
             guard choice.isValidAddress(a) else {
                 throw HLError(L("Unit returned an address in an unexpected format for {0}; it is not shown. Use app.hyperliquid.xyz instead.", choice.chainTitle))
             }
+            // The address must be signed by at least 2 of Unit's 3 guardians for this account and chain.
+            let n = UnitGuardians.verifiedCount(signatures: j["signatures"].object, chain: choice.chain,
+                                                asset: choice.asset, destination: user, address: a)
+            guard n >= UnitGuardians.threshold else {
+                throw HLError(L("The deposit address from Unit could not be verified ({0} of {1} guardian signatures valid), so it is not shown. Do not send funds; use app.hyperunit.xyz instead.", n, UnitGuardians.mainnet.count))
+            }
+            guardians = n
             address = a
         } catch { self.error = error.localizedDescription }
     }

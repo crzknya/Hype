@@ -28,6 +28,13 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Certificate pinning": "Проверка сертификата (пиннинг)",
+        "Connections to api.hyperliquid.xyz are accepted only with a certificate from the CAs Hyperliquid uses, so a certificate installed on the phone or by the network cannot intercept them. Turn off only if the app cannot connect on a network you trust.": "Соединения с api.hyperliquid.xyz принимаются только с сертификатом от центров сертификации, которые использует Hyperliquid, поэтому сертификат, установленный на телефон или подставленный сетью, не сможет их перехватить. Выключайте, только если приложение не подключается в сети, которой вы доверяете.",
+        "Energy saving (experimental)": "Энергосбережение (эксперимент)",
+        "Energy saving: the order book, trades and candles stream only while the Trade tab is open; prices, the book and trades refresh about once a second, the chart countdown every 5 s. Orders, positions and fills stay live.": "Энергосбережение: стакан, сделки и свечи передаются только пока открыта вкладка Trade; цены, стакан и сделки обновляются примерно раз в секунду, таймер свечи на чарте — раз в 5 с. Ордера, позиции и исполнения остаются живыми.",
+        "Secure connection check failed: the server's certificate is not one Hyperliquid uses. Someone may be intercepting the connection (public Wi-Fi, a VPN or a profile installed on the phone). Switch networks. If you trust this network, the check can be turned off in Settings → Security.": "Проверка защищённого соединения не пройдена: сертификат сервера не из тех, что использует Hyperliquid. Возможно, соединение перехватывают (публичный Wi-Fi, VPN или профиль, установленный на телефон). Смените сеть. Если вы доверяете этой сети, проверку можно выключить в Настройки → Безопасность.",
+        "The deposit address from Unit could not be verified ({0} of {1} guardian signatures valid), so it is not shown. Do not send funds; use app.hyperunit.xyz instead.": "Адрес депозита от Unit не прошёл проверку (действительных подписей хранителей: {0} из {1}), поэтому он не показан. Не отправляйте средства; используйте app.hyperunit.xyz.",
+        "Verified by {0} of {1} Unit guardians": "Подтверждён {0} из {1} хранителей Unit",
         "{0} fills": "{0} исп.",
         "Fee {0}": "Комиссия {0}",
         "CPU (app)": "CPU (приложение)",

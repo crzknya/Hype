@@ -27,7 +27,7 @@ final class HLAPI {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 15
         cfg.waitsForConnectivity = false
-        session = URLSession(configuration: cfg)
+        session = URLSession(configuration: cfg, delegate: PinnedSessionDelegate.shared, delegateQueue: nil)
     }
 
     func info(_ body: MP) async throws -> JSON {
@@ -53,7 +53,14 @@ final class HLAPI {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = Data(body.utf8)
-        let (data, resp) = try await session.data(for: req)
+        let result: (Data, URLResponse)
+        do {
+            result = try await session.data(for: req)
+        } catch {
+            if CertificatePinning.failedRecently { throw HLError(CertificatePinning.failureMessage) }
+            throw error
+        }
+        let (data, resp) = result
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             let text = String(data: data, encoding: .utf8) ?? ""
