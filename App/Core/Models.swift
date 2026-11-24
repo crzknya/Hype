@@ -231,6 +231,7 @@ struct Fill: Identifiable, Hashable {
     let tid: Int64
     let hash: String
     let crossed: Bool
+    let cloid: String?
     var id: String { "\(tid)-\(oid)-\(hash.suffix(8))" }
 
     init(_ j: JSON) {
@@ -243,6 +244,7 @@ struct Fill: Identifiable, Hashable {
         closedPnl = j["closedPnl"].dbl
         fee = j["fee"].dbl
         feeToken = j["feeToken"].string ?? "USDC"
+        cloid = j["cloid"].string
         oid = j["oid"].int64 ?? 0
         tid = j["tid"].int64 ?? 0
         hash = j["hash"].str
