@@ -9,24 +9,32 @@ struct MarketDataTabs: View {
 
     enum Tab: Hashable { case book, trades, positions, orders }
 
+    @Namespace private var underline
+
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        chip(L("Book"), .book)
-                        chip(L("Trades"), .trades)
-                        chip(L("Positions {0}", model.positions.count), .positions)
-                        chip(L("Orders {0}", model.openOrders.count), .orders)
-                    }
+            HStack(alignment: .center, spacing: 0) {
+                HStack(spacing: 18) {
+                    tabButton(L("Book"), nil, .book)
+                    tabButton(L("Trades"), nil, .trades)
+                    tabButton(L("Positions"), model.positions.count, .positions)
+                    tabButton(L("Orders"), model.openOrders.count, .orders)
                 }
+                Spacer(minLength: 8)
                 if tab == .trades { TradeFilterMenu() }
                 if tab == .book || tab == .trades {
                     Button { onExpand(tab == .book ? 0 : 1) } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 12))
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 30, height: 28)
+                            .contentShape(Rectangle())
                     }
                     .foregroundStyle(Color.hlMuted)
                 }
+            }
+            .padding(.horizontal, 4)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.hlMuted.opacity(0.15)).frame(height: 0.5)
             }
             switch tab {
             case .book: SideBySideBook(market: market)
@@ -37,14 +45,32 @@ struct MarketDataTabs: View {
         }
     }
 
-    private func chip(_ title: String, _ t: Tab) -> some View {
-        Button { tab = t } label: {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(tab == t ? Color.hlAccent.opacity(0.2) : Color.hlCard, in: Capsule())
-                .foregroundStyle(tab == t ? Color.hlAccent : .primary)
+    /// Text tab with an accent underline (as the web and TradingView), the count as a small badge.
+    private func tabButton(_ title: String, _ count: Int?, _ t: Tab) -> some View {
+        let selected = tab == t
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) { tab = t }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background((selected ? Color.hlAccent : Color.hlMuted).opacity(0.2), in: Capsule())
+                }
+            }
+            .lineLimit(1)
+            .foregroundStyle(selected ? Color.primary : Color.hlMuted)
+            .padding(.vertical, 7)
+            .overlay(alignment: .bottom) {
+                if selected {
+                    Capsule().fill(Color.hlAccent).frame(height: 2)
+                        .matchedGeometryEffect(id: "underline", in: underline)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -81,7 +107,8 @@ struct SideBySideBook: View {
                 }
                 Spacer()
                 if let mid = model.topMid {
-                    Text(Fmt.price(mid, decimals: dec)).font(.system(size: 14, weight: .bold, design: .monospaced))
+                    Text(Fmt.price(mid, decimals: dec)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
                     if let s = model.topSpread, mid > 0 {
                         Text(Fmt.pct(s / mid, 3, signed: false)).font(.system(size: 10)).foregroundStyle(Color.hlMuted)
                     }

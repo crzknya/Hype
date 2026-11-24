@@ -222,8 +222,8 @@ struct TradeView: View {
     /// Drag to change the chart height (persisted).
     private var resizeHandle: some View {
         ZStack {
-            Color.clear.frame(height: 22)
-            Capsule().fill(Color.hlMuted.opacity(0.5)).frame(width: 44, height: 5)
+            Color.clear.frame(height: 16)
+            Capsule().fill(Color.hlMuted.opacity(0.28)).frame(width: 36, height: 4)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
