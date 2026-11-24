@@ -9,18 +9,15 @@ struct MarketDataTabs: View {
 
     enum Tab: Hashable { case book, trades, positions, orders }
 
-    @Namespace private var underline
-
     var body: some View {
         VStack(spacing: 8) {
             HStack(alignment: .center, spacing: 0) {
-                HStack(spacing: 18) {
-                    tabButton(L("Book"), nil, .book)
-                    tabButton(L("Trades"), nil, .trades)
-                    tabButton(L("Positions"), model.positions.count, .positions)
-                    tabButton(L("Orders"), model.openOrders.count, .orders)
-                }
-                Spacer(minLength: 8)
+                UnderlineTabs(items: [
+                    .init(id: Tab.book, title: L("Book")),
+                    .init(id: Tab.trades, title: L("Trades")),
+                    .init(id: Tab.positions, title: L("Positions"), count: model.positions.count),
+                    .init(id: Tab.orders, title: L("Orders"), count: model.openOrders.count),
+                ], selection: $tab)
                 if tab == .trades { TradeFilterMenu() }
                 if tab == .book || tab == .trades {
                     Button { onExpand(tab == .book ? 0 : 1) } label: {
@@ -32,10 +29,6 @@ struct MarketDataTabs: View {
                     .foregroundStyle(Color.hlMuted)
                 }
             }
-            .padding(.horizontal, 4)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.hlMuted.opacity(0.15)).frame(height: 0.5)
-            }
             switch tab {
             case .book: SideBySideBook(market: market)
             case .trades: TradesPanel(market: market, limit: 30, wide: true)
@@ -43,36 +36,6 @@ struct MarketDataTabs: View {
             case .orders: AccountPanel(coin: market.id, fixedTab: 1)
             }
         }
-    }
-
-    /// Text tab with an accent underline (as the web and TradingView), the count as a small badge.
-    private func tabButton(_ title: String, _ count: Int?, _ t: Tab) -> some View {
-        let selected = tab == t
-        return Button {
-            withAnimation(.easeOut(duration: 0.18)) { tab = t }
-        } label: {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 14, weight: selected ? .semibold : .medium))
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background((selected ? Color.hlAccent : Color.hlMuted).opacity(0.2), in: Capsule())
-                }
-            }
-            .lineLimit(1)
-            .foregroundStyle(selected ? Color.primary : Color.hlMuted)
-            .padding(.vertical, 7)
-            .overlay(alignment: .bottom) {
-                if selected {
-                    Capsule().fill(Color.hlAccent).frame(height: 2)
-                        .matchedGeometryEffect(id: "underline", in: underline)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 

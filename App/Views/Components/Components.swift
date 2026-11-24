@@ -261,3 +261,65 @@ extension View {
             .shadow(color: AppTheme.current == .light ? Color.black.opacity(0.05) : .clear, radius: 6, y: 2)
     }
 }
+
+/// Text tabs with an accent underline and small count badges (trade screen and portfolio).
+/// Scrolls horizontally when the tabs don't fit and keeps the selected one in view.
+struct UnderlineTabs<ID: Hashable>: View {
+    struct Item {
+        let id: ID
+        let title: String
+        var count: Int? = nil
+    }
+
+    let items: [Item]
+    @Binding var selection: ID
+    var spacing: CGFloat = 18
+    @Namespace private var underline
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: spacing) {
+                    ForEach(items, id: \.id) { item in tab(item).id(item.id) }
+                }
+                .padding(.horizontal, 4)
+            }
+            .onChange(of: selection) { _, new in
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(new, anchor: .center) }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.hlMuted.opacity(0.15)).frame(height: 0.5)
+        }
+    }
+
+    private func tab(_ item: Item) -> some View {
+        let selected = selection == item.id
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) { selection = item.id }
+        } label: {
+            HStack(spacing: 4) {
+                Text(item.title)
+                    .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                if let count = item.count, count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background((selected ? Color.hlAccent : Color.hlMuted).opacity(0.2), in: Capsule())
+                }
+            }
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(selected ? Color.primary : Color.hlMuted)
+            .padding(.vertical, 7)
+            .overlay(alignment: .bottom) {
+                if selected {
+                    Capsule().fill(Color.hlAccent).frame(height: 2)
+                        .matchedGeometryEffect(id: "underline", in: underline)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}

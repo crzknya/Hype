@@ -251,28 +251,16 @@ struct PortfolioView: View {
     // MARK: Tables
 
     private var tabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(Tab.allCases) { t in
-                    Button { tab = t } label: {
-                        Text(title(t))
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(tab == t ? Color.hlAccent.opacity(0.2) : Color.hlCard, in: Capsule())
-                            .foregroundStyle(tab == t ? Color.hlAccent : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        UnderlineTabs(items: Tab.allCases.map { .init(id: $0, title: L($0.rawValue), count: count($0)) },
+                      selection: $tab)
     }
 
-    private func title(_ t: Tab) -> String {
+    private func count(_ t: Tab) -> Int? {
         switch t {
-        case .positions: return L("Positions {0}", model.positions.count)
-        case .orders: return L("Orders {0}", model.openOrders.count + model.activeChases.count)
-        case .twap: return "TWAP \(model.twaps.count)"
-        default: return L(t.rawValue)
+        case .positions: return model.positions.count
+        case .orders: return model.openOrders.count + model.activeChases.count
+        case .twap: return model.twaps.count
+        default: return nil
         }
     }
 
