@@ -160,16 +160,15 @@ struct CandleChart: View {
 
     // MARK: Gestures
 
-    /// A chart drag starts unless, inside a scrolling page with auto-scale on, it begins as a vertical swipe on
-    /// the candles: that one goes to the page. Drags on the axes, with the crosshair or with auto-scale off
-    /// always stay on the chart.
+    /// A chart drag starts unless, inside a scrolling page with auto-scale on, it begins as a vertical swipe
+    /// anywhere but the price scale: that one goes to the page. Drags on the price scale, with the crosshair
+    /// or with auto-scale off always stay on the chart.
     private func shouldBeginPan(start: CGPoint, velocity: CGPoint, size: CGSize) -> Bool {
         guard verticalSwipeScrollsPage, autoScale, crosshair == nil else { return true }
         let plotW = size.width - axisW
         let mainH = layout(size).mainH
-        let onPriceAxis = start.x > plotW && start.y < mainH
-        let onTimeAxis = start.y > size.height - timeH
-        if onPriceAxis || onTimeAxis { return true }
+        // Only the price scale keeps vertical drags (it changes the scale); everywhere else they scroll the page.
+        if start.x > plotW && start.y < mainH { return true }
         return abs(velocity.x) >= abs(velocity.y)
     }
 
