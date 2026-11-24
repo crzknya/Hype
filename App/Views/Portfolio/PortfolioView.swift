@@ -320,7 +320,7 @@ struct PortfolioView: View {
             if !model.twapFills.isEmpty {
                 Text(L("TWAP fills")).font(.caption.bold()).foregroundStyle(Color.hlMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(model.twapFills.prefix(100)) { FillRow(fill: $0) }
+                ForEach(FillGroup.group(Array(model.twapFills.prefix(300))).prefix(100)) { FillGroupRow(group: $0) }
             }
         case .history:
             if model.orderHistory.isEmpty { EmptyState(text: L("No orders yet")) }
@@ -557,7 +557,7 @@ struct FillsSection: View {
                 }
             }
             if fills.isEmpty { EmptyState(text: L("No trades in this period")) }
-            ForEach(fills.prefix(150)) { FillRow(fill: $0) }
+            ForEach(FillGroup.group(Array(fills.prefix(600))).prefix(150)) { FillGroupRow(group: $0) }
         }
     }
 }

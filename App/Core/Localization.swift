@@ -28,6 +28,8 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "{0} fills": "{0} исп.",
+        "Fee {0}": "Комиссия {0}",
         "CPU (app)": "CPU (приложение)",
         "CPU is the app's own load (100% = one core fully busy). Thermal state is the whole iPhone's. Leave the overlay off normally: measuring frame rate keeps the display refreshing.": "CPU — нагрузка самого приложения (100% = одно ядро полностью занято). Тепловое состояние — всего iPhone. Обычно держите оверлей выключенным: измерение частоты кадров заставляет экран постоянно обновляться.",
         "Chart redraws": "Перерисовки графика",

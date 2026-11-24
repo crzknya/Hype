@@ -210,6 +210,95 @@ struct FillRow: View {
     }
 }
 
+/// Fills of one order (or of one moment, same market and direction) shown as a single card.
+struct FillGroup: Identifiable {
+    let fills: [Fill]
+    var id: String { fills.first?.id ?? UUID().uuidString }
+    var first: Fill { fills[0] }
+    var size: Double { fills.reduce(0) { $0 + $1.sz } }
+    var value: Double { fills.reduce(0) { $0 + $1.px * $1.sz } }
+    var avgPx: Double { size > 0 ? value / size : first.px }
+    var fee: Double { fills.reduce(0) { $0 + $1.fee } }
+    var closedPnl: Double { fills.reduce(0) { $0 + $1.closedPnl } }
+
+    /// Groups time-sorted fills: consecutive fills of the same order id, or (without an id) of the same
+    /// market and direction within two seconds.
+    static func group(_ fills: [Fill]) -> [FillGroup] {
+        var out: [[Fill]] = []
+        for f in fills {
+            if let last = out.last?.last, last.coin == f.coin, last.dir == f.dir,
+               (f.oid != 0 && f.oid == last.oid) || (f.oid == 0 && abs(last.time.timeIntervalSince(f.time)) < 2) {
+                out[out.count - 1].append(f)
+            } else {
+                out.append([f])
+            }
+        }
+        return out.map(FillGroup.init)
+    }
+}
+
+/// A grouped fill card; tap to show the individual fills.
+struct FillGroupRow: View {
+    @Environment(AppModel.self) private var model
+    let group: FillGroup
+    @State private var expanded = false
+
+    var body: some View {
+        if group.fills.count == 1 {
+            FillRow(fill: group.first)
+        } else {
+            let f = group.first
+            let dec = model.market(f.coin)?.szDecimals ?? 4
+            VStack(alignment: .leading, spacing: 8) {
+                Button { withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() } } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 5) {
+                                Text(model.displayName(f.coin)).font(.subheadline.bold())
+                                Text(f.dirTitle).font(.caption).foregroundStyle(f.isBuy ? Color.hlGreen : Color.hlRed)
+                                Badge(text: L("{0} fills", group.fills.count), color: .hlMuted)
+                            }
+                            Text("\(Fmt.num(group.size, dec)) @ \(Fmt.price(group.avgPx))")
+                                .font(.system(size: 12, design: .monospaced))
+                            Text(Fmt.dateTime(f.time)).font(.caption2).foregroundStyle(Color.hlMuted)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 3) {
+                            if group.closedPnl != 0 {
+                                Text(Fmt.signedUsd(group.closedPnl)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.pnl(group.closedPnl))
+                            }
+                            Text(L("Fee {0} {1}", Fmt.num(group.fee, 4), f.feeToken)).font(.caption2).foregroundStyle(Color.hlMuted)
+                            Text(Fmt.usd(group.value)).font(.caption2.monospaced())
+                        }
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.bold()).foregroundStyle(Color.hlMuted)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if expanded {
+                    Divider()
+                    ForEach(group.fills) { x in
+                        HStack {
+                            Text("\(Fmt.num(x.sz, dec)) @ \(Fmt.price(x.px))").font(.system(size: 11, design: .monospaced))
+                            Spacer()
+                            if x.closedPnl != 0 {
+                                Text(Fmt.signedUsd(x.closedPnl)).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.pnl(x.closedPnl))
+                            }
+                            Text(L("Fee {0}", Fmt.num(x.fee, 4))).font(.caption2).foregroundStyle(Color.hlMuted)
+                            Text(Fmt.usd(x.px * x.sz)).font(.caption2.monospaced()).frame(minWidth: 70, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .themedCard()
+        }
+    }
+}
+
 struct TwapRow: View {
     @Environment(AppModel.self) private var model
     let twap: TwapState
@@ -304,7 +393,7 @@ struct AccountPanel: View {
                 default:
                     let f = fills
                     if f.isEmpty { EmptyState(text: L("No trades yet")) }
-                    ForEach(f.prefix(30)) { FillRow(fill: $0) }
+                    ForEach(FillGroup.group(Array(f.prefix(200))).prefix(30)) { FillGroupRow(group: $0) }
                 }
             }
         }
