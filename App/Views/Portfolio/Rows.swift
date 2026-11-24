@@ -223,14 +223,16 @@ struct FillGroup: Identifiable {
 
     /// Groups time-sorted fills of the same market and direction: same order id, same client id, or
     /// within two seconds of each other.
+    static let window: TimeInterval = 60
+
     static func group(_ fills: [Fill]) -> [FillGroup] {
         var out: [[Fill]] = []
         for f in fills {
             // Same market and direction, and the same order (a modified order gets a new id but keeps its
-            // client id, e.g. chase), or fills within two seconds of each other.
+            // client id, e.g. chase), or fills less than a minute apart (chained: each to the previous one).
             if let last = out.last?.last, last.coin == f.coin, last.dir == f.dir,
                (f.oid != 0 && f.oid == last.oid) || (f.cloid != nil && f.cloid == last.cloid)
-                || abs(last.time.timeIntervalSince(f.time)) < 2 {
+                || abs(last.time.timeIntervalSince(f.time)) < FillGroup.window {
                 out[out.count - 1].append(f)
             } else {
                 out.append([f])
