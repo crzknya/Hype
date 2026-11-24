@@ -13,6 +13,8 @@ final class ChartViewportCache {
     var lo = 0.0, hi = 1.0          // price range in scale units (log when log scale)
     var plotW: CGFloat = 300
     var mainH: CGFloat = 200
+    /// The chart's frame in window coordinates (follows page scrolling), for the UIKit pan.
+    var globalFrame: CGRect = .zero
 }
 
 /// Candle chart that behaves like TradingView:
@@ -102,7 +104,9 @@ struct CandleChart: View {
                 .position(x: size.width - 12, y: max(10, mainH - 12))
             }
             .contentShape(Rectangle())
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cache.globalFrame = $0 }
             .gesture(ChartPanGesture(
+                origin: { cache.globalFrame.origin },
                 shouldBegin: { start, velocity in shouldBeginPan(start: start, velocity: velocity, size: size) },
                 changed: { start, translation in dragChanged(start: start, translation: translation, size: size) },
                 ended: { velocity in dragEnded(velocityX: velocity.x, size: size) }
@@ -668,7 +672,9 @@ struct CandleChart: View {
 /// One-finger pan backed by UIKit so it can decline to start: then the enclosing ScrollView gets the swipe
 /// (a SwiftUI DragGesture would always take it from the page).
 struct ChartPanGesture: UIGestureRecognizerRepresentable {
-    /// Start location and velocity (local coordinates); false lets the swipe go to the page.
+    /// The chart's top-left corner in window coordinates.
+    var origin: () -> CGPoint
+    /// Start location (chart coordinates) and velocity; false lets the swipe go to the page.
     var shouldBegin: (CGPoint, CGPoint) -> Bool
     /// Start location and translation.
     var changed: (CGPoint, CGSize) -> Void
@@ -678,18 +684,17 @@ struct ChartPanGesture: UIGestureRecognizerRepresentable {
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: ChartPanGesture
-        let converter: UIGestureRecognizerRepresentableCoordinateSpaceConverter
         var start: CGPoint = .zero
 
-        init(parent: ChartPanGesture, converter: UIGestureRecognizerRepresentableCoordinateSpaceConverter) {
-            self.parent = parent
-            self.converter = converter
-        }
+        init(parent: ChartPanGesture) { self.parent = parent }
 
+        /// Reads the recognizer directly (window coordinates): the SwiftUI converter is only valid while
+        /// an action is being handled, not when UIKit asks whether the pan may begin.
         func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-            let t = converter.localTranslation ?? .zero
-            let loc = converter.localLocation
-            return parent.shouldBegin(CGPoint(x: loc.x - t.x, y: loc.y - t.y), converter.localVelocity ?? .zero)
+            guard let pan = g as? UIPanGestureRecognizer else { return true }
+            let loc = pan.location(in: nil), t = pan.translation(in: nil), o = parent.origin()
+            start = CGPoint(x: loc.x - t.x - o.x, y: loc.y - t.y - o.y)
+            return parent.shouldBegin(start, pan.velocity(in: nil))
         }
 
         /// Pinch, double tap and long press run alongside; never together with the page's own scrolling.
@@ -700,7 +705,7 @@ struct ChartPanGesture: UIGestureRecognizerRepresentable {
     }
 
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
-        Coordinator(parent: self, converter: converter)
+        Coordinator(parent: self)
     }
 
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
@@ -715,17 +720,13 @@ struct ChartPanGesture: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        let c = context.converter
-        let t = c.localTranslation ?? .zero
+        let t = recognizer.translation(in: nil)
+        let start = context.coordinator.start
         switch recognizer.state {
-        case .began:
-            let loc = c.localLocation
-            context.coordinator.start = CGPoint(x: loc.x - t.x, y: loc.y - t.y)
-            changed(context.coordinator.start, CGSize(width: t.x, height: t.y))
-        case .changed:
-            changed(context.coordinator.start, CGSize(width: t.x, height: t.y))
+        case .began, .changed:
+            changed(start, CGSize(width: t.x, height: t.y))
         case .ended:
-            ended(c.localVelocity ?? .zero)
+            ended(recognizer.velocity(in: nil))
         case .cancelled, .failed:
             ended(.zero)
         default:
