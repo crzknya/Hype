@@ -172,7 +172,7 @@ struct TradesPanel: View {
                 ProgressView().padding()
             } else if trades.isEmpty {
                 Text(L("No trades above {0} yet", TradeFilterMenu.label(model.minTradeUsd)))
-                    .font(.system(size: wide ? 13 : 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
+                    .font(.system(size: wide ? 12 : 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
             }
         }
     }
@@ -206,9 +206,9 @@ struct TradesPanel: View {
             Text("USD").frame(maxWidth: .infinity, alignment: .trailing)
             Text(L("Time")).frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .font(.system(size: 12)).foregroundStyle(Color.hlMuted)
-        .padding(.horizontal, 6)
-        .padding(.bottom, 4)
+        .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.hlMuted)
+        .padding(.horizontal, 4)
+        .padding(.bottom, 2)
     }
 
     private func wideRow(_ t: PublicTrade) -> some View {
@@ -222,11 +222,12 @@ struct TradesPanel: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             Text(Fmt.time(t.time)).foregroundStyle(Color.hlMuted).frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .font(.system(size: 14, design: .monospaced))
+        // Same type and row height as the side-by-side order book.
+        .font(.system(size: 12, design: .monospaced))
         .lineLimit(1)
         .minimumScaleFactor(0.7)
-        .padding(.horizontal, 6)
-        .frame(height: 26)
+        .padding(.horizontal, 4)
+        .frame(height: 20)
         .background(color.opacity(big ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 4))
     }
 }
