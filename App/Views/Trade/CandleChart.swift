@@ -14,8 +14,6 @@ final class ChartViewportCache {
     var lo = 0.0, hi = 1.0          // price range in scale units (log when log scale)
     var plotW: CGFloat = 300
     var mainH: CGFloat = 200
-    /// The chart's frame in window coordinates (follows page scrolling), for the UIKit pan.
-    var globalFrame: CGRect = .zero
 }
 
 /// Candle chart that behaves like TradingView:
@@ -91,6 +89,10 @@ struct CandleChart: View {
                         .background(Color.hlCard.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
                         .padding(4)
                 }
+                // All touches go through one UIKit view: a SwiftUI drag inside the page's ScrollView would always
+                // take vertical swipes from it, a UIKit pan can decline them.
+                ChartTouchSurface(handlers: touchHandlers(size))
+                    .frame(width: size.width, height: size.height)
                 // Auto-scale toggle, as TradingView's "A" under the price scale.
                 Button {
                     autoScale = true
@@ -104,48 +106,6 @@ struct CandleChart: View {
                 .buttonStyle(.plain)
                 .position(x: size.width - 12, y: max(10, mainH - 12))
             }
-            .contentShape(Rectangle())
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cache.globalFrame = $0 }
-            .gesture(ChartPanGesture(
-                origin: { cache.globalFrame.origin },
-                shouldBegin: { start, velocity in shouldBeginPan(start: start, velocity: velocity, size: size) },
-                changed: { start, translation in dragChanged(start: start, translation: translation, size: size) },
-                ended: { velocity in dragEnded(velocityX: velocity.x, size: size) }
-            ))
-            .simultaneousGesture(
-                SpatialTapGesture(count: 2).onEnded { v in
-                    if v.location.x > size.width - axisW && v.location.y < mainH {
-                        autoScale = true                              // double tap on the price axis
-                    } else {
-                        stopMomentum()
-                        autoScale = true
-                        rightOffset = CandleChart.defaultRightOffset  // back to the latest candles
-                    }
-                }
-            )
-            .simultaneousGesture(
-                MagnifyGesture()
-                    .onChanged { v in
-                        stopMomentum()
-                        let plotW = size.width - axisW
-                        if pinchStart == nil { pinchStart = (spacing, rightOffset, min(v.startLocation.x, plotW)) }
-                        guard let p = pinchStart else { return }
-                        let s2 = min(maxSpacing, max(minSpacing, p.spacing * v.magnification))
-                        // Keep the bar under the fingers in place: last − i = (plotW − x) / spacing − rightOffset − 0.5.
-                        spacing = s2
-                        rightOffset = clampRight(p.right - (plotW - p.x) / p.spacing + (plotW - p.x) / s2, plotW: plotW)
-                        requestHistoryIfNeeded(plotW: plotW)
-                    }
-                    .onEnded { _ in pinchStart = nil }
-            )
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.25)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { v in
-                        if case .second(true, let drag?) = v { crosshair = drag.location }
-                    }
-                    .onEnded { _ in crosshair = nil }
-            )
             .onChange(of: candles.last?.t) { old, new in
                 // A new candle while scrolled back in history: keep the same candles on screen.
                 guard let old, let new, new > old, rightOffset < 0 else { return }
@@ -159,6 +119,37 @@ struct CandleChart: View {
     }
 
     // MARK: Gestures
+
+    private func touchHandlers(_ size: CGSize) -> ChartTouchHandlers {
+        let mainH = layout(size).mainH
+        return ChartTouchHandlers(
+            panShouldBegin: { start, delta in shouldBeginPan(start: start, velocity: delta, size: size) },
+            panChanged: { start, translation in dragChanged(start: start, translation: translation, size: size) },
+            panEnded: { vx in dragEnded(velocityX: vx, size: size) },
+            pinchChanged: { anchorX, scale in
+                stopMomentum()
+                let plotW = size.width - axisW
+                if pinchStart == nil { pinchStart = (spacing, rightOffset, min(anchorX, plotW)) }
+                guard let p = pinchStart else { return }
+                let s2 = min(maxSpacing, max(minSpacing, p.spacing * scale))
+                // Keep the bar under the fingers in place: last − i = (plotW − x) / spacing − rightOffset − 0.5.
+                spacing = s2
+                rightOffset = clampRight(p.right - (plotW - p.x) / p.spacing + (plotW - p.x) / s2, plotW: plotW)
+                requestHistoryIfNeeded(plotW: plotW)
+            },
+            pinchEnded: { pinchStart = nil },
+            crosshair: { crosshair = $0 },
+            doubleTap: { loc in
+                if loc.x > size.width - axisW && loc.y < mainH {
+                    autoScale = true                              // double tap on the price axis
+                } else {
+                    stopMomentum()
+                    autoScale = true
+                    rightOffset = CandleChart.defaultRightOffset  // back to the latest candles
+                }
+            }
+        )
+    }
 
     /// A chart drag starts unless, inside a scrolling page with auto-scale on, it begins as a vertical swipe
     /// anywhere but the price scale: that one goes to the page. Drags on the price scale, with the crosshair
@@ -669,71 +660,128 @@ struct CandleChart: View {
     }
 }
 
-/// One-finger pan backed by UIKit so it can decline to start: then the enclosing ScrollView gets the swipe
-/// (a SwiftUI DragGesture would always take it from the page).
-struct ChartPanGesture: UIGestureRecognizerRepresentable {
-    /// The chart's top-left corner in window coordinates.
-    var origin: () -> CGPoint
-    /// Start location (chart coordinates) and initial movement; false lets the swipe go to the page.
-    var shouldBegin: (CGPoint, CGPoint) -> Bool
+struct ChartTouchHandlers {
+    /// Start location and the first few points of movement; false lets the swipe go to the page.
+    var panShouldBegin: (CGPoint, CGPoint) -> Bool
     /// Start location and translation.
-    var changed: (CGPoint, CGSize) -> Void
-    /// Release velocity, points per second.
-    var ended: (CGPoint) -> Void
+    var panChanged: (CGPoint, CGSize) -> Void
+    /// Horizontal release velocity, points per second.
+    var panEnded: (CGFloat) -> Void
+    /// Anchor x (where the fingers started) and the scale since the pinch began.
+    var pinchChanged: (CGFloat, CGFloat) -> Void
+    var pinchEnded: () -> Void
+    /// Crosshair position after a long press; nil when released.
+    var crosshair: (CGPoint?) -> Void
+    var doubleTap: (CGPoint) -> Void
+}
 
-    func makeUIGestureRecognizer(context: Context) -> ChartPanRecognizer {
-        let g = ChartPanRecognizer()
-        g.maximumNumberOfTouches = 1
-        configure(g)
-        return g
+/// Transparent UIKit view carrying the chart's gestures (pan, pinch, long-press crosshair, double tap).
+/// Plain UIKit inside the page's scroll view: the pan declines vertical swipes and the page scrolls instead.
+struct ChartTouchSurface: UIViewRepresentable {
+    var handlers: ChartTouchHandlers
+
+    func makeUIView(context: Context) -> ChartTouchView {
+        let v = ChartTouchView()
+        v.handlers = handlers
+        return v
     }
 
-    func updateUIGestureRecognizer(_ recognizer: ChartPanRecognizer, context: Context) {
-        configure(recognizer)
-    }
-
-    private func configure(_ g: ChartPanRecognizer) {
-        g.origin = origin
-        g.decide = shouldBegin
-    }
-
-    func handleUIGestureRecognizerAction(_ recognizer: ChartPanRecognizer, context: Context) {
-        let t = recognizer.translation(in: nil)
-        switch recognizer.state {
-        case .began, .changed:
-            changed(recognizer.localStart, CGSize(width: t.x, height: t.y))
-        case .ended:
-            ended(recognizer.velocity(in: nil))
-        case .cancelled, .failed:
-            ended(.zero)
-        default:
-            break
-        }
+    func updateUIView(_ v: ChartTouchView, context: Context) {
+        v.handlers = handlers
     }
 }
 
-/// Pan that looks at the first few points of movement and fails itself when the owner declines (a vertical
-/// swipe that belongs to the page). Done in the recognizer, not its delegate: SwiftUI manages the delegate
-/// of represented recognizers.
+final class ChartTouchView: UIView, UIGestureRecognizerDelegate {
+    var handlers: ChartTouchHandlers?
+    private let pan = ChartPanRecognizer()
+    private let pinch = UIPinchGestureRecognizer()
+    private let press = UILongPressGestureRecognizer()
+    private let tap2 = UITapGestureRecognizer()
+    private var pinchAnchorX: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        pan.maximumNumberOfTouches = 1
+        pan.decide = { [weak self] start, delta in self?.handlers?.panShouldBegin(start, delta) ?? true }
+        pan.addTarget(self, action: #selector(onPan(_:)))
+        pinch.addTarget(self, action: #selector(onPinch(_:)))
+        press.minimumPressDuration = 0.25
+        press.addTarget(self, action: #selector(onPress(_:)))
+        tap2.numberOfTapsRequired = 2
+        tap2.addTarget(self, action: #selector(onTap2(_:)))
+        for g in [pan, pinch, press, tap2] as [UIGestureRecognizer] {
+            g.delegate = self
+            addGestureRecognizer(g)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    @objc private func onPan(_ g: ChartPanRecognizer) {
+        let t = g.translation(in: self)
+        switch g.state {
+        case .began, .changed: handlers?.panChanged(g.localStart, CGSize(width: t.x, height: t.y))
+        case .ended: handlers?.panEnded(g.velocity(in: self).x)
+        case .cancelled, .failed: handlers?.panEnded(0)
+        default: break
+        }
+    }
+
+    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
+        switch g.state {
+        case .began:
+            pinchAnchorX = g.location(in: self).x
+            handlers?.pinchChanged(pinchAnchorX, g.scale)
+        case .changed: handlers?.pinchChanged(pinchAnchorX, g.scale)
+        case .ended, .cancelled, .failed: handlers?.pinchEnded()
+        default: break
+        }
+    }
+
+    @objc private func onPress(_ g: UILongPressGestureRecognizer) {
+        switch g.state {
+        case .began, .changed: handlers?.crosshair(g.location(in: self))
+        case .ended, .cancelled, .failed: handlers?.crosshair(nil)
+        default: break
+        }
+    }
+
+    @objc private func onTap2(_ g: UITapGestureRecognizer) {
+        if g.state == .ended { handlers?.doubleTap(g.location(in: self)) }
+    }
+
+    /// The chart's own gestures work together; never alongside the page's scrolling.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        other.view === self
+    }
+
+    /// The page's scroll waits until the chart pan has declined (a vertical swipe), so it never grabs a
+    /// sideways drag or a drag with auto-scale off.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        g === pan && other.view is UIScrollView && other is UIPanGestureRecognizer
+    }
+}
+
+/// Pan that looks at the first few points of movement and fails itself when the owner declines, so the
+/// page's scroll view gets the swipe.
 final class ChartPanRecognizer: UIPanGestureRecognizer {
-    var origin: () -> CGPoint = { .zero }
     var decide: (CGPoint, CGPoint) -> Bool = { _, _ in true }
-    /// Touch-down point in chart coordinates.
+    /// Touch-down point in the view's coordinates.
     private(set) var localStart: CGPoint = .zero
-    private var windowStart: CGPoint?
+    private var touchStart: CGPoint?
     private var decided = false
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        if windowStart == nil, let p = touches.first?.location(in: nil) {
-            windowStart = p
-            let o = origin()
-            localStart = CGPoint(x: p.x - o.x, y: p.y - o.y)
+        if touchStart == nil, let p = touches.first?.location(in: view) {
+            touchStart = p
+            localStart = p
         }
         super.touchesBegan(touches, with: event)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        if !decided, state == .possible, let s = windowStart, let p = touches.first?.location(in: nil) {
+        if !decided, state == .possible, let s = touchStart, let p = touches.first?.location(in: view) {
             let d = CGPoint(x: p.x - s.x, y: p.y - s.y)
             if hypot(d.x, d.y) >= 4 {
                 decided = true
@@ -748,7 +796,7 @@ final class ChartPanRecognizer: UIPanGestureRecognizer {
 
     override func reset() {
         super.reset()
-        windowStart = nil
+        touchStart = nil
         decided = false
     }
 }
