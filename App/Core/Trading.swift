@@ -395,7 +395,9 @@ extension AppModel {
         } else {
             kind = .limit(tif: TIF(rawValue: o.tif ?? "Gtc") ?? .gtc)
         }
-        let w = wire(m, isBuy: o.isBuy, px: m.roundPrice(price), sz: sz, reduceOnly: o.reduceOnly, kind: kind)
+        var w = wire(m, isBuy: o.isBuy, px: m.roundPrice(price), sz: sz, reduceOnly: o.reduceOnly, kind: kind)
+        // Keep the client id: the modified order gets a new oid, the cloid ties its fills together.
+        w.cloid = o.cloid
         try await submit(HLAction.modify(oid: o.oid, order: w))
         Task { await refreshOrders() }
     }

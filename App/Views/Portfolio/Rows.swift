@@ -227,16 +227,26 @@ struct FillGroup: Identifiable {
 
     static func group(_ fills: [Fill]) -> [FillGroup] {
         var out: [[Fill]] = []
+        var groupOfOrder: [String: Int] = [:]
+        func orderKey(_ f: Fill) -> String? {
+            if let c = f.cloid, !c.isEmpty { return "c:" + c }
+            return f.oid != 0 ? "o:\(f.oid)" : nil
+        }
         for f in fills {
-            // Same market and direction, and the same order (a modified order gets a new id but keeps its
-            // client id, e.g. chase), or fills less than a minute apart (chained: each to the previous one).
+            let key = orderKey(f)
+            // Fills of the same order join its card whatever happened in between (other markets, minutes).
+            if let key, let i = groupOfOrder[key] {
+                out[i].append(f)
+                continue
+            }
+            // Otherwise: the previous card, if same market and direction and less than a minute apart.
             if let last = out.last?.last, last.coin == f.coin, last.dir == f.dir,
-               (f.oid != 0 && f.oid == last.oid) || (f.cloid != nil && f.cloid == last.cloid)
-                || abs(last.time.timeIntervalSince(f.time)) < FillGroup.window {
+               abs(last.time.timeIntervalSince(f.time)) < FillGroup.window {
                 out[out.count - 1].append(f)
             } else {
                 out.append([f])
             }
+            if let key { groupOfOrder[key] = out.count - 1 }
         }
         return out.map(FillGroup.init)
     }
