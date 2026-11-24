@@ -423,8 +423,13 @@ struct CandleChart: View {
             var path = Path()
             path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
             main.stroke(path, with: .color(l.color.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            main.draw(Text(l.label).font(.system(size: 9, weight: .semibold)).foregroundColor(l.color),
-                      at: CGPoint(x: plotW - 4, y: yy - 7), anchor: .trailing)
+            // Label on the left, on a pill so it stays readable over the candles (the newest ones are on the right).
+            let text = main.resolve(Text(l.label).font(.system(size: 9, weight: .semibold)).foregroundColor(l.color))
+            let size = text.measure(in: CGSize(width: plotW, height: 20))
+            let pill = CGRect(x: 4, y: yy - size.height / 2 - 2, width: size.width + 8, height: size.height + 4)
+            main.fill(Path(roundedRect: pill, cornerRadius: 3), with: .color(Color.hlBg.opacity(0.85)))
+            main.stroke(Path(roundedRect: pill, cornerRadius: 3), with: .color(l.color.opacity(0.6)), lineWidth: 0.5)
+            main.draw(text, at: CGPoint(x: pill.minX + 4, y: yy), anchor: .leading)
         }
 
         // Last price tag (also while scrolled back, as TradingView keeps it on the scale)
