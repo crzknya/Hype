@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 struct PriceLine: Identifiable {
     let id = UUID()
@@ -674,57 +675,34 @@ struct CandleChart: View {
 struct ChartPanGesture: UIGestureRecognizerRepresentable {
     /// The chart's top-left corner in window coordinates.
     var origin: () -> CGPoint
-    /// Start location (chart coordinates) and velocity; false lets the swipe go to the page.
+    /// Start location (chart coordinates) and initial movement; false lets the swipe go to the page.
     var shouldBegin: (CGPoint, CGPoint) -> Bool
     /// Start location and translation.
     var changed: (CGPoint, CGSize) -> Void
     /// Release velocity, points per second.
     var ended: (CGPoint) -> Void
 
-    @MainActor
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var parent: ChartPanGesture
-        var start: CGPoint = .zero
-
-        init(parent: ChartPanGesture) { self.parent = parent }
-
-        /// Reads the recognizer directly (window coordinates): the SwiftUI converter is only valid while
-        /// an action is being handled, not when UIKit asks whether the pan may begin.
-        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-            guard let pan = g as? UIPanGestureRecognizer else { return true }
-            let loc = pan.location(in: nil), t = pan.translation(in: nil), o = parent.origin()
-            start = CGPoint(x: loc.x - t.x - o.x, y: loc.y - t.y - o.y)
-            return parent.shouldBegin(start, pan.velocity(in: nil))
-        }
-
-        /// Pinch, double tap and long press run alongside; never together with the page's own scrolling.
-        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            if let sv = other.view as? UIScrollView, other === sv.panGestureRecognizer { return false }
-            return true
-        }
-    }
-
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
-        let g = UIPanGestureRecognizer()
+    func makeUIGestureRecognizer(context: Context) -> ChartPanRecognizer {
+        let g = ChartPanRecognizer()
         g.maximumNumberOfTouches = 1
-        g.delegate = context.coordinator
+        configure(g)
         return g
     }
 
-    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        context.coordinator.parent = self
+    func updateUIGestureRecognizer(_ recognizer: ChartPanRecognizer, context: Context) {
+        configure(recognizer)
     }
 
-    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+    private func configure(_ g: ChartPanRecognizer) {
+        g.origin = origin
+        g.decide = shouldBegin
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: ChartPanRecognizer, context: Context) {
         let t = recognizer.translation(in: nil)
-        let start = context.coordinator.start
         switch recognizer.state {
         case .began, .changed:
-            changed(start, CGSize(width: t.x, height: t.y))
+            changed(recognizer.localStart, CGSize(width: t.x, height: t.y))
         case .ended:
             ended(recognizer.velocity(in: nil))
         case .cancelled, .failed:
@@ -732,5 +710,46 @@ struct ChartPanGesture: UIGestureRecognizerRepresentable {
         default:
             break
         }
+    }
+}
+
+/// Pan that looks at the first few points of movement and fails itself when the owner declines (a vertical
+/// swipe that belongs to the page). Done in the recognizer, not its delegate: SwiftUI manages the delegate
+/// of represented recognizers.
+final class ChartPanRecognizer: UIPanGestureRecognizer {
+    var origin: () -> CGPoint = { .zero }
+    var decide: (CGPoint, CGPoint) -> Bool = { _, _ in true }
+    /// Touch-down point in chart coordinates.
+    private(set) var localStart: CGPoint = .zero
+    private var windowStart: CGPoint?
+    private var decided = false
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if windowStart == nil, let p = touches.first?.location(in: nil) {
+            windowStart = p
+            let o = origin()
+            localStart = CGPoint(x: p.x - o.x, y: p.y - o.y)
+        }
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        if !decided, state == .possible, let s = windowStart, let p = touches.first?.location(in: nil) {
+            let d = CGPoint(x: p.x - s.x, y: p.y - s.y)
+            if hypot(d.x, d.y) >= 4 {
+                decided = true
+                if !decide(localStart, d) {
+                    state = .failed
+                    return
+                }
+            }
+        }
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        windowStart = nil
+        decided = false
     }
 }
