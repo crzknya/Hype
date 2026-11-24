@@ -4,6 +4,7 @@ import SwiftUI
 struct PriceChartView: View {
     @Environment(AppModel.self) private var model
     let market: Market
+    var inScrollingPage = false
 
     var body: some View {
         ZStack {
@@ -13,7 +14,8 @@ struct PriceChartView: View {
                         logScale: model.logScale, intervalSeconds: model.interval.seconds,
                         onNeedHistory: { Task { await model.loadOlderCandles() } },
                         initialSpacing: model.chartSpacing,
-                        onSpacingChange: { model.chartSpacing = $0 })
+                        onSpacingChange: { model.chartSpacing = $0 },
+                        verticalSwipeScrollsPage: inScrollingPage)
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PriceLine: Identifiable {
     let id = UUID()
@@ -35,6 +36,8 @@ struct CandleChart: View {
     /// Bar width to start with (kept across markets and intervals, as TradingView) and its change callback.
     var initialSpacing: CGFloat? = nil
     var onSpacingChange: ((CGFloat) -> Void)? = nil
+    /// Inside a scrolling page: with auto-scale on, a vertical swipe scrolls the page instead of the price range.
+    var verticalSwipeScrollsPage = false
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -99,7 +102,11 @@ struct CandleChart: View {
                 .position(x: size.width - 12, y: max(10, mainH - 12))
             }
             .contentShape(Rectangle())
-            .highPriorityGesture(dragGesture(size))
+            .gesture(ChartPanGesture(
+                shouldBegin: { start, velocity in shouldBeginPan(start: start, velocity: velocity, size: size) },
+                changed: { start, translation in dragChanged(start: start, translation: translation, size: size) },
+                ended: { velocity in dragEnded(velocityX: velocity.x, size: size) }
+            ))
             .simultaneousGesture(
                 SpatialTapGesture(count: 2).onEnded { v in
                     if v.location.x > size.width - axisW && v.location.y < mainH {
@@ -148,81 +155,93 @@ struct CandleChart: View {
 
     // MARK: Gestures
 
-    private func dragGesture(_ size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { v in
-                guard crosshair == nil else { return }
-                let plotW = size.width - axisW
-                let mainH = max(1, layout(size).mainH)
-                if dragKind == nil {
-                    stopMomentum()
-                    let p = v.startLocation
-                    dragKind = p.x > plotW && p.y < mainH ? .priceAxis : (p.y > size.height - timeH ? .timeAxis : .chart)
-                    startSpacing = spacing
-                    startRight = rightOffset
-                    startLo = autoScale ? cache.lo : manualLo
-                    startHi = autoScale ? cache.hi : manualHi
-                    verticalBase = nil
-                }
-                switch dragKind {
-                case .priceAxis:
-                    // Drag down compresses (wider range), up stretches — around the middle of the scale.
+    /// A chart drag starts unless, inside a scrolling page with auto-scale on, it begins as a vertical swipe on
+    /// the candles: that one goes to the page. Drags on the axes, with the crosshair or with auto-scale off
+    /// always stay on the chart.
+    private func shouldBeginPan(start: CGPoint, velocity: CGPoint, size: CGSize) -> Bool {
+        guard verticalSwipeScrollsPage, autoScale, crosshair == nil else { return true }
+        let plotW = size.width - axisW
+        let mainH = layout(size).mainH
+        let onPriceAxis = start.x > plotW && start.y < mainH
+        let onTimeAxis = start.y > size.height - timeH
+        if onPriceAxis || onTimeAxis { return true }
+        return abs(velocity.x) >= abs(velocity.y)
+    }
+
+    private func dragChanged(start: CGPoint, translation: CGSize, size: CGSize) {
+        guard crosshair == nil else { return }
+        let plotW = size.width - axisW
+        let mainH = max(1, layout(size).mainH)
+        if dragKind == nil {
+            stopMomentum()
+            let p = start
+            dragKind = p.x > plotW && p.y < mainH ? .priceAxis : (p.y > size.height - timeH ? .timeAxis : .chart)
+            startSpacing = spacing
+            startRight = rightOffset
+            startLo = autoScale ? cache.lo : manualLo
+            startHi = autoScale ? cache.hi : manualHi
+            verticalBase = nil
+            // In a page, a chart drag with auto-scale on only began because it was sideways.
+            if dragKind == .chart && autoScale && verticalSwipeScrollsPage { panAxis = .horizontal }
+        }
+        switch dragKind {
+        case .priceAxis:
+            // Drag down compresses (wider range), up stretches — around the middle of the scale.
+            autoScale = false
+            let factor = exp(Double(translation.height) / 150)
+            let c = (startLo + startHi) / 2, half = max(1e-12, (startHi - startLo) / 2 * factor)
+            manualLo = c - half; manualHi = c + half
+        case .timeAxis:
+            // Drag right = fewer, wider bars; anchored to the right edge.
+            spacing = min(maxSpacing, max(minSpacing, startSpacing * exp(translation.width / 150)))
+            rightOffset = clampRight(startRight, plotW: plotW)
+            requestHistoryIfNeeded(plotW: plotW)
+        case .chart:
+            // The first ~10 pt decide the direction: a sideways swipe only scrolls time (auto-scale
+            // stays on and keeps fitting the visible candles); a clearly vertical drag moves the price
+            // range and turns auto-scale off (full screen; in a page it scrolls the page instead).
+            let dx = translation.width, dy = translation.height
+            // Auto-scale already off: free panning in both directions at once.
+            if panAxis == nil && !autoScale {
+                panAxis = .free
+                verticalBase = 0
+            }
+            if panAxis == nil, hypot(dx, dy) > 10 {
+                panAxis = abs(dy) > abs(dx) * 1.5 ? .vertical : .horizontal
+                if panAxis == .vertical {
+                    verticalBase = dy
                     autoScale = false
-                    let factor = exp(Double(v.translation.height) / 150)
-                    let c = (startLo + startHi) / 2, half = max(1e-12, (startHi - startLo) / 2 * factor)
-                    manualLo = c - half; manualHi = c + half
-                case .timeAxis:
-                    // Drag right = fewer, wider bars; anchored to the right edge.
-                    spacing = min(maxSpacing, max(minSpacing, startSpacing * exp(v.translation.width / 150)))
-                    rightOffset = clampRight(startRight, plotW: plotW)
-                    requestHistoryIfNeeded(plotW: plotW)
-                case .chart:
-                    // The first ~10 pt decide the direction: a sideways swipe only scrolls time (auto-scale
-                    // stays on and keeps fitting the visible candles); a clearly vertical drag moves the price
-                    // range and turns auto-scale off.
-                    let dx = v.translation.width, dy = v.translation.height
-                    // Auto-scale already off: free panning in both directions at once.
-                    if panAxis == nil && !autoScale {
-                        panAxis = .free
-                        verticalBase = 0
-                    }
-                    if panAxis == nil, hypot(dx, dy) > 10 {
-                        panAxis = abs(dy) > abs(dx) * 1.5 ? .vertical : .horizontal
-                        if panAxis == .vertical {
-                            verticalBase = dy
-                            autoScale = false
-                            manualLo = startLo; manualHi = startHi
-                        }
-                    }
-                    switch panAxis {
-                    case .horizontal:
-                        rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
-                        requestHistoryIfNeeded(plotW: plotW)
-                    case .vertical:
-                        let shift = Double((dy - (verticalBase ?? 0)) / mainH) * (startHi - startLo)
-                        manualLo = startLo + shift; manualHi = startHi + shift
-                    case .free:
-                        rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
-                        let shift = Double(dy / mainH) * (startHi - startLo)
-                        manualLo = startLo + shift; manualHi = startHi + shift
-                        requestHistoryIfNeeded(plotW: plotW)
-                    case .none:
-                        break
-                    }
-                case .none:
-                    break
+                    manualLo = startLo; manualHi = startHi
                 }
             }
-            .onEnded { v in
-                if dragKind == .chart && (panAxis == .horizontal || panAxis == .free) {
-                    // Inertia: continue with the release speed and decelerate.
-                    let velocity = (v.predictedEndTranslation.width - v.translation.width) * 2.5
-                    startMomentum(velocity: velocity, plotW: size.width - axisW)
-                }
-                dragKind = nil
-                verticalBase = nil
-                panAxis = nil
+            switch panAxis {
+            case .horizontal:
+                rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
+                requestHistoryIfNeeded(plotW: plotW)
+            case .vertical:
+                let shift = Double((dy - (verticalBase ?? 0)) / mainH) * (startHi - startLo)
+                manualLo = startLo + shift; manualHi = startHi + shift
+            case .free:
+                rightOffset = clampRight(startRight - dx / spacing, plotW: plotW)
+                let shift = Double(dy / mainH) * (startHi - startLo)
+                manualLo = startLo + shift; manualHi = startHi + shift
+                requestHistoryIfNeeded(plotW: plotW)
+            case .none:
+                break
             }
+        case .none:
+            break
+        }
+    }
+
+    private func dragEnded(velocityX: CGFloat, size: CGSize) {
+        if dragKind == .chart && (panAxis == .horizontal || panAxis == .free) {
+            // Inertia: continue with the release speed and decelerate.
+            startMomentum(velocity: velocityX, plotW: size.width - axisW)
+        }
+        dragKind = nil
+        verticalBase = nil
+        panAxis = nil
     }
 
     private func startMomentum(velocity: CGFloat, plotW: CGFloat) {
@@ -643,5 +662,74 @@ struct CandleChart: View {
         let d = decimals ?? Fmt.autoDecimals(c.c)
         let ch = c.o > 0 ? c.c / c.o - 1 : 0
         return "\(Fmt.dateTime(Date(timeIntervalSince1970: c.t / 1000)))  O \(Fmt.price(c.o, decimals: d)) H \(Fmt.price(c.h, decimals: d)) L \(Fmt.price(c.l, decimals: d)) C \(Fmt.price(c.c, decimals: d)) \(Fmt.pct(ch))  V \(Fmt.compact(c.v))"
+    }
+}
+
+/// One-finger pan backed by UIKit so it can decline to start: then the enclosing ScrollView gets the swipe
+/// (a SwiftUI DragGesture would always take it from the page).
+struct ChartPanGesture: UIGestureRecognizerRepresentable {
+    /// Start location and velocity (local coordinates); false lets the swipe go to the page.
+    var shouldBegin: (CGPoint, CGPoint) -> Bool
+    /// Start location and translation.
+    var changed: (CGPoint, CGSize) -> Void
+    /// Release velocity, points per second.
+    var ended: (CGPoint) -> Void
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: ChartPanGesture
+        let converter: UIGestureRecognizerRepresentableCoordinateSpaceConverter
+        var start: CGPoint = .zero
+
+        init(parent: ChartPanGesture, converter: UIGestureRecognizerRepresentableCoordinateSpaceConverter) {
+            self.parent = parent
+            self.converter = converter
+        }
+
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            let t = converter.localTranslation ?? .zero
+            let loc = converter.localLocation
+            return parent.shouldBegin(CGPoint(x: loc.x - t.x, y: loc.y - t.y), converter.localVelocity ?? .zero)
+        }
+
+        /// Pinch, double tap and long press run alongside; never together with the page's own scrolling.
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            if let sv = other.view as? UIScrollView, other === sv.panGestureRecognizer { return false }
+            return true
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator(parent: self, converter: converter)
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let g = UIPanGestureRecognizer()
+        g.maximumNumberOfTouches = 1
+        g.delegate = context.coordinator
+        return g
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let c = context.converter
+        let t = c.localTranslation ?? .zero
+        switch recognizer.state {
+        case .began:
+            let loc = c.localLocation
+            context.coordinator.start = CGPoint(x: loc.x - t.x, y: loc.y - t.y)
+            changed(context.coordinator.start, CGSize(width: t.x, height: t.y))
+        case .changed:
+            changed(context.coordinator.start, CGSize(width: t.x, height: t.y))
+        case .ended:
+            ended(c.localVelocity ?? .zero)
+        case .cancelled, .failed:
+            ended(.zero)
+        default:
+            break
+        }
     }
 }

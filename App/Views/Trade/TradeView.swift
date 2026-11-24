@@ -212,7 +212,7 @@ struct TradeView: View {
     private func chartSection(_ m: Market) -> some View {
         VStack(spacing: 6) {
             ChartToolbar(onFullScreen: { chartFullScreen = true }, onIndicators: { showIndicators = true })
-            PriceChartView(market: m)
+            PriceChartView(market: m, inScrollingPage: true)
                 .frame(height: model.chartHeight)
                 .padding(.horizontal, 6)
             resizeHandle
