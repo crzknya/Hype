@@ -28,6 +28,9 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Candle": "Свеча",
+        "Each candle": "Каждая свеча",
+        "letter {0}": "буква {0}",
         "Asia": "Азия",
         "Asia / London / New York": "Азия / Лондон / Нью-Йорк",
         "Blocks": "Блоки",

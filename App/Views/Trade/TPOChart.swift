@@ -39,8 +39,7 @@ struct TPOChartView: View {
     private enum DragKind { case chart, priceAxis }
     private let axisW: CGFloat = 58
     private let timeH: CGFloat = 16
-    private let gap: CGFloat = 16
-    private let minCell: CGFloat = 2
+    private let minCell: CGFloat = 1
     private let maxCell: CGFloat = 18
 
     var body: some View {
@@ -166,6 +165,7 @@ struct TPOChartView: View {
         }
         let profiles = cache.profiles
         guard let newest = profiles.last else { return }
+        let colGap = columnGap(s)
 
         func stepFor(_ lo: Double, _ hi: Double) -> Double {
             CandleChart.niceStep((hi - lo) / Double(mainH) * s.density.rowHeight)
@@ -185,7 +185,7 @@ struct TPOChartView: View {
                 let w = CGFloat(max(1, rows(i, step).maxCount)) * cellW
                 let x0 = right - w
                 if x0 < plotW { out.append((i, x0, w)) }
-                right = x0 - gap
+                right = x0 - colGap
                 if right < 0 { break }
             }
             return out
@@ -208,7 +208,7 @@ struct TPOChartView: View {
         cache.lo = lo
         cache.hi = hi
         cache.columns = cols
-        cache.totalWidth = profiles.indices.reduce(CGFloat(0)) { $0 + CGFloat(max(1, rows($1, step).maxCount)) * cellW + gap }
+        cache.totalWidth = profiles.indices.reduce(CGFloat(0)) { $0 + CGFloat(max(1, rows($1, step).maxCount)) * cellW + colGap }
 
         func y(_ p: Double) -> CGFloat { CGFloat((hi - p) / (hi - lo)) * mainH }
         let rowH = CGFloat(step / (hi - lo)) * mainH
@@ -377,6 +377,11 @@ struct TPOChartView: View {
         }
     }
 
+    /// Space between profiles: room for the IB bar and open / close ticks; tighter for per-candle profiles.
+    private func columnGap(_ s: TPOSettings) -> CGFloat {
+        s.session == .candle ? (s.showIB || s.showOpenClose ? 14 : 8) : 16
+    }
+
     private func cellColor(_ idx: Int, inVA: Bool, perSession: Int, s: TPOSettings) -> Color {
         switch s.coloring {
         case .time:
@@ -397,8 +402,25 @@ struct TPOChartView: View {
         return f
     }()
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    private static let localDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("dMMM")
+        return f
+    }()
+
     private func sessionLabel(_ p: TPOProfile) -> String {
-        let d = Self.dayFormatter.string(from: Date(timeIntervalSince1970: p.start))
+        let date = Date(timeIntervalSince1970: p.start)
+        if model.tpoSettings.session == .candle {
+            // Candle open time (local, as the candle chart); the date at midnight.
+            let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+            return c.hour == 0 && c.minute == 0 ? Self.localDayFormatter.string(from: date) : Self.timeFormatter.string(from: date)
+        }
+        let d = Self.dayFormatter.string(from: date)
         if let n = p.name { return "\(n) \(d)" }
         return d
     }
@@ -409,7 +431,7 @@ struct TPOChartView: View {
         guard cache.hi > cache.lo, c.y >= 0, c.y <= mainH else { return nil }
         let price = cache.hi - Double(c.y / mainH) * (cache.hi - cache.lo)
         var parts = [Fmt.price(price)]
-        if let col = cache.columns.first(where: { c.x >= $0.x0 - gap / 2 && c.x <= $0.x0 + $0.w + gap / 2 }),
+        if let col = cache.columns.first(where: { c.x >= $0.x0 - columnGap(s) / 2 && c.x <= $0.x0 + $0.w + columnGap(s) / 2 }),
            col.i < cache.profiles.count, let r = cache.rows[cache.profiles[col.i].start] {
             let p = cache.profiles[col.i]
             let row = Int(floor(price / r.step))
@@ -435,13 +457,18 @@ struct TPOSettingsSheet: View {
                     Picker(L("Session"), selection: $model.tpoSettings.session) {
                         ForEach(TPOSettings.Session.allCases) { Text($0.title).tag($0) }
                     }
+                    if model.tpoSettings.session == .candle {
+                        Picker(L("Candle"), selection: $model.tpoSettings.candleLength) {
+                            ForEach(TPOSettings.candleLengths) { Text($0.rawValue).tag($0) }
+                        }
+                    }
                     if model.tpoSettings.session == .day {
                         Picker(L("Session start (UTC)"), selection: $model.tpoSettings.dayStartHour) {
                             ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) }
                         }
                     }
                     Picker(L("Period (one letter)"), selection: $model.tpoSettings.period) {
-                        ForEach(TPOSettings.periods) { Text($0.rawValue).tag($0) }
+                        ForEach(model.tpoSettings.periodChoices) { Text($0.rawValue).tag($0) }
                     }
                     Picker(L("History"), selection: $model.tpoSettings.historyDays) {
                         ForEach(TPOSettings.historyChoices, id: \.self) { Text(L("{0} days", $0)).tag($0) }

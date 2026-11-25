@@ -63,14 +63,26 @@ struct ChartToolbar: View {
         @Bindable var model = model
         return HStack(spacing: 6) {
             Text("TPO").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hlAccent)
-            Picker("", selection: $model.tpoSettings.period) {
-                ForEach(TPOSettings.periods) { Text($0.rawValue).tag($0) }
+            if model.tpoSettings.session == .candle {
+                // Per-candle profiles: the candle length here, one letter = the period below it.
+                Picker("", selection: $model.tpoSettings.candleLength) {
+                    ForEach([CandleInterval.m15, .m30, .h1, .h4]) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 190)
+                Text(L("letter {0}", model.tpoSettings.period.rawValue))
+                    .font(.system(size: 11)).foregroundStyle(Color.hlMuted)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            } else {
+                Picker("", selection: $model.tpoSettings.period) {
+                    ForEach(TPOSettings.periods.filter { $0.seconds >= 900 }) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 170)
+                Text(model.tpoSettings.session.title)
+                    .font(.system(size: 11)).foregroundStyle(Color.hlMuted)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 170)
-            Text(model.tpoSettings.session.title)
-                .font(.system(size: 11)).foregroundStyle(Color.hlMuted)
-                .lineLimit(1).minimumScaleFactor(0.7)
             Spacer(minLength: 4)
             Button { model.tpoMode = false } label: {
                 Image(systemName: "chart.bar.xaxis").font(.system(size: 13, weight: .semibold))

@@ -23,10 +23,11 @@ struct TPOSettings: Codable, Equatable {
     }
 
     enum Session: String, Codable, CaseIterable, Identifiable {
-        case day, regions, week
+        case candle, day, regions, week
         var id: String { rawValue }
         var title: String {
             switch self {
+            case .candle: return L("Each candle")
             case .day: return L("Day")
             case .regions: return L("Asia / London / New York")
             case .week: return L("Week")
@@ -54,22 +55,26 @@ struct TPOSettings: Codable, Equatable {
         }
     }
 
-    static let periods: [CandleInterval] = [.m15, .m30, .h1]
-    static let historyChoices = [3, 7, 14, 30, 60]
+    static let periods: [CandleInterval] = [.m1, .m3, .m5, .m15, .m30, .h1]
+    static let candleLengths: [CandleInterval] = [.m15, .m30, .h1, .h2, .h4, .h8, .h12, .d1]
+    static let historyChoices = [1, 2, 3, 7, 14, 30, 60]
 
     var display: Display = .blocks
     var coloring: Coloring = .time
-    var session: Session = .day
+    /// Default: every 30-minute candle as its own profile, one letter per minute.
+    var session: Session = .candle
+    /// Candle length when each candle is a profile.
+    var candleLength: CandleInterval = .m30
     /// Start of the daily session, hour in UTC (0 = midnight UTC).
     var dayStartHour = 0
-    var period: CandleInterval = .m30
+    var period: CandleInterval = .m1
     var valueArea = 0.70
     var ibPeriods = 2
     var density: Density = .normal
     var historyDays = 14
     var showPOC = true
     var showValueArea = true
-    var showIB = true
+    var showIB = false
     var showSinglePrints = true
     var showOpenClose = true
     var nakedPOC = true
@@ -77,7 +82,7 @@ struct TPOSettings: Codable, Equatable {
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case display, coloring, session, dayStartHour, period, valueArea, ibPeriods, density, historyDays
+        case display, coloring, session, candleLength, dayStartHour, period, valueArea, ibPeriods, density, historyDays
         case showPOC, showValueArea, showIB, showSinglePrints, showOpenClose, nakedPOC
     }
 
@@ -89,9 +94,11 @@ struct TPOSettings: Codable, Equatable {
         display = v(.display, d.display)
         coloring = v(.coloring, d.coloring)
         session = v(.session, d.session)
+        candleLength = v(.candleLength, d.candleLength)
+        if !Self.candleLengths.contains(candleLength) { candleLength = .m30 }
         dayStartHour = min(23, max(0, v(.dayStartHour, d.dayStartHour)))
         period = v(.period, d.period)
-        if !Self.periods.contains(period) { period = .m30 }
+        if !Self.periods.contains(period) { period = .m1 }
         valueArea = min(0.95, max(0.5, v(.valueArea, d.valueArea)))
         ibPeriods = min(6, max(1, v(.ibPeriods, d.ibPeriods)))
         density = v(.density, d.density)
@@ -102,6 +109,26 @@ struct TPOSettings: Codable, Equatable {
         showSinglePrints = v(.showSinglePrints, d.showSinglePrints)
         showOpenClose = v(.showOpenClose, d.showOpenClose)
         nakedPOC = v(.nakedPOC, d.nakedPOC)
+        // Settings saved before per-candle profiles existed: switch to them (what the mode is for).
+        if (try? c.decodeIfPresent(CandleInterval.self, forKey: .candleLength)) == nil {
+            session = .candle
+            period = .m1
+            showIB = false
+        }
+        fixPeriod()
+    }
+
+    /// Letter periods shorter than the session (a profile needs several letters).
+    var periodChoices: [CandleInterval] {
+        guard session == .candle else { return Self.periods }
+        return Self.periods.filter { $0.seconds < candleLength.seconds }
+    }
+
+    /// Keeps the letter period below the candle length (e.g. after choosing shorter candles).
+    mutating func fixPeriod() {
+        if session == .candle, period.seconds >= candleLength.seconds {
+            period = periodChoices.last ?? .m1
+        }
     }
 
     static let storageKey = "tpoSettings"
@@ -120,12 +147,16 @@ struct TPOSettings: Codable, Equatable {
     var fetchDays: Int {
         let perDay = 86400 / Int(period.seconds)
         let wanted = session == .week ? max(historyDays, 14) : historyDays
-        return min(wanted, 5000 / perDay - 1)
+        return max(1, min(wanted, 5000 / perDay - 1))
     }
 
     /// Session (start, end, short name) containing a time in seconds.
     func session(containing t: Double) -> (start: Double, end: Double, name: String?) {
         switch session {
+        case .candle:
+            let len = candleLength.seconds
+            let start = floor(t / len) * len
+            return (start, start + len, nil)
         case .day:
             let shift = Double(dayStartHour) * 3600
             let start = floor((t - shift) / 86400) * 86400 + shift
