@@ -255,31 +255,48 @@ struct TradeHeader: View {
         let px = model.lastPrice(market.id)
         let change = market.prevDayPx > 0 && px > 0 ? px / market.prevDayPx - 1 : market.change24h
         VStack(spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(Fmt.price(px))
-                    .font(.system(size: 26, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.pnl(change))
-                    .contentTransition(.numericText())
-                Text(Fmt.pct(change)).font(.subheadline.monospaced()).foregroundStyle(Color.pnl(change))
-                Spacer()
-                ConnectionDot(connected: model.wsConnected)
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    if !market.isSpot {
-                        Stat(title: "Mark", value: Fmt.price(market.markPx))
-                        Stat(title: "Oracle", value: Fmt.price(market.oraclePx))
-                        Stat(title: L("Funding / countdown"),
-                             value: "\(Fmt.pct(market.funding, 4)) · \(Fmt.countdown(secondsToFunding))",
-                             color: Color.pnl(market.funding))
-                        Stat(title: L("Funding APR"), value: Fmt.pct(market.fundingAnnual, 1), color: Color.pnl(market.funding))
-                        Stat(title: L("Open interest"), value: Fmt.compactUsd(market.openInterestUsd))
-                    }
-                    Stat(title: L("24h volume"), value: Fmt.compactUsd(market.dayNtlVlm))
-                    if let s = model.topSpread, let mid = model.topMid, mid > 0 {
-                        Stat(title: L("Spread"), value: Fmt.pct(s / mid, 3, signed: false))
+            // Row 1: price and 24h change on the left, market size and spread on the right.
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Fmt.price(px))
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.pnl(change))
+                        .contentTransition(.numericText())
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                    HStack(spacing: 6) {
+                        Text(Fmt.pct(change)).font(.subheadline.monospaced()).foregroundStyle(Color.pnl(change))
+                        ConnectionDot(connected: model.wsConnected)
                     }
                 }
+                .layoutPriority(1)
+                Spacer(minLength: 4)
+                HStack(spacing: 12) {
+                    if !market.isSpot {
+                        Stat(title: L("Open interest"), value: Fmt.compactUsd(market.openInterestUsd), align: .trailing)
+                    }
+                    Stat(title: L("24h volume"), value: Fmt.compactUsd(market.dayNtlVlm), align: .trailing)
+                    if let s = model.topSpread, let mid = model.topMid, mid > 0 {
+                        Stat(title: L("Spread"), value: Fmt.pct(s / mid, 3, signed: false), align: .trailing)
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            }
+            // Row 2: mark, oracle and funding spread over the full width (no scrolling).
+            if !market.isSpot {
+                HStack(alignment: .top, spacing: 4) {
+                    Stat(title: "Mark", value: Fmt.price(market.markPx))
+                    Spacer(minLength: 4)
+                    Stat(title: "Oracle", value: Fmt.price(market.oraclePx))
+                    Spacer(minLength: 4)
+                    Stat(title: L("Funding / countdown"),
+                         value: "\(Fmt.pct(market.funding, 4)) · \(fundingCountdown)",
+                         color: Color.pnl(market.funding))
+                    Spacer(minLength: 4)
+                    Stat(title: L("Funding APR"), value: Fmt.pct(market.fundingAnnual, 1),
+                         color: Color.pnl(market.funding), align: .trailing)
+                }
+                .lineLimit(1)
             }
             if market.isHip3 { Hip3Banner(market: market) }
         }
@@ -291,6 +308,12 @@ struct TradeHeader: View {
     private var secondsToFunding: Int {
         let s = Int(now.timeIntervalSince1970)
         return 3600 - s % 3600
+    }
+
+    /// Funding is hourly, so minutes:seconds is enough (keeps the row from scrolling).
+    private var fundingCountdown: String {
+        let s = secondsToFunding
+        return String(format: "%02d:%02d", s / 60 % 60, s % 60)
     }
 }
 
