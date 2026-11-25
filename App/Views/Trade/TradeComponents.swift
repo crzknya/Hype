@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Full-width tabs under the chart: order book, trades, positions, orders.
+/// Full-width tabs under the chart: order book, public trades, positions, orders and your own fills.
 struct MarketDataTabs: View {
     @Environment(AppModel.self) private var model
     let market: Market
     let onExpand: (Int) -> Void
     @State private var tab: Tab = .book
 
-    enum Tab: Hashable { case book, trades, positions, orders }
+    enum Tab: Hashable { case book, trades, positions, orders, fills }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -17,6 +17,7 @@ struct MarketDataTabs: View {
                     .init(id: Tab.trades, title: L("Trades")),
                     .init(id: Tab.positions, title: L("Positions"), count: model.positions.count),
                     .init(id: Tab.orders, title: L("Orders"), count: model.openOrders.count),
+                    .init(id: Tab.fills, title: L("Fills")),
                 ], selection: $tab)
                 if tab == .trades { TradeFilterMenu() }
                 if tab == .book || tab == .trades {
@@ -34,6 +35,7 @@ struct MarketDataTabs: View {
             case .trades: TradesPanel(market: market, limit: 30, wide: true)
             case .positions: AccountPanel(coin: market.id, fixedTab: 0)
             case .orders: AccountPanel(coin: market.id, fixedTab: 1)
+            case .fills: AccountPanel(coin: market.id, fixedTab: 2)
             }
         }
     }

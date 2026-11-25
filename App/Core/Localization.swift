@@ -28,6 +28,7 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Fills": "Мои сделки",
         "Certificate pinning": "Проверка сертификата (пиннинг)",
         "Connections to api.hyperliquid.xyz are accepted only with a certificate from the CAs Hyperliquid uses, so a certificate installed on the phone or by the network cannot intercept them. Turn off only if the app cannot connect on a network you trust.": "Соединения с api.hyperliquid.xyz принимаются только с сертификатом от центров сертификации, которые использует Hyperliquid, поэтому сертификат, установленный на телефон или подставленный сетью, не сможет их перехватить. Выключайте, только если приложение не подключается в сети, которой вы доверяете.",
         "Energy saving (experimental)": "Энергосбережение (эксперимент)",
