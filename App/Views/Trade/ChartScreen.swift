@@ -7,6 +7,15 @@ struct PriceChartView: View {
     var inScrollingPage = false
 
     var body: some View {
+        if model.tpoMode {
+            TPOChartView(market: market, lines: model.chartLines(market), verticalSwipeScrollsPage: inScrollingPage)
+                .id("tpo-\(market.id)")
+        } else {
+            candles
+        }
+    }
+
+    private var candles: some View {
         ZStack {
             CandleChart(candles: model.candles, lines: model.chartLines(market),
                         layers: model.chartLayers(),
@@ -30,6 +39,7 @@ struct ChartToolbar: View {
     var onFullScreen: (() -> Void)? = nil
     var onIndicators: () -> Void
     @State private var showTimeframes = false
+    @State private var showTPOSettings = false
 
     /// User-chosen intervals plus the active one (if it is hidden).
     private var shownIntervals: [CandleInterval] {
@@ -42,6 +52,51 @@ struct ChartToolbar: View {
     }
 
     var body: some View {
+        Group {
+            if model.tpoMode { tpoBar } else { candleBar }
+        }
+        .sheet(isPresented: $showTPOSettings) { TPOSettingsSheet() }
+    }
+
+    /// TPO mode: the letter period, a way back to candles and the TPO settings.
+    private var tpoBar: some View {
+        @Bindable var model = model
+        return HStack(spacing: 6) {
+            Text("TPO").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.hlAccent)
+            Picker("", selection: $model.tpoSettings.period) {
+                ForEach(TPOSettings.periods) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 170)
+            Text(model.tpoSettings.session.title)
+                .font(.system(size: 11)).foregroundStyle(Color.hlMuted)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 4)
+            Button { model.tpoMode = false } label: {
+                Image(systemName: "chart.bar.xaxis").font(.system(size: 13, weight: .semibold))
+                    .frame(width: 32, height: 28)
+                    .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .accessibilityLabel(L("Candles"))
+            Button { showTPOSettings = true } label: {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .semibold))
+                    .frame(width: 32, height: 28)
+                    .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .accessibilityLabel(L("TPO settings"))
+            if let onFullScreen {
+                Button(action: onFullScreen) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 13, weight: .semibold))
+                        .frame(width: 32, height: 28)
+                        .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .foregroundStyle(Color.hlAccent)
+    }
+
+    private var candleBar: some View {
         HStack(spacing: 4) {
             HStack(spacing: 2) {
                 ForEach(shownIntervals) { iv in
@@ -65,6 +120,13 @@ struct ChartToolbar: View {
                 }
             }
             .padding(.leading, 10)
+            Button { model.tpoMode = true } label: {
+                Text("TPO").font(.system(size: 10, weight: .bold))
+                    .frame(width: 34, height: 28)
+                    .foregroundStyle(Color.hlMuted)
+                    .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .accessibilityLabel(L("Market profile (TPO)"))
             Button(action: onIndicators) {
                 Image(systemName: "function").font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 28)

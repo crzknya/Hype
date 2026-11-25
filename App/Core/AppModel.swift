@@ -65,6 +65,12 @@ final class AppModel {
         didSet { UserDefaults.standard.set(Double(chartSpacing), forKey: "chartSpacing") }
     }
     var logScale = false { didSet { save() } }
+    /// Market Profile (TPO) instead of candles in the chart area, and its settings (own storage keys).
+    var tpoMode = UserDefaults.standard.bool(forKey: "tpoMode") { didSet { UserDefaults.standard.set(tpoMode, forKey: "tpoMode") } }
+    var tpoSettings = TPOSettings.load() { didSet { if oldValue != tpoSettings { tpoSettings.save() } } }
+    var tpoCandles: [Candle] = []
+    var tpoLoading = false
+    @ObservationIgnored var tpoCandlesKey = ""
     var tradeLayout: TradeLayout = .sheet { didSet { save() } }
     var lastOrderType = "market" { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }
