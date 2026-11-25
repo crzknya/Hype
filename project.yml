@@ -31,7 +31,8 @@ targets:
           UIColorName: ""
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Landscape is allowed only while the full-screen chart is open (OrientationLock).
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIUserInterfaceStyle: Dark
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.hype.trader.refresh]

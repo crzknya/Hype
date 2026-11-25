@@ -153,34 +153,49 @@ struct ChartScreen: View {
     @Environment(\.dismiss) private var dismiss
     let market: Market
     @State private var showIndicators = false
+    @Environment(\.verticalSizeClass) private var vSize
 
     var body: some View {
+        let landscape = vSize == .compact
         let px = model.lastPrice(market.id)
         let change = market.prevDayPx > 0 && px > 0 ? px / market.prevDayPx - 1 : market.change24h
         NavigationStack {
             VStack(spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(Fmt.price(px)).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(Color.pnl(change))
-                    Text(Fmt.pct(change)).font(.subheadline.monospaced()).foregroundStyle(Color.pnl(change))
-                    Spacer()
+                if !landscape {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(Fmt.price(px)).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(Color.pnl(change))
+                        Text(Fmt.pct(change)).font(.subheadline.monospaced()).foregroundStyle(Color.pnl(change))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
                 }
-                .padding(.horizontal, 12)
                 ChartToolbar(onIndicators: { showIndicators = true })
                 PriceChartView(market: market)
                     .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
-                Text(L("Pinch to zoom · drag to scroll · long-press for crosshair"))
-                    .font(.caption2).foregroundStyle(Color.hlMuted)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, landscape ? 2 : 6)
+                if !landscape {
+                    Text(L("Pinch to zoom · drag to scroll · long-press for crosshair"))
+                        .font(.caption2).foregroundStyle(Color.hlMuted)
+                        .padding(.bottom, 4)
+                }
             }
             .themedBackground()
-            .navigationTitle(market.name)
+            // In landscape the title carries the price, so the chart keeps the height.
+            .navigationTitle(landscape ? "\(market.name)  \(Fmt.price(px))  \(Fmt.pct(change))" : market.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { close() } }
             }
+            // Rotating the phone turns the chart; the rest of the app stays portrait.
+            .onAppear { OrientationLock.allow(.allButUpsideDown) }
+            .onDisappear { OrientationLock.allow(.portrait, rotateTo: .portrait) }
             .sheet(isPresented: $showIndicators) { IndicatorsSheet() }
         }
+    }
+
+    private func close() {
+        OrientationLock.allow(.portrait, rotateTo: .portrait)
+        dismiss()
     }
 }
 
