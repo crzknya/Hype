@@ -16,7 +16,8 @@ struct PriceChartView: View {
                         initialSpacing: model.chartSpacing,
                         onSpacingChange: { model.chartSpacing = $0 },
                         verticalSwipeScrollsPage: inScrollingPage,
-                        clockInterval: model.energySaving ? 5 : 1)
+                        clockInterval: model.energySaving ? 5 : 1,
+                        onToggleLog: { model.logScale.toggle() })
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
         }
@@ -64,13 +65,6 @@ struct ChartToolbar: View {
                 }
             }
             .padding(.leading, 10)
-            Button { model.logScale.toggle() } label: {
-                Text("LOG").font(.system(size: 10, weight: .bold))
-                    .frame(width: 34, height: 28)
-                    .foregroundStyle(model.logScale ? Color.hlAccent : Color.hlMuted)
-                    .background(model.logScale ? Color.hlAccent.opacity(0.18) : Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
-            }
-            .accessibilityLabel(L("Logarithmic scale"))
             Button(action: onIndicators) {
                 Image(systemName: "function").font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 28)

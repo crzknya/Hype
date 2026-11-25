@@ -211,7 +211,9 @@ struct TradeView: View {
     @ViewBuilder
     private func chartSection(_ m: Market) -> some View {
         VStack(spacing: 6) {
-            ChartToolbar(onFullScreen: { chartFullScreen = true }, onIndicators: { showIndicators = true })
+            // Full screen is in the navigation bar except in the classic layout (its bar button toggles the chart).
+            ChartToolbar(onFullScreen: model.tradeLayout == .classic ? { chartFullScreen = true } : nil,
+                         onIndicators: { showIndicators = true })
             PriceChartView(market: m, inScrollingPage: true)
                 .frame(height: model.chartHeight)
                 .padding(.horizontal, 6)

@@ -41,6 +41,8 @@ struct CandleChart: View {
     var verticalSwipeScrollsPage = false
     /// Seconds between redraws for the candle-close countdown (longer in energy saving).
     var clockInterval: Double = 1
+    /// Log-scale toggle shown next to "A" under the price scale (as TradingView's "log" / "auto").
+    var onToggleLog: (() -> Void)? = nil
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -107,6 +109,18 @@ struct CandleChart: View {
                 }
                 .buttonStyle(.plain)
                 .position(x: size.width - 12, y: max(10, mainH - 12))
+                if let onToggleLog {
+                    Button(action: onToggleLog) {
+                        Text("LOG")
+                            .font(.system(size: 9, weight: .bold))
+                            .frame(width: 30, height: 18)
+                            .foregroundStyle(logScale ? Color.hlOnAccent : Color.hlMuted)
+                            .background(logScale ? Color.hlAccent : Color.hlCard2, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("Logarithmic scale"))
+                    .position(x: size.width - 24 - 4 - 15, y: max(10, mainH - 12))
+                }
             }
             .onChange(of: candles.last?.t) { old, new in
                 // A new candle while scrolled back in history: keep the same candles on screen.
