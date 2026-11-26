@@ -497,6 +497,9 @@ struct CandleChart: View {
             strokeSeries(&main, series, r: r, x: x, y: y)
         }
 
+        // High / low of the visible range.
+        if let hl = layers.highLow { drawHighLow(&main, hl, r: r, x: x, y: y, plotW: plotW, mainH: mainH, dec: dec) }
+
         // Drawings, the ruler and points being placed.
         drawDrawings(&main, axis: &ctx, plotW: plotW, mainH: mainH, dec: dec)
 
@@ -649,6 +652,36 @@ struct CandleChart: View {
             ctx.stroke(path, with: .color(spec.color.opacity(0.6)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
             ctx.draw(Text(label).font(.system(size: 8, weight: .semibold)).foregroundColor(spec.color.opacity(0.8)),
                      at: CGPoint(x: labelX, y: yy - 6), anchor: .trailing)
+        }
+    }
+
+    /// Highest high and lowest low among the candles on screen: a short leader from the wick tip and the price
+    /// (optionally the distance from the last price in %).
+    private func drawHighLow(_ ctx: inout GraphicsContext, _ hl: (color: Color, showPercent: Bool), r: Range<Int>,
+                             x: (Int) -> CGFloat, y: (Double) -> CGFloat, plotW: CGFloat, mainH: CGFloat, dec: Int) {
+        var hi: Int?, lo: Int?
+        for i in r where x(i) >= 0 && x(i) <= plotW {
+            if hi == nil || candles[i].h > candles[hi!].h { hi = i }
+            if lo == nil || candles[i].l < candles[lo!].l { lo = i }
+        }
+        guard let hi, let lo else { return }
+        let last = candles.last?.c ?? 0
+        for (i, isHigh) in [(hi, true), (lo, false)] {
+            let price = isHigh ? candles[i].h : candles[i].l
+            let px = x(i), py = y(price)
+            var text = "\(isHigh ? "H" : "L") \(Fmt.price(price, decimals: dec))"
+            if hl.showPercent, last > 0 { text += "  \(Fmt.pct(price / last - 1, 2))" }
+            let resolved = ctx.resolve(Text(text).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundColor(hl.color))
+            let size = resolved.measure(in: CGSize(width: 300, height: 20))
+            // Leader to the right of the candle, or to the left near the right edge.
+            let toRight = px + 16 + size.width < plotW
+            let lx = toRight ? px + 14 : px - 14
+            let ly = isHigh ? max(size.height / 2 + 1, py - 6) : min(mainH - size.height / 2 - 1, py + 6)
+            var lead = Path()
+            lead.move(to: CGPoint(x: px, y: py)); lead.addLine(to: CGPoint(x: lx, y: ly))
+            ctx.stroke(lead, with: .color(hl.color.opacity(0.8)), lineWidth: 1)
+            ctx.fill(Path(ellipseIn: CGRect(x: px - 2, y: py - 2, width: 4, height: 4)), with: .color(hl.color))
+            ctx.draw(resolved, at: CGPoint(x: toRight ? lx + 2 : lx - 2, y: ly), anchor: toRight ? .leading : .trailing)
         }
     }
 

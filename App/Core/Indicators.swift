@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
-    case ema, sma, bollinger, vwap, rsi, macd, stochastic, volumeProfile
+    case ema, sma, bollinger, vwap, rsi, macd, stochastic, volumeProfile, highLow
     var id: String { rawValue }
 
     var title: String {
@@ -15,6 +15,7 @@ enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
         case .macd: return "MACD"
         case .stochastic: return L("Stochastic")
         case .volumeProfile: return L("Volume Profile")
+        case .highLow: return L("High / Low (visible range)")
         }
     }
 
@@ -45,6 +46,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .macd: return IndicatorConfig(kind: kind, p1: 12, p2: 26, p3: 9, color: color)
         case .stochastic: return IndicatorConfig(kind: kind, p1: 14, p2: 3, p3: 3, upper: 80, lower: 20, color: color)
         case .volumeProfile: return IndicatorConfig(kind: kind, p1: 40, p2: 30, upper: 70, color: color)
+        case .highLow: return IndicatorConfig(kind: kind, p1: 0, p2: 1, color: color)
         }
     }
 
@@ -67,6 +69,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .macd: return "MACD \(p1), \(p2), \(p3)"
         case .stochastic: return "Stoch \(p1), \(p2), \(p3)"
         case .volumeProfile: return "VPVR \(p1)"
+        case .highLow: return L("High / Low")
         }
     }
 }
@@ -283,6 +286,8 @@ struct ChartLayers {
     var bands: [(up: [Double?], low: [Double?], color: Color)] = []
     var panes: [ChartPane] = []
     var legend: [(String, Color)] = []
+    /// Marks of the highest high and lowest low among the candles on screen (with % from the last price).
+    var highLow: (color: Color, showPercent: Bool)?
 
     static func build(_ candles: [Candle], configs: [IndicatorConfig], interval: CandleInterval) -> ChartLayers {
         var r = ChartLayers()
@@ -317,6 +322,8 @@ struct ChartLayers {
                                          lines: [ChartSeries(values: m.macd, color: color),
                                                  ChartSeries(values: m.signal, color: IndicatorPalette.color(cfg.color + 4))],
                                          histogram: m.hist, levels: [0]))
+            case .highLow:
+                r.highLow = (color, cfg.p2 != 0)
             case .volumeProfile:
                 r.volumeProfile = VolumeProfileSpec(rows: max(5, cfg.p1), valueArea: min(0.99, max(0.1, cfg.upper / 100)),
                                                     widthFraction: min(0.8, max(0.05, Double(cfg.p2) / 100)), color: color)

@@ -28,6 +28,10 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Distance from the current price, %": "Расстояние от текущей цены, %",
+        "High / Low": "High / Low",
+        "High / Low (visible range)": "High / Low (видимый диапазон)",
+        "Marks the highest high and the lowest low among the candles on screen; updates as you scroll and zoom.": "Отмечает максимум и минимум среди свечей на экране; обновляется при прокрутке и масштабировании.",
         "Alert prices on the scale": "Цены алертов на шкале",
         "Last price line": "Линия текущей цены",
         "Line labels": "Подписи линий",

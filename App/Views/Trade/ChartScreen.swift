@@ -375,6 +375,9 @@ struct IndicatorEditor: View {
                     Stepper(L("Fast: {0}", config.p1), value: $config.p1, in: 2...100)
                     Stepper(L("Slow: {0}", config.p2), value: $config.p2, in: 3...200)
                     Stepper(L("Signal: {0}", config.p3), value: $config.p3, in: 2...100)
+                case .highLow:
+                    Toggle(L("Distance from the current price, %"), isOn: Binding(get: { config.p2 != 0 }, set: { config.p2 = $0 ? 1 : 0 }))
+                    Text(L("Marks the highest high and the lowest low among the candles on screen; updates as you scroll and zoom.")).font(.caption).foregroundStyle(Color.hlMuted)
                 case .volumeProfile:
                     Stepper(L("Rows: {0}", config.p1), value: $config.p1, in: 10...200, step: 5)
                     Stepper(L("Value area: {0}%", Int(config.upper)), value: $config.upper, in: 50...95, step: 5)
