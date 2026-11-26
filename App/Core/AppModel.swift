@@ -1507,16 +1507,19 @@ final class AppModel {
         activeAccountId = a.id
     }
 
-    /// Adds an address as a watch-only account without switching to it (from the trades feed).
+    /// Follows an address from the trades feed: adds it as a watch-only account (once) and switches to it,
+    /// so its positions, orders and fills show right away (switch back in the account menu).
     func addWatchAccount(_ address: String) {
         let a = address.lowercased()
         guard Address.isValid(a) else { return }
-        if accounts.contains(where: { $0.address == a }) {
-            show(.info, L("{0} is already in your accounts", Address.short(a)))
-            return
+        if let existing = accounts.first(where: { $0.address == a }) {
+            activeAccountId = existing.id
+        } else {
+            let acc = Account(name: L("Watch {0}", Address.short(a)), address: a, kind: .watch)
+            accounts.append(acc)
+            activeAccountId = acc.id
         }
-        accounts.append(Account(name: L("Watch {0}", Address.short(a)), address: a, kind: .watch))
-        show(.success, L("Added to watch accounts: {0}. Switch to it in Portfolio.", Address.short(a)))
+        show(.success, L("Now watching {0}. Switch back in the account menu (Portfolio).", Address.short(a)))
     }
 
     func removeAccount(_ a: Account) {

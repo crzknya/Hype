@@ -28,6 +28,7 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Now watching {0}. Switch back in the account menu (Portfolio).": "Теперь вы следите за {0}. Вернуться к своему аккаунту — в меню аккаунтов (Portfolio).",
         "Full screen": "На весь экран",
         "Added to watch accounts: {0}. Switch to it in Portfolio.": "Добавлен в аккаунты для наблюдения: {0}. Переключиться можно в Portfolio.",
         "Copy maker address": "Скопировать адрес мейкера",
