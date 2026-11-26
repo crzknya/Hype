@@ -88,8 +88,11 @@ struct SettingsView: View {
 
                 Section {
                     Toggle(L("Live Activity"), isOn: $model.liveActivityEnabled)
+                    Toggle(L("Update in the background"), isOn: $model.liveActivityBackground)
+                        .disabled(!model.liveActivityEnabled)
                 } footer: {
-                    Text(L("Open positions on the lock screen and in the Dynamic Island: PnL and the distance to liquidation. Live while the app runs; in the background iOS refreshes it only occasionally, the card shows when it was updated. It also needs Live Activities allowed for Hype in iOS Settings."))
+                    Text(L("Open positions on the lock screen and in the Dynamic Island: PnL and the distance to liquidation. It also needs Live Activities allowed for Hype in iOS Settings.") + "\n\n" +
+                         L("Update in the background: while you have open positions, the app keeps running after you leave it (as a silent audio app, it doesn't stop your music) and the card updates every few seconds. Uses roughly 2–5% battery per hour while active; stops by itself when no positions are open. Off: the card refreshes only occasionally in the background."))
                 }
 
                 Section {

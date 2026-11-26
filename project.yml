@@ -36,7 +36,7 @@ targets:
         # Landscape is allowed only while the full-screen chart is open (OrientationLock).
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIUserInterfaceStyle: Dark
-        UIBackgroundModes: [fetch]
+        UIBackgroundModes: [fetch, audio]
         BGTaskSchedulerPermittedIdentifiers: [com.hype.trader.refresh]
         NSFaceIDUsageDescription: Unlock the app and confirm sensitive actions
         NSSupportsLiveActivities: true

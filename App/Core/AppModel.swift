@@ -44,8 +44,17 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(liveActivityEnabled, forKey: "liveActivity")
             LiveActivityController.sync(self, force: true)
+            updateKeepAlive()
         }
     }
+    /// Keep running in the background while positions are open, so the Live Activity stays live.
+    var liveActivityBackground = UserDefaults.standard.object(forKey: "liveActivityBackground") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(liveActivityBackground, forKey: "liveActivityBackground")
+            updateKeepAlive()
+        }
+    }
+    @ObservationIgnored var isBackgrounded = false
     /// Experimental energy saving: market streams only while the Trade tab is open, slower UI updates.
     var energySaving = false { didSet { save(); if oldValue != energySaving { updateMarketStreams() } } }
     /// Certificate pinning for the Hyperliquid API (Settings → Security); read by the session delegate.
@@ -348,7 +357,7 @@ final class AppModel {
         // Prices for every market (perps, HIP-3, spot) once a second — the stream the web app uses;
         // the documented allMids stream only pushes every ~10 s.
         socket.subscribe(.map([("type", .str("fastAssetCtxs"))]))
-        marketStreamsPaused = energySaving && tab != .trade
+        marketStreamsPaused = (energySaving && tab != .trade) || isBackgrounded
         subscribeCoin(selectedCoin)
         subscribeUser()
         loops.append(Task { [weak self] in
@@ -386,7 +395,10 @@ final class AppModel {
             // Live Activity with the open positions (throttled inside).
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
-                if let self { LiveActivityController.sync(self) }
+                if let self {
+                    LiveActivityController.sync(self)
+                    self.updateKeepAlive()
+                }
             }
         })
         loops.append(Task { [weak self] in
@@ -648,7 +660,8 @@ final class AppModel {
     /// coming back resubscribes (the book and trades arrive as fresh snapshots) and reloads candles.
     private func updateMarketStreams() {
         guard !loading else { return }
-        let pause = energySaving && tab != .trade
+        // In the background only the account streams are needed (Live Activity), not book / trades / candles.
+        let pause = (energySaving && tab != .trade) || isBackgrounded
         guard pause != marketStreamsPaused else { return }
         marketStreamsPaused = pause
         if pause {
@@ -754,7 +767,16 @@ final class AppModel {
         socket.connect()
     }
 
+    /// Background keep-alive runs only in the background, with the option on and open positions.
+    func updateKeepAlive() {
+        let want = isBackgrounded && liveActivityEnabled && liveActivityBackground && account != nil && !positions.isEmpty
+        if want { BackgroundKeepAlive.shared.start() } else { BackgroundKeepAlive.shared.stop() }
+    }
+
     func sceneActive(_ active: Bool) {
+        isBackgrounded = !active
+        updateKeepAlive()
+        updateMarketStreams()
         if active {
             if loops.isEmpty { start() }
             else {

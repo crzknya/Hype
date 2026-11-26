@@ -28,6 +28,9 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Open positions on the lock screen and in the Dynamic Island: PnL and the distance to liquidation. It also needs Live Activities allowed for Hype in iOS Settings.": "Открытые позиции на экране блокировки и в Dynamic Island: PnL и расстояние до ликвидации. Также Live Activities должны быть разрешены для Hype в настройках iOS.",
+        "Update in the background": "Обновлять в фоне",
+        "Update in the background: while you have open positions, the app keeps running after you leave it (as a silent audio app, it doesn't stop your music) and the card updates every few seconds. Uses roughly 2–5% battery per hour while active; stops by itself when no positions are open. Off: the card refreshes only occasionally in the background.": "Обновлять в фоне: пока есть открытые позиции, приложение продолжает работать после выхода из него (как беззвучное аудиоприложение — музыку не прерывает), и карточка обновляется каждые несколько секунд. Расход примерно 2–5% батареи в час, пока режим работает; сам отключается, когда открытых позиций нет. Выключено: в фоне карточка обновляется лишь изредка.",
         "Any": "Любой",
         "Any volume": "Любой объём",
         "Collecting prices: the {0} change is available in about {1} min. Keep the app open; the history survives short trips to the background.": "Собираю цены: изменение за {0} будет доступно примерно через {1} мин. Держите приложение открытым; история сохраняется при коротком сворачивании.",
