@@ -11,9 +11,16 @@ concurrency:
 
 jobs:
   core-tests:
-    runs-on: macos-26
+    # macos-26 runners were unavailable (jobs cancelled after 15 min in the queue): macos-15 with Xcode 26.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          xcodebuild -version
       - name: Xcode version
         run: xcodebuild -version && swift --version
       - name: Test HyperCore (signing vs Python SDK vectors)
@@ -21,10 +28,16 @@ jobs:
         run: swift test
 
   build-ipa:
-    runs-on: macos-26
+    runs-on: macos-15
     needs: core-tests
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          xcodebuild -version
       - name: Check localization keys
         run: python3 tools/check_localization.py
       - name: Xcode version
