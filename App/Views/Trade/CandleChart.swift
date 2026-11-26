@@ -14,6 +14,21 @@ final class ChartViewportCache {
     var lo = 0.0, hi = 1.0          // price range in scale units (log when log scale)
     var plotW: CGFloat = 300
     var mainH: CGFloat = 200
+    var log = false
+}
+
+/// What the chart needs to show and edit drawings (nil = a chart without drawings).
+struct ChartDrawingContext {
+    var drawings: [ChartDrawing]
+    var tool: DrawTool
+    var selected: UUID?
+    var magnet: MagnetMode
+    var hidden: Bool
+    /// Adds or updates a drawing.
+    var commit: (ChartDrawing) -> Void
+    var select: (UUID?) -> Void
+    /// A one-shot tool finished: back to the cursor.
+    var toolDone: () -> Void
 }
 
 /// Candle chart that behaves like TradingView:
@@ -45,6 +60,8 @@ struct CandleChart: View {
     var clockInterval: Double = 1
     /// Log-scale toggle shown next to "A" under the price scale (as TradingView's "log" / "auto").
     var onToggleLog: (() -> Void)? = nil
+    /// Drawing tools: ruler, lines, rectangles, Fibonacci.
+    var drawing: ChartDrawingContext? = nil
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -68,8 +85,15 @@ struct CandleChart: View {
     @State private var pinchStart: (spacing: CGFloat, right: CGFloat, x: CGFloat)?
     @State private var momentum: Task<Void, Never>?
     @State private var crosshair: CGPoint?
+    // Drawing state: a measurement, the drawing being created or moved, the first tapped point.
+    @State private var ruler: (a: ChartPoint, b: ChartPoint)?
+    @State private var draft: ChartDrawing?
+    @State private var pendingA: ChartPoint?
+    @State private var createStart: ChartPoint?
+    @State private var editStart: ChartDrawing?
+    @State private var editHandle = -1
 
-    private enum DragKind { case chart, priceAxis, timeAxis }
+    private enum DragKind { case chart, priceAxis, timeAxis, create, edit }
     private enum PanAxis { case horizontal, vertical, free }
 
     private let axisW: CGFloat = 58
@@ -131,6 +155,10 @@ struct CandleChart: View {
                 rightOffset -= CGFloat(added)
             }
             .onChange(of: logScale) { _, _ in autoScale = true }
+            .onChange(of: drawing?.tool) { _, tool in
+                pendingA = nil
+                if tool != .ruler { ruler = nil }
+            }
             .onAppear { if let s0 = initialSpacing { spacing = min(maxSpacing, max(minSpacing, s0)) } }
             .onChange(of: spacing) { _, s1 in onSpacingChange?(s1) }
         }
@@ -157,6 +185,7 @@ struct CandleChart: View {
             },
             pinchEnded: { pinchStart = nil },
             crosshair: { crosshair = $0 },
+            tap: { loc in handleTap(loc, size: size) },
             doubleTap: { loc in
                 if loc.x > size.width - axisW && loc.y < mainH {
                     autoScale = true                              // double tap on the price axis
@@ -173,6 +202,11 @@ struct CandleChart: View {
     /// anywhere but the price scale: that one goes to the page. Drags on the price scale, with the crosshair
     /// or with auto-scale off always stay on the chart.
     private func shouldBeginPan(start: CGPoint, velocity: CGPoint, size: CGSize) -> Bool {
+        // A drawing tool, or a drag on the selected drawing, keeps every direction on the chart.
+        if let dc = drawing {
+            if dc.tool != .cursor { return true }
+            if let h = hitTest(start), h.id == dc.selected { return true }
+        }
         guard verticalSwipeScrollsPage, autoScale, crosshair == nil else { return true }
         let plotW = size.width - axisW
         let mainH = layout(size).mainH
@@ -185,6 +219,9 @@ struct CandleChart: View {
         guard crosshair == nil else { return }
         let plotW = size.width - axisW
         let mainH = max(1, layout(size).mainH)
+        if dragKind == nil, let dc = drawing, start.x <= plotW, start.y <= mainH, beginDrawingDrag(dc, start: start) {
+            stopMomentum()
+        }
         if dragKind == nil {
             stopMomentum()
             let p = start
@@ -198,6 +235,8 @@ struct CandleChart: View {
             if dragKind == .chart && autoScale && verticalSwipeScrollsPage { panAxis = .horizontal }
         }
         switch dragKind {
+        case .create, .edit:
+            drawingDragChanged(start: start, translation: translation)
         case .priceAxis:
             // Drag down compresses (wider range), up stretches — around the middle of the scale.
             autoScale = false
@@ -248,6 +287,7 @@ struct CandleChart: View {
     }
 
     private func dragEnded(velocityX: CGFloat, size: CGSize) {
+        if dragKind == .create || dragKind == .edit { drawingDragEnded() }
         if dragKind == .chart && (panAxis == .horizontal || panAxis == .free) {
             // Inertia: continue with the release speed and decelerate.
             startMomentum(velocity: velocityX, plotW: size.width - axisW)
@@ -379,7 +419,7 @@ struct CandleChart: View {
         } else {
             loS = manualLo; hiS = manualHi
         }
-        cache.lo = loS; cache.hi = hiS; cache.plotW = plotW; cache.mainH = L0.mainH
+        cache.lo = loS; cache.hi = hiS; cache.plotW = plotW; cache.mainH = L0.mainH; cache.log = log
         let mainH = L0.mainH
         func y(_ p: Double) -> CGFloat { CGFloat((hiS - toScale(p)) / (hiS - loS)) * mainH }
         let lo = fromScale(loS), hi = fromScale(hiS)
@@ -448,6 +488,9 @@ struct CandleChart: View {
         for series in layers.overlays {
             strokeSeries(&main, series, r: r, x: x, y: y)
         }
+
+        // Drawings, the ruler and points being placed.
+        drawDrawings(&main, axis: &ctx, plotW: plotW, mainH: mainH, dec: dec)
 
         // Price lines (entry, liquidation, orders, alerts)
         for l in lines where l.price > lo && l.price < hi {
@@ -691,6 +734,8 @@ struct ChartTouchHandlers {
     var pinchEnded: () -> Void
     /// Crosshair position after a long press; nil when released.
     var crosshair: (CGPoint?) -> Void
+    /// Single tap (places or selects drawings); waits for a possible double tap.
+    var tap: (CGPoint) -> Void = { _ in }
     var doubleTap: (CGPoint) -> Void
 }
 
@@ -716,6 +761,7 @@ final class ChartTouchView: UIView, UIGestureRecognizerDelegate {
     private let pinch = UIPinchGestureRecognizer()
     private let press = UILongPressGestureRecognizer()
     private let tap2 = UITapGestureRecognizer()
+    private let tap1 = UITapGestureRecognizer()
     private var pinchAnchorX: CGFloat = 0
 
     override init(frame: CGRect) {
@@ -729,7 +775,9 @@ final class ChartTouchView: UIView, UIGestureRecognizerDelegate {
         press.addTarget(self, action: #selector(onPress(_:)))
         tap2.numberOfTapsRequired = 2
         tap2.addTarget(self, action: #selector(onTap2(_:)))
-        for g in [pan, pinch, press, tap2] as [UIGestureRecognizer] {
+        tap1.addTarget(self, action: #selector(onTap1(_:)))
+        tap1.require(toFail: tap2)
+        for g in [pan, pinch, press, tap2, tap1] as [UIGestureRecognizer] {
             g.delegate = self
             addGestureRecognizer(g)
         }
@@ -764,6 +812,10 @@ final class ChartTouchView: UIView, UIGestureRecognizerDelegate {
         case .ended, .cancelled, .failed: handlers?.crosshair(nil)
         default: break
         }
+    }
+
+    @objc private func onTap1(_ g: UITapGestureRecognizer) {
+        if g.state == .ended { handlers?.tap(g.location(in: self)) }
     }
 
     @objc private func onTap2(_ g: UITapGestureRecognizer) {
@@ -817,5 +869,359 @@ final class ChartPanRecognizer: UIPanGestureRecognizer {
         super.reset()
         touchStart = nil
         decided = false
+    }
+}
+
+// MARK: - Drawings
+
+extension CandleChart {
+    private var ivMs: Double { max(intervalSeconds, 1) * 1000 }
+
+    /// Fractional candle index under an x coordinate (inverse of x(i)).
+    fileprivate func fracIndex(atX x: CGFloat) -> Double {
+        Double(CGFloat(candles.count - 1) + rightOffset + 0.5 - (cache.plotW - x) / spacing)
+    }
+
+    fileprivate func xOf(index fi: Double) -> CGFloat {
+        cache.plotW - (CGFloat(Double(candles.count - 1) - fi) + rightOffset + 0.5) * spacing
+    }
+
+    /// Time (ms) at a fractional index; extrapolated with the interval beyond the loaded candles.
+    fileprivate func time(atIndex fi: Double) -> Double {
+        guard let first = candles.first, let last = candles.last else { return 0 }
+        let n = candles.count
+        if fi <= 0 { return first.t + fi * ivMs }
+        if fi >= Double(n - 1) { return last.t + (fi - Double(n - 1)) * ivMs }
+        let i = Int(floor(fi)), f = fi - Double(i)
+        return candles[i].t + (candles[i + 1].t - candles[i].t) * f
+    }
+
+    fileprivate func index(ofTime t: Double) -> Double {
+        guard let first = candles.first, let last = candles.last else { return 0 }
+        let n = candles.count
+        if t <= first.t { return (t - first.t) / ivMs }
+        if t >= last.t { return Double(n - 1) + (t - last.t) / ivMs }
+        var lo = 0, hi = n - 1
+        while lo < hi {
+            let m = (lo + hi + 1) / 2
+            if candles[m].t <= t { lo = m } else { hi = m - 1 }
+        }
+        let span = candles[lo + 1].t - candles[lo].t
+        return Double(lo) + (span > 0 ? (t - candles[lo].t) / span : 0)
+    }
+
+    fileprivate func yOf(price p: Double) -> CGFloat {
+        let v = cache.log ? Foundation.log(max(p, 1e-12)) : p
+        return CGFloat((cache.hi - v) / max(cache.hi - cache.lo, 1e-12)) * cache.mainH
+    }
+
+    fileprivate func price(atY y: CGFloat) -> Double {
+        let v = cache.hi - Double(y / max(cache.mainH, 1)) * (cache.hi - cache.lo)
+        return cache.log ? Foundation.exp(v) : v
+    }
+
+    fileprivate func screen(_ p: ChartPoint) -> CGPoint {
+        CGPoint(x: xOf(index: index(ofTime: p.t)), y: yOf(price: p.p))
+    }
+
+    /// Chart point under a location: time snaps to the candle; with the magnet, the price snaps to the
+    /// candle's open / high / low / close (weak: only when within 24 pt).
+    fileprivate func chartPoint(at loc: CGPoint, magnet: MagnetMode) -> ChartPoint {
+        let fi = fracIndex(atX: loc.x)
+        let ri = Int(fi.rounded())
+        var p = price(atY: loc.y)
+        guard ri >= 0, ri < candles.count else { return ChartPoint(t: time(atIndex: fi.rounded()), p: p) }
+        let c = candles[ri]
+        if magnet != .off,
+           let best = [c.o, c.h, c.l, c.c].min(by: { abs(yOf(price: $0) - loc.y) < abs(yOf(price: $1) - loc.y) }),
+           magnet == .strong || abs(yOf(price: best) - loc.y) < 24 {
+            p = best
+        }
+        return ChartPoint(t: c.t, p: p)
+    }
+
+    fileprivate func defaultColor(_ kind: DrawKind) -> Int {
+        switch kind {
+        case .hline, .hray, .rect: return 1
+        case .trend: return 0
+        case .fib: return 5
+        }
+    }
+
+    // MARK: Hit testing
+
+    /// Drawing under a point: `handle` 0 / 1 for the end points of the selected drawing, −1 for its body.
+    fileprivate func hitTest(_ loc: CGPoint) -> (id: UUID, handle: Int)? {
+        guard let dc = drawing, !dc.hidden else { return nil }
+        let tol: CGFloat = 12
+        for d in dc.drawings.reversed() {
+            let A = screen(d.a), B = screen(d.b)
+            if d.id == dc.selected {
+                let handles = d.kind == .hline || d.kind == .hray ? [A] : [A, B]
+                for (i, h) in handles.enumerated() where hypot(h.x - loc.x, h.y - loc.y) < 18 { return (d.id, i) }
+            }
+            var hit = false
+            switch d.kind {
+            case .hline:
+                hit = abs(loc.y - A.y) < tol
+            case .hray:
+                hit = abs(loc.y - A.y) < tol && loc.x >= A.x - tol
+            case .trend:
+                hit = distance(loc, A, B, left: d.extendLeft, right: d.extendRight) < tol
+            case .rect:
+                hit = CGRect(x: min(A.x, B.x), y: min(A.y, B.y), width: abs(B.x - A.x), height: abs(B.y - A.y))
+                    .insetBy(dx: -tol, dy: -tol).contains(loc)
+            case .fib:
+                let x1 = d.extendRight ? cache.plotW : max(A.x, B.x)
+                hit = loc.x >= min(A.x, B.x) - tol && loc.x <= x1 + tol
+                    && loc.y >= min(A.y, B.y) - tol && loc.y <= max(A.y, B.y) + tol
+            }
+            if hit { return (d.id, -1) }
+        }
+        return nil
+    }
+
+    private func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint, left: Bool, right: Bool) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+        if !left { t = max(0, t) }
+        if !right { t = min(1, t) }
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    // MARK: Gestures
+
+    fileprivate func handleTap(_ loc: CGPoint, size: CGSize) {
+        guard let dc = drawing else { return }
+        let plotW = size.width - axisW, mainH = layout(size).mainH
+        guard loc.x <= plotW, loc.y <= mainH, !candles.isEmpty else { return }
+        let pt = chartPoint(at: loc, magnet: dc.magnet)
+        switch dc.tool {
+        case .cursor:
+            ruler = nil
+            dc.select(hitTest(loc)?.id)
+        case .ruler:
+            // Tap, tap: measure between two points; a further tap clears the measurement.
+            if ruler != nil { ruler = nil; pendingA = nil }
+            else if let a = pendingA { ruler = (a, pt); pendingA = nil }
+            else { pendingA = pt }
+        case .hline, .hray:
+            guard let kind = dc.tool.kind else { return }
+            let d = ChartDrawing(kind: kind, a: pt, b: pt, color: defaultColor(kind))
+            dc.commit(d); dc.select(d.id); dc.toolDone()
+        case .trend, .rect, .fib:
+            guard let kind = dc.tool.kind else { return }
+            if let a = pendingA {
+                let d = ChartDrawing(kind: kind, a: a, b: pt, color: defaultColor(kind))
+                pendingA = nil
+                dc.commit(d); dc.select(d.id); dc.toolDone()
+            } else {
+                pendingA = pt
+            }
+        }
+    }
+
+    /// Starts creating (a tool is active) or moving the selected drawing; false = an ordinary chart drag.
+    fileprivate func beginDrawingDrag(_ dc: ChartDrawingContext, start: CGPoint) -> Bool {
+        if dc.tool != .cursor {
+            dragKind = .create
+            pendingA = nil
+            createStart = chartPoint(at: start, magnet: dc.magnet)
+            if dc.tool == .ruler { ruler = nil }
+            return true
+        }
+        if let h = hitTest(start), h.id == dc.selected,
+           let d = dc.drawings.first(where: { $0.id == h.id }), !d.locked {
+            dragKind = .edit
+            editStart = d
+            editHandle = h.handle
+            draft = d
+            return true
+        }
+        return false
+    }
+
+    fileprivate func drawingDragChanged(start: CGPoint, translation: CGSize) {
+        guard let dc = drawing else { return }
+        let cur = CGPoint(x: start.x + translation.width, y: start.y + translation.height)
+        switch dragKind {
+        case .create:
+            guard let a = createStart else { return }
+            let b = chartPoint(at: cur, magnet: dc.magnet)
+            if dc.tool == .ruler {
+                ruler = (a, b)
+            } else if let kind = dc.tool.kind {
+                // One-point tools follow the finger; two-point tools stretch from the start point.
+                let id = draft?.id ?? UUID()
+                var d = ChartDrawing(kind: kind, a: kind.twoPoint ? a : b, b: b, color: defaultColor(kind))
+                d.id = id
+                draft = d
+            }
+        case .edit:
+            guard var d = editStart else { return }
+            if editHandle >= 0 {
+                let p = chartPoint(at: cur, magnet: dc.magnet)
+                if d.kind == .hline || d.kind == .hray { d.a = p; d.b = p }
+                else if editHandle == 0 { d.a = p } else { d.b = p }
+            } else {
+                // Whole drawing: both points move with the finger (no magnet).
+                let A = screen(d.a), B = screen(d.b)
+                d.a = chartPoint(at: CGPoint(x: A.x + translation.width, y: A.y + translation.height), magnet: .off)
+                d.b = chartPoint(at: CGPoint(x: B.x + translation.width, y: B.y + translation.height), magnet: .off)
+                if d.kind == .hline || d.kind == .hray { d.b = d.a }
+            }
+            draft = d
+        default:
+            break
+        }
+    }
+
+    fileprivate func drawingDragEnded() {
+        guard let dc = drawing else { return }
+        if dragKind == .create, let d = draft {
+            let A = screen(d.a), B = screen(d.b)
+            if !d.kind.twoPoint || hypot(B.x - A.x, B.y - A.y) > 6 {
+                dc.commit(d); dc.select(d.id); dc.toolDone()
+            }
+        } else if dragKind == .edit, let d = draft {
+            dc.commit(d)
+        }
+        draft = nil
+        editStart = nil
+        createStart = nil
+    }
+
+    // MARK: Rendering
+
+    fileprivate func drawDrawings(_ main: inout GraphicsContext, axis: inout GraphicsContext,
+                                  plotW: CGFloat, mainH: CGFloat, dec: Int) {
+        guard let dc = drawing else { return }
+        var list = dc.hidden ? [] : dc.drawings.filter { $0.id != draft?.id }
+        if let d = draft { list.append(d) }
+        for d in list {
+            render(d, selected: d.id == dc.selected || d.id == draft?.id, &main, axis: &axis, plotW: plotW, mainH: mainH, dec: dec)
+        }
+        if let a = pendingA {
+            let p = screen(a)
+            main.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)), with: .color(Color.hlAccent))
+        }
+        if let r = ruler { renderRuler(r.a, r.b, &main, dec: dec) }
+    }
+
+    private func render(_ d: ChartDrawing, selected: Bool, _ main: inout GraphicsContext, axis: inout GraphicsContext,
+                        plotW: CGFloat, mainH: CGFloat, dec: Int) {
+        let color = d.swiftColor
+        let w = CGFloat(d.width)
+        let style = StrokeStyle(lineWidth: w, lineCap: .round, dash: d.style.dash(w))
+        let A = screen(d.a), B = screen(d.b)
+        func label(_ text: String, at p: CGPoint, anchor: UnitPoint, size: CGFloat = 10) {
+            guard !text.isEmpty else { return }
+            main.draw(Text(text).font(.system(size: size, weight: .semibold)).foregroundColor(color), at: p, anchor: anchor)
+        }
+        func axisTag(_ price: Double) {
+            let yy = yOf(price: price)
+            guard yy > 0, yy < mainH else { return }
+            axis.fill(Path(roundedRect: CGRect(x: plotW + 1, y: yy - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(color))
+            axis.draw(Text(Fmt.price(price, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
+                      at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
+        }
+        switch d.kind {
+        case .hline, .hray:
+            var path = Path()
+            path.move(to: CGPoint(x: d.kind == .hline ? 0 : A.x, y: A.y)); path.addLine(to: CGPoint(x: plotW, y: A.y))
+            main.stroke(path, with: .color(color), style: style)
+            label(d.text, at: CGPoint(x: (d.kind == .hline ? 6 : A.x + 6), y: A.y - 3), anchor: .bottomLeading)
+            if d.showPrice { axisTag(d.a.p) }
+        case .trend:
+            var p1 = A, p2 = B
+            let dx = B.x - A.x, dy = B.y - A.y
+            let len = max(hypot(dx, dy), 1)
+            let far = 5000 / len
+            if d.extendLeft { p1 = CGPoint(x: A.x - dx * far, y: A.y - dy * far) }
+            if d.extendRight { p2 = CGPoint(x: B.x + dx * far, y: B.y + dy * far) }
+            var path = Path()
+            path.move(to: p1); path.addLine(to: p2)
+            main.stroke(path, with: .color(color), style: style)
+            label(d.text, at: CGPoint(x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 - 4), anchor: .bottom)
+            if d.showPrice && selected { axisTag(d.a.p); axisTag(d.b.p) }
+        case .rect:
+            let r = CGRect(x: min(A.x, B.x), y: min(A.y, B.y), width: abs(B.x - A.x), height: abs(B.y - A.y))
+            main.fill(Path(r), with: .color(color.opacity(0.12)))
+            main.stroke(Path(r), with: .color(color), style: style)
+            label(d.text, at: CGPoint(x: r.midX, y: r.minY - 3), anchor: .bottom)
+            if d.showPrice && selected { axisTag(d.a.p); axisTag(d.b.p) }
+        case .fib:
+            let x0 = min(A.x, B.x), x1 = d.extendRight ? plotW : max(A.x, B.x)
+            let y382 = yOf(price: d.fibPrice(0.382)), y618 = yOf(price: d.fibPrice(0.618))
+            main.fill(Path(CGRect(x: x0, y: min(y382, y618), width: max(1, x1 - x0), height: abs(y618 - y382))),
+                      with: .color(color.opacity(0.08)))
+            for lv in ChartDrawing.fibLevels {
+                let p = d.fibPrice(lv)
+                let yy = yOf(price: p)
+                var path = Path()
+                path.move(to: CGPoint(x: x0, y: yy)); path.addLine(to: CGPoint(x: x1, y: yy))
+                let major = lv == 0 || lv == 1 || lv == 0.5 || lv == 0.618
+                main.stroke(path, with: .color(color.opacity(major ? 1 : 0.6)), style: StrokeStyle(lineWidth: w, dash: d.style.dash(w)))
+                label("\(Fmt.num(lv, 3))  \(Fmt.price(p, decimals: dec))", at: CGPoint(x: x0 + 3, y: yy - 2), anchor: .bottomLeading, size: 9)
+            }
+            var diag = Path()
+            diag.move(to: A); diag.addLine(to: B)
+            main.stroke(diag, with: .color(color.opacity(0.5)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            label(d.text, at: CGPoint(x: x0 + 3, y: min(A.y, B.y) - 14), anchor: .bottomLeading)
+        }
+        if selected {
+            let handles = d.kind == .hline || d.kind == .hray ? [A] : [A, B]
+            for h in handles {
+                let r = CGRect(x: h.x - 5, y: h.y - 5, width: 10, height: 10)
+                main.fill(Path(ellipseIn: r), with: .color(Color.hlBg))
+                main.stroke(Path(ellipseIn: r), with: .color(color), lineWidth: 2)
+            }
+        }
+    }
+
+    /// TradingView-like measurement: shaded box, price change (absolute and %), bars and time span.
+    private func renderRuler(_ a: ChartPoint, _ b: ChartPoint, _ main: inout GraphicsContext, dec: Int) {
+        let A = screen(a), B = screen(b)
+        let up = b.p >= a.p
+        let color = up ? Color(red: 0.25, green: 0.55, blue: 1.0) : Color.hlRed
+        let r = CGRect(x: min(A.x, B.x), y: min(A.y, B.y), width: abs(B.x - A.x), height: abs(B.y - A.y))
+        main.fill(Path(r), with: .color(color.opacity(0.16)))
+        var v = Path()
+        v.move(to: CGPoint(x: r.midX, y: A.y)); v.addLine(to: CGPoint(x: r.midX, y: B.y))
+        var h = Path()
+        h.move(to: CGPoint(x: A.x, y: r.midY)); h.addLine(to: CGPoint(x: B.x, y: r.midY))
+        main.stroke(v, with: .color(color), lineWidth: 1.2)
+        main.stroke(h, with: .color(color), lineWidth: 1.2)
+        // Arrow heads at the second point's side.
+        var ah = Path()
+        let dirY: CGFloat = B.y < A.y ? -1 : 1
+        ah.move(to: CGPoint(x: r.midX - 4, y: B.y - dirY * 6)); ah.addLine(to: CGPoint(x: r.midX, y: B.y)); ah.addLine(to: CGPoint(x: r.midX + 4, y: B.y - dirY * 6))
+        let dirX: CGFloat = B.x < A.x ? -1 : 1
+        ah.move(to: CGPoint(x: B.x - dirX * 6, y: r.midY - 4)); ah.addLine(to: CGPoint(x: B.x, y: r.midY)); ah.addLine(to: CGPoint(x: B.x - dirX * 6, y: r.midY + 4))
+        main.stroke(ah, with: .color(color), lineWidth: 1.2)
+
+        let dp = b.p - a.p
+        let pct = a.p != 0 ? dp / a.p : 0
+        let bars = Int((index(ofTime: b.t) - index(ofTime: a.t)).rounded())
+        let secs = Int(abs(b.t - a.t) / 1000)
+        let line1 = "\(dp >= 0 ? "+" : "−")\(Fmt.price(abs(dp), decimals: dec)) (\(Fmt.pct(pct, 2)))"
+        let line2 = L("{0} bars, {1}", bars, Self.span(secs))
+        let text = main.resolve(Text(line1 + "\n" + line2).font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .foregroundColor(.white))
+        let sz = text.measure(in: CGSize(width: 300, height: 60))
+        var box = CGRect(x: r.midX - sz.width / 2 - 6, y: (up ? r.minY - sz.height - 14 : r.maxY + 6), width: sz.width + 12, height: sz.height + 8)
+        box.origin.x = min(max(2, box.origin.x), cache.plotW - box.width - 2)
+        box.origin.y = min(max(2, box.origin.y), cache.mainH - box.height - 2)
+        main.fill(Path(roundedRect: box, cornerRadius: 5), with: .color(color.opacity(0.92)))
+        main.draw(text, at: CGPoint(x: box.midX, y: box.midY), anchor: .center)
+    }
+
+    private static func span(_ s: Int) -> String {
+        let d = s / 86400, h = s % 86400 / 3600, m = s % 3600 / 60
+        if d > 0 { return h > 0 ? "\(d)d \(h)h" : "\(d)d" }
+        if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
+        return "\(m)m"
     }
 }

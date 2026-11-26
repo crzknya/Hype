@@ -18,10 +18,24 @@ struct PriceChartView: View {
                         onSpacingChange: { model.chartSpacing = $0 },
                         verticalSwipeScrollsPage: inScrollingPage,
                         clockInterval: model.energySaving ? 5 : 1,
-                        onToggleLog: { model.logScale.toggle() })
+                        onToggleLog: { model.logScale.toggle() },
+                        drawing: drawingContext)
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
+            DrawingOverlay(coin: market.id)
         }
+        .onChange(of: market.id) { _, _ in model.selectedDrawingId = nil }
+    }
+
+    /// Drawings of this market and the drawing panel state, for the chart.
+    private var drawingContext: ChartDrawingContext {
+        let coin = market.id
+        return ChartDrawingContext(
+            drawings: model.drawings(for: coin), tool: model.drawTool, selected: model.selectedDrawingId,
+            magnet: model.magnet, hidden: model.drawingsHidden,
+            commit: { model.updateDrawing($0, coin: coin) },
+            select: { model.selectedDrawingId = $0 },
+            toolDone: { model.drawTool = .cursor })
     }
 }
 
@@ -43,6 +57,7 @@ struct ChartToolbar: View {
     }
 
     var body: some View {
+        VStack(spacing: 6) {
         HStack(spacing: 4) {
             HStack(spacing: 2) {
                 ForEach(shownIntervals) { iv in
@@ -66,6 +81,12 @@ struct ChartToolbar: View {
                 }
             }
             .padding(.leading, 10)
+            Button { withAnimation(.easeOut(duration: 0.15)) { model.showDrawPanel.toggle() } } label: {
+                Image(systemName: "pencil.and.ruler").font(.system(size: 13, weight: .semibold))
+                    .frame(width: 32, height: 28)
+                    .background(model.showDrawPanel ? Color.hlAccent.opacity(0.2) : Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .accessibilityLabel(L("Drawing tools"))
             Button(action: onIndicators) {
                 Image(systemName: "function").font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 28)
@@ -81,6 +102,8 @@ struct ChartToolbar: View {
         }
         .padding(.trailing, 10)
         .foregroundStyle(Color.hlAccent)
+            if model.showDrawPanel { DrawToolBar(coin: model.selectedCoin) }
+        }
         .sheet(isPresented: $showTimeframes) {
             TimeframeSheet()
                 .presentationDetents([.height(430), .large])

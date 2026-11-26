@@ -65,6 +65,19 @@ final class AppModel {
         didSet { UserDefaults.standard.set(Double(chartSpacing), forKey: "chartSpacing") }
     }
     var logScale = false { didSet { save() } }
+    // Chart drawings (per coin, own storage key) and the drawing panel state.
+    var drawingsByCoin: [String: [ChartDrawing]] = AppModel.loadDrawings() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(drawingsByCoin), forKey: "chartDrawings") }
+    }
+    var drawTool: DrawTool = .cursor
+    var selectedDrawingId: UUID?
+    var showDrawPanel = UserDefaults.standard.bool(forKey: "showDrawPanel") {
+        didSet { UserDefaults.standard.set(showDrawPanel, forKey: "showDrawPanel"); if !showDrawPanel { drawTool = .cursor } }
+    }
+    var magnet = MagnetMode(rawValue: UserDefaults.standard.string(forKey: "drawMagnet") ?? "") ?? .weak {
+        didSet { UserDefaults.standard.set(magnet.rawValue, forKey: "drawMagnet") }
+    }
+    var drawingsHidden = false
     var tradeLayout: TradeLayout = .sheet { didSet { save() } }
     var lastOrderType = "market" { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }
