@@ -323,30 +323,6 @@ struct FundingScannerView: View {
     }
 }
 
-struct MoversView: View {
-    @Environment(AppModel.self) private var model
-    var body: some View {
-        let all: [Market] = (model.perps + model.hip3).map { (m: Market) -> Market in model.marketById[m.id] ?? m }.filter { (m: Market) -> Bool in m.dayNtlVlm > 500_000 }
-        let gainers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h > b.change24h }.prefix(10))
-        let losers: [Market] = Array(all.sorted { (a: Market, b: Market) -> Bool in a.change24h < b.change24h }.prefix(10))
-        List {
-            Section(L("24h gainers")) { ForEach(gainers) { row($0) } }
-            Section(L("24h losers")) { ForEach(losers) { row($0) } }
-        }
-        .navigationTitle(L("Movers"))
-    }
-    private func row(_ m: Market) -> some View {
-        HStack {
-            Text(m.name).font(.subheadline.bold())
-            Spacer()
-            Text(Fmt.price(model.mid(m.id))).font(.caption.monospaced())
-            ChangePill(value: m.change24h)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { model.select(m.id) }
-    }
-}
-
 struct DeadMansSwitchView: View {
     @Environment(AppModel.self) private var model
     @State private var minutes = 60
