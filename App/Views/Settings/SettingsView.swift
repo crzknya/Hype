@@ -87,6 +87,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(L("Live Activity"), isOn: $model.liveActivityEnabled)
+                } footer: {
+                    Text(L("Open positions on the lock screen and in the Dynamic Island: PnL and the distance to liquidation. Live while the app runs; in the background iOS refreshes it only occasionally, the card shows when it was updated. It also needs Live Activities allowed for Hype in iOS Settings."))
+                }
+
+                Section {
                     Toggle(L("Energy saving (experimental)"), isOn: $model.energySaving)
                     Toggle(L("Performance overlay"), isOn: $model.perfOverlay)
                     PerfDetails()

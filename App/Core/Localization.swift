@@ -28,6 +28,16 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Any": "Любой",
+        "Any volume": "Любой объём",
+        "Collecting prices: the {0} change is available in about {1} min. Keep the app open; the history survives short trips to the background.": "Собираю цены: изменение за {0} будет доступно примерно через {1} мин. Держите приложение открытым; история сохраняется при коротком сворачивании.",
+        "Gainers": "Рост",
+        "Live Activity": "Live Activity",
+        "Losers": "Падение",
+        "Min. 24h volume": "Мин. объём за 24ч",
+        "OI {0}": "OI {0}",
+        "Open positions on the lock screen and in the Dynamic Island: PnL and the distance to liquidation. Live while the app runs; in the background iOS refreshes it only occasionally, the card shows when it was updated. It also needs Live Activities allowed for Hype in iOS Settings.": "Открытые позиции на экране блокировки и в Dynamic Island: PnL и расстояние до ликвидации. Обновляется вживую, пока приложение работает; в фоне iOS обновляет его лишь изредка — на карточке видно, когда было последнее обновление. Также Live Activities должны быть разрешены для Hype в настройках iOS.",
+        "Vol ≥ {0}": "Объём ≥ {0}",
         "Now watching {0}. Switch back in the account menu (Portfolio).": "Теперь вы следите за {0}. Вернуться к своему аккаунту — в меню аккаунтов (Portfolio).",
         "Full screen": "На весь экран",
         "Added to watch accounts: {0}. Switch to it in Portfolio.": "Добавлен в аккаунты для наблюдения: {0}. Переключиться можно в Portfolio.",

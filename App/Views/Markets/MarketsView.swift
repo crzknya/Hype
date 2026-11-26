@@ -61,6 +61,12 @@ struct MarketsView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { MoversView() } label: {
+                        Image(systemName: "flame")
+                    }
+                    .accessibilityLabel(L("Movers"))
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker(L("Sort"), selection: $sort) {
                             ForEach(SortKey.allCases) { Text(L($0.rawValue)).tag($0) }

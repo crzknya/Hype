@@ -88,6 +88,7 @@ enum BackgroundAlerts {
     }
 
     static func check() async {
+        await LiveActivityController.refreshInBackground()
         let d = UserDefaults.standard
         guard let data = d.data(forKey: "alerts"),
               var alerts = try? JSONDecoder().decode([PriceAlert].self, from: data), !alerts.isEmpty else { return }

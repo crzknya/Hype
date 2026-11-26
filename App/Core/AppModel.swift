@@ -39,6 +39,13 @@ final class AppModel {
     /// Fill notifications: in-app toast, sound, and a local notification while the app is in the background.
     /// Small CPU / memory / FPS overlay for diagnosing heat and battery use.
     var perfOverlay = false
+    /// Positions Live Activity on the lock screen / Dynamic Island (own storage key, read in the background too).
+    var liveActivityEnabled = UserDefaults.standard.object(forKey: "liveActivity") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(liveActivityEnabled, forKey: "liveActivity")
+            LiveActivityController.sync(self, force: true)
+        }
+    }
     /// Experimental energy saving: market streams only while the Trade tab is open, slower UI updates.
     var energySaving = false { didSet { save(); if oldValue != energySaving { updateMarketStreams() } } }
     /// Certificate pinning for the Hyperliquid API (Settings → Security); read by the session delegate.
@@ -97,6 +104,9 @@ final class AppModel {
     var marketById: [String: Market] = [:]
     var spotTokens: [Int: SpotToken] = [:]
     var mids: [String: Double] = [:]
+    /// Last hour of prices / OI for the market scanner (see Movers.swift); the version bumps the scanner view.
+    @ObservationIgnored var priceHistory: [PriceSnapshot] = AppModel.loadPriceHistory()
+    var priceHistoryVersion = 0
     var book = OrderBook()
     /// Live best bid/ask (bbo stream), fresher than the order-book snapshot.
     var bbo: BestBidAsk?
@@ -363,6 +373,20 @@ final class AppModel {
                 // REST fallback while the account streams are silent (reconnect, older servers).
                 if self?.accountStreamLive != true { await self?.refreshAccount() }
                 try? await Task.sleep(for: .seconds(3))
+            }
+        })
+        loops.append(Task { [weak self] in
+            // Price snapshots for the market scanner's 5 m / 15 m / 1 h moves.
+            while !Task.isCancelled {
+                self?.recordPriceSnapshot()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        })
+        loops.append(Task { [weak self] in
+            // Live Activity with the open positions (throttled inside).
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if let self { LiveActivityController.sync(self) }
             }
         })
         loops.append(Task { [weak self] in
@@ -741,6 +765,9 @@ final class AppModel {
             }
         } else {
             if biometricLock { locked = true }
+            // Freshest numbers before going to the background (updates there are occasional).
+            LiveActivityController.sync(self, force: true)
+            savePriceHistory()
         }
     }
 
