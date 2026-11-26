@@ -28,6 +28,17 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Added to watch accounts: {0}. Switch to it in Portfolio.": "Добавлен в аккаунты для наблюдения: {0}. Переключиться можно в Portfolio.",
+        "Copy maker address": "Скопировать адрес мейкера",
+        "Copy taker address": "Скопировать адрес тейкера",
+        "Follow a trader": "Следить за трейдером",
+        "Watch maker {0} ({1})": "Следить за мейкером {0} ({1})",
+        "Watch taker {0} ({1})": "Следить за тейкером {0} ({1})",
+        "Watch {0}": "Наблюдение {0}",
+        "buyer": "покупатель",
+        "seller": "продавец",
+        "{0} is already in your accounts": "{0} уже есть в ваших аккаунтах",
+        "{0} {1} at {2} · {3}. The taker crossed the spread (market or aggressive order); the maker's resting limit order was filled.": "{0} {1} по {2} · {3}. Тейкер пересёк спред (рыночный или агрессивный ордер); исполнился стоявший в стакане лимитный ордер мейкера.",
         "Center": "По центру",
         "Label position": "Положение подписи",
         "Labels": "Подписи",

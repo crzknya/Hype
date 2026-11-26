@@ -1255,7 +1255,8 @@ final class AppModel {
         case "trades":
             let new = data.array.filter { $0["coin"].str == selectedCoin }.map {
                 PublicTrade(px: $0["px"].dbl, sz: $0["sz"].dbl, isBuy: $0["side"].str == "B",
-                            time: Date(timeIntervalSince1970: $0["time"].dbl / 1000), tid: $0["tid"].int64 ?? Int64.random(in: 0...Int64.max))
+                            time: Date(timeIntervalSince1970: $0["time"].dbl / 1000), tid: $0["tid"].int64 ?? Int64.random(in: 0...Int64.max),
+                            buyer: $0["users"][0].string?.lowercased(), seller: $0["users"][1].string?.lowercased())
             }
             guard !new.isEmpty else { return }
             if energySaving { scheduleTradesFlush(new) } else { addTrades(new) }
@@ -1504,6 +1505,18 @@ final class AppModel {
         if let key { Keychain.set(key, for: a.keychainKey) }
         accounts.append(a)
         activeAccountId = a.id
+    }
+
+    /// Adds an address as a watch-only account without switching to it (from the trades feed).
+    func addWatchAccount(_ address: String) {
+        let a = address.lowercased()
+        guard Address.isValid(a) else { return }
+        if accounts.contains(where: { $0.address == a }) {
+            show(.info, L("{0} is already in your accounts", Address.short(a)))
+            return
+        }
+        accounts.append(Account(name: L("Watch {0}", Address.short(a)), address: a, kind: .watch))
+        show(.success, L("Added to watch accounts: {0}. Switch to it in Portfolio.", Address.short(a)))
     }
 
     func removeAccount(_ a: Account) {

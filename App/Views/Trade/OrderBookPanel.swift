@@ -160,13 +160,22 @@ struct TradesPanel: View {
     let market: Market
     var limit = 22
     var wide = false
+    @State private var picked: PublicTrade?
 
     var body: some View {
         let trades = model.trades.filter { $0.px * $0.sz >= model.minTradeUsd }
         VStack(spacing: 1) {
             if wide { wideHeader } else { compactHeader }
             ForEach(trades.prefix(limit)) { t in
-                if wide { wideRow(t) } else { compactRow(t) }
+                Group {
+                    if wide { wideRow(t) } else { compactRow(t) }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard t.buyer != nil || t.seller != nil else { return }
+                    picked = t
+                    Haptics.tap(enabled: model.haptics)
+                }
             }
             if model.trades.isEmpty {
                 ProgressView().padding()
@@ -175,7 +184,29 @@ struct TradesPanel: View {
                     .font(.system(size: wide ? 12 : 10)).foregroundStyle(Color.hlMuted).padding(.vertical, 8)
             }
         }
+        // Tap a trade: follow its taker or maker as a watch-only account.
+        .confirmationDialog(dialogTitle, isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
+                            titleVisibility: .visible, presenting: picked) { t in
+            if let a = t.taker {
+                Button(L("Watch taker {0} ({1})", Address.short(a), t.isBuy ? L("buyer") : L("seller"))) { model.addWatchAccount(a) }
+            }
+            if let a = t.maker {
+                Button(L("Watch maker {0} ({1})", Address.short(a), t.isBuy ? L("seller") : L("buyer"))) { model.addWatchAccount(a) }
+            }
+            if let a = t.taker {
+                Button(L("Copy taker address")) { UIPasteboard.general.string = a; model.show(.success, L("Address copied")) }
+            }
+            if let a = t.maker {
+                Button(L("Copy maker address")) { UIPasteboard.general.string = a; model.show(.success, L("Address copied")) }
+            }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: { t in
+            Text(L("{0} {1} at {2} · {3}. The taker crossed the spread (market or aggressive order); the maker's resting limit order was filled.",
+                   t.isBuy ? L("Buy") : L("Sell"), Fmt.num(t.sz, min(market.szDecimals, 4)), Fmt.price(t.px), Fmt.compactUsd(t.px * t.sz)))
+        }
     }
+
+    private var dialogTitle: String { L("Follow a trader") }
 
     private var compactHeader: some View {
         HStack {

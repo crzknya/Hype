@@ -472,7 +472,14 @@ struct PublicTrade: Identifiable, Hashable {
     let isBuy: Bool
     let time: Date
     let tid: Int64
+    /// Buyer and seller addresses (the stream's `users`).
+    var buyer: String? = nil
+    var seller: String? = nil
     var id: Int64 { tid }
+
+    /// The side that crossed the spread: the buyer on a buy (side B), the seller on a sell.
+    var taker: String? { isBuy ? buyer : seller }
+    var maker: String? { isBuy ? seller : buyer }
 }
 
 enum CandleInterval: String, CaseIterable, Identifiable, Codable {
