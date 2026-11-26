@@ -1,4 +1,5 @@
 import SwiftUI
+import HyperCore
 
 struct OrderBookPanel: View {
     @Environment(AppModel.self) private var model
