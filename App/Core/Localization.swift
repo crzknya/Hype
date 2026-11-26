@@ -28,6 +28,13 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Alert prices on the scale": "Цены алертов на шкале",
+        "Last price line": "Линия текущей цены",
+        "Line labels": "Подписи линий",
+        "Line labels: the pills on the left (position size and PnL, order type, alert price). The price tag on the scale always stays.": "Подписи линий — плашки слева (размер позиции и PnL, тип ордера, цена алерта). Метка текущей цены на шкале остаётся всегда.",
+        "Lines on chart": "Линии на чарте",
+        "Open orders": "Открытые ордера",
+        "Position entry": "Вход в позицию",
         "Alert set at {0}": "Алерт установлен на {0}",
         "Blue": "Синий",
         "Create a price alert at this level": "Создать ценовой алерт на этом уровне",

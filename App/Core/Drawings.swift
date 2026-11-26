@@ -147,3 +147,31 @@ extension AppModel {
         return d
     }
 }
+
+/// Which price lines the chart shows (Indicators → Lines on chart).
+struct ChartLineSettings: Codable, Equatable {
+    var position = true
+    var liquidation = true
+    var orders = true
+    var alerts = true
+    var lastPrice = true
+    var labels = true
+    var alertPrices = true
+
+    init() {}
+
+    enum CodingKeys: String, CodingKey { case position, liquidation, orders, alerts, lastPrice, labels, alertPrices }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func v(_ k: CodingKeys) -> Bool { (try? c.decodeIfPresent(Bool.self, forKey: k)) ?? true }
+        position = v(.position); liquidation = v(.liquidation); orders = v(.orders); alerts = v(.alerts)
+        lastPrice = v(.lastPrice); labels = v(.labels); alertPrices = v(.alertPrices)
+    }
+
+    static func load() -> ChartLineSettings {
+        guard let data = UserDefaults.standard.data(forKey: "chartLineSettings"),
+              let s = try? JSONDecoder().decode(ChartLineSettings.self, from: data) else { return ChartLineSettings() }
+        return s
+    }
+}

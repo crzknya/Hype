@@ -78,6 +78,9 @@ final class AppModel {
         didSet { UserDefaults.standard.set(magnet.rawValue, forKey: "drawMagnet") }
     }
     var drawingsHidden = false
+    var chartLineSettings = ChartLineSettings.load() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(chartLineSettings), forKey: "chartLineSettings") }
+    }
     var tradeLayout: TradeLayout = .sheet { didSet { save() } }
     var lastOrderType = "market" { didSet { save() } }
     var visibleIntervals: [CandleInterval] = CandleInterval.quick { didSet { save() } }

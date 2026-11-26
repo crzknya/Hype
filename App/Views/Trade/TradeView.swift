@@ -319,19 +319,31 @@ struct TradeHeader: View {
 
 extension AppModel {
     func chartLines(_ m: Market) -> [PriceLine] {
+        let s = chartLineSettings
         var lines: [PriceLine] = []
+        func label(_ text: String) -> String { s.labels ? text : "" }
         if let p = position(m.id) {
-            lines.append(PriceLine(price: p.entryPx, color: p.isLong ? .hlGreen : .hlRed,
-                                   label: "\(p.isLong ? L("Long") : L("Short")) \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))"))
-            if let liq = p.liquidationPx { lines.append(PriceLine(price: liq, color: .orange, label: L("Liquidation"))) }
+            if s.position {
+                lines.append(PriceLine(price: p.entryPx, color: p.isLong ? .hlGreen : .hlRed,
+                                       label: label("\(p.isLong ? L("Long") : L("Short")) \(Fmt.num(p.size, m.szDecimals)) · \(Fmt.signedUsd(p.unrealizedPnl))")))
+            }
+            if s.liquidation, let liq = p.liquidationPx {
+                lines.append(PriceLine(price: liq, color: .orange, label: label(L("Liquidation"))))
+            }
         }
-        for o in orders(for: m.id) {
-            let px = o.isTrigger ? o.triggerPx : o.limitPx
-            lines.append(PriceLine(price: px, color: o.isBuy ? .hlGreen.opacity(0.8) : .hlRed.opacity(0.8),
-                                   label: "\(o.typeTitle) \(Fmt.num(o.sz, m.szDecimals))"))
+        if s.orders {
+            for o in orders(for: m.id) {
+                let px = o.isTrigger ? o.triggerPx : o.limitPx
+                lines.append(PriceLine(price: px, color: o.isBuy ? .hlGreen.opacity(0.8) : .hlRed.opacity(0.8),
+                                       label: label("\(o.typeTitle) \(Fmt.num(o.sz, m.szDecimals))")))
+            }
         }
-        for a in alerts where a.coin == m.id {
-            lines.append(PriceLine(price: a.price, color: .yellow, label: "🔔"))
+        if s.alerts {
+            for a in alerts where a.coin == m.id {
+                lines.append(PriceLine(price: a.price, color: .yellow,
+                                       label: label(s.alertPrices ? "🔔 \(Fmt.price(a.price))" : "🔔"),
+                                       onAxis: s.alertPrices))
+            }
         }
         return lines
     }

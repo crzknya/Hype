@@ -7,6 +7,8 @@ struct PriceLine: Identifiable {
     let price: Double
     let color: Color
     let label: String
+    /// Also a price tag on the scale (alerts).
+    var onAxis = false
 }
 
 /// Values from the last draw, read by gestures (a reference so drawing does not invalidate the view).
@@ -62,6 +64,8 @@ struct CandleChart: View {
     var onToggleLog: (() -> Void)? = nil
     /// Drawing tools: ruler, lines, rectangles, Fibonacci.
     var drawing: ChartDrawingContext? = nil
+    /// Dashed line across the chart at the last price (the tag on the scale always stays).
+    var showLastPriceLine = true
 
     static let defaultSpacing: CGFloat = 6
     static let defaultRightOffset: CGFloat = 4
@@ -498,6 +502,13 @@ struct CandleChart: View {
             var path = Path()
             path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
             main.stroke(path, with: .color(l.color.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            if l.onAxis, yy > 8, yy < mainH - 8 {
+                ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: yy - 8, width: axisW - 2, height: 16), cornerRadius: 3),
+                         with: .color(l.color.opacity(0.9)))
+                ctx.draw(Text(Fmt.price(l.price, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.black),
+                         at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
+            }
+            guard !l.label.isEmpty else { continue }
             // Label on the left, on a pill so it stays readable over the candles (the newest ones are on the right).
             let text = main.resolve(Text(l.label).font(.system(size: 9, weight: .semibold)).foregroundColor(l.color))
             let size = text.measure(in: CGSize(width: plotW, height: 20))
@@ -511,9 +522,11 @@ struct CandleChart: View {
         if let last = candles.last {
             let yy = y(last.c)
             let color = last.c >= last.o ? Color.hlGreen : Color.hlRed
-            var path = Path()
-            path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
-            main.stroke(path, with: .color(color.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+            if showLastPriceLine {
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
+                main.stroke(path, with: .color(color.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+            }
             if yy > 0 && yy < mainH {
                 ctx.fill(Path(roundedRect: CGRect(x: plotW + 1, y: yy - 8, width: axisW - 2, height: 16), cornerRadius: 3), with: .color(color))
                 ctx.draw(Text(Fmt.price(last.c, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlOnAccent),

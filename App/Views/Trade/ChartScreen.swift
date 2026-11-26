@@ -19,7 +19,8 @@ struct PriceChartView: View {
                         verticalSwipeScrollsPage: inScrollingPage,
                         clockInterval: model.energySaving ? 5 : 1,
                         onToggleLog: { model.logScale.toggle() },
-                        drawing: drawingContext)
+                        drawing: drawingContext,
+                        showLastPriceLine: model.chartLineSettings.lastPrice)
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
             DrawingOverlay(coin: market.id)
@@ -235,6 +236,21 @@ struct IndicatorsSheet: View {
         @Bindable var model = model
         NavigationStack {
             List {
+                Section {
+                    Toggle(L("Position entry"), isOn: $model.chartLineSettings.position)
+                    Toggle(L("Liquidation"), isOn: $model.chartLineSettings.liquidation)
+                    Toggle(L("Open orders"), isOn: $model.chartLineSettings.orders)
+                    Toggle(L("Price alerts"), isOn: $model.chartLineSettings.alerts)
+                    if model.chartLineSettings.alerts {
+                        Toggle(L("Alert prices on the scale"), isOn: $model.chartLineSettings.alertPrices)
+                    }
+                    Toggle(L("Last price line"), isOn: $model.chartLineSettings.lastPrice)
+                    Toggle(L("Line labels"), isOn: $model.chartLineSettings.labels)
+                } header: {
+                    Text(L("Lines on chart"))
+                } footer: {
+                    Text(L("Line labels: the pills on the left (position size and PnL, order type, alert price). The price tag on the scale always stays."))
+                }
                 Section {
                     Toggle(L("Volume"), isOn: $model.showVolume)
                 }
