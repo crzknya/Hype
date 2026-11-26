@@ -1185,6 +1185,15 @@ extension CandleChart {
             guard !text.isEmpty else { return }
             main.draw(Text(text).font(.system(size: size, weight: .semibold)).foregroundColor(color), at: p, anchor: anchor)
         }
+        /// Text placed along [x0, x1] by the drawing's label setting, just above y.
+        func alignedLabel(_ text: String, x0: CGFloat, x1: CGFloat, y: CGFloat, size: CGFloat = 10) {
+            let lo = max(4, min(x0, x1)), hi = min(plotW - 4, max(x0, x1))
+            switch d.labelAlign {
+            case .left: label(text, at: CGPoint(x: lo + 2, y: y), anchor: .bottomLeading, size: size)
+            case .center: label(text, at: CGPoint(x: (lo + hi) / 2, y: y), anchor: .bottom, size: size)
+            case .right: label(text, at: CGPoint(x: hi - 2, y: y), anchor: .bottomTrailing, size: size)
+            }
+        }
         func axisTag(_ price: Double) {
             let yy = yOf(price: price)
             guard yy > 0, yy < mainH else { return }
@@ -1197,7 +1206,7 @@ extension CandleChart {
             var path = Path()
             path.move(to: CGPoint(x: d.kind == .hline ? 0 : A.x, y: A.y)); path.addLine(to: CGPoint(x: plotW, y: A.y))
             main.stroke(path, with: .color(color), style: style)
-            label(d.text, at: CGPoint(x: (d.kind == .hline ? 6 : A.x + 6), y: A.y - 3), anchor: .bottomLeading)
+            alignedLabel(d.text, x0: d.kind == .hline ? 0 : A.x + 4, x1: plotW, y: A.y - 3)
             if d.showPrice { axisTag(d.a.p) }
         case .trend:
             var p1 = A, p2 = B
@@ -1209,13 +1218,19 @@ extension CandleChart {
             var path = Path()
             path.move(to: p1); path.addLine(to: p2)
             main.stroke(path, with: .color(color), style: style)
-            label(d.text, at: CGPoint(x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 - 4), anchor: .bottom)
+            // Along the segment: at its left end, middle or right end.
+            let left = A.x <= B.x ? A : B, right = A.x <= B.x ? B : A
+            switch d.labelAlign {
+            case .left: label(d.text, at: CGPoint(x: left.x + 4, y: left.y - 4), anchor: .bottomLeading)
+            case .center: label(d.text, at: CGPoint(x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 - 4), anchor: .bottom)
+            case .right: label(d.text, at: CGPoint(x: right.x - 4, y: right.y - 4), anchor: .bottomTrailing)
+            }
             if d.showPrice && selected { axisTag(d.a.p); axisTag(d.b.p) }
         case .rect:
             let r = CGRect(x: min(A.x, B.x), y: min(A.y, B.y), width: abs(B.x - A.x), height: abs(B.y - A.y))
             main.fill(Path(r), with: .color(color.opacity(0.12)))
             main.stroke(Path(r), with: .color(color), style: style)
-            label(d.text, at: CGPoint(x: r.midX, y: r.minY - 3), anchor: .bottom)
+            alignedLabel(d.text, x0: r.minX, x1: r.maxX, y: r.minY - 3)
             if d.showPrice && selected { axisTag(d.a.p); axisTag(d.b.p) }
         case .fib:
             let x0 = min(A.x, B.x), x1 = d.extendRight ? plotW : max(A.x, B.x)
@@ -1229,12 +1244,12 @@ extension CandleChart {
                 path.move(to: CGPoint(x: x0, y: yy)); path.addLine(to: CGPoint(x: x1, y: yy))
                 let major = lv == 0 || lv == 1 || lv == 0.5 || lv == 0.618
                 main.stroke(path, with: .color(color.opacity(major ? 1 : 0.6)), style: StrokeStyle(lineWidth: w, dash: d.style.dash(w)))
-                label("\(Fmt.num(lv, 3))  \(Fmt.price(p, decimals: dec))", at: CGPoint(x: x0 + 3, y: yy - 2), anchor: .bottomLeading, size: 9)
+                alignedLabel("\(Fmt.num(lv, 3))  \(Fmt.price(p, decimals: dec))", x0: x0, x1: x1, y: yy - 2, size: 9)
             }
             var diag = Path()
             diag.move(to: A); diag.addLine(to: B)
             main.stroke(diag, with: .color(color.opacity(0.5)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            label(d.text, at: CGPoint(x: x0 + 3, y: min(A.y, B.y) - 14), anchor: .bottomLeading)
+            alignedLabel(d.text, x0: x0, x1: x1, y: min(A.y, B.y) - 14)
         }
         if selected {
             let handles = d.kind == .hline || d.kind == .hray ? [A] : [A, B]

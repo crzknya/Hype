@@ -28,6 +28,11 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Center": "По центру",
+        "Label position": "Положение подписи",
+        "Labels": "Подписи",
+        "Left": "Слева",
+        "Right": "Справа",
         "Distance from the current price, %": "Расстояние от текущей цены, %",
         "High / Low": "High / Low",
         "High / Low (visible range)": "High / Low (видимый диапазон)",

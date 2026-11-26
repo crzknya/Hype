@@ -198,6 +198,10 @@ struct DrawingSettingsSheet: View {
             }
             .pickerStyle(.segmented)
             TextField(L("Label"), text: d.text)
+            Picker(kind == .fib ? L("Labels") : L("Label position"), selection: d.labelAlign) {
+                ForEach(DrawLabelAlign.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
         }
         Section(L("Position")) {
             NumField(title: kind.twoPoint ? L("Price 1") : L("Price"), text: $priceA)

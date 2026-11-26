@@ -91,6 +91,19 @@ enum DrawLineStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where a drawing's text (and Fib level labels) sits along the line.
+enum DrawLabelAlign: String, Codable, CaseIterable, Identifiable {
+    case left, center, right
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .left: return L("Left")
+        case .center: return L("Center")
+        case .right: return L("Right")
+        }
+    }
+}
+
 struct ChartDrawing: Codable, Identifiable, Equatable {
     var id = UUID()
     var kind: DrawKind
@@ -104,6 +117,12 @@ struct ChartDrawing: Codable, Identifiable, Equatable {
     var extendLeft = false
     var extendRight = false
     var locked = false
+    /// Optional so drawings saved before this setting still decode.
+    var labelAlignment: DrawLabelAlign?
+    var labelAlign: DrawLabelAlign {
+        get { labelAlignment ?? .left }
+        set { labelAlignment = newValue }
+    }
 
     static let palette: [Color] = [
         Color(red: 0.55, green: 0.48, blue: 1.0),    // violet
