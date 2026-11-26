@@ -96,8 +96,11 @@ struct CandleChart: View {
     @State private var createStart: ChartPoint?
     @State private var editStart: ChartDrawing?
     @State private var editHandle = -1
+    /// Ruler end being adjusted (0 = start, 1 = end) and where that handle was when the drag began.
+    @State private var rulerHandle = 0
+    @State private var rulerHandleStart: CGPoint = .zero
 
-    private enum DragKind { case chart, priceAxis, timeAxis, create, edit }
+    private enum DragKind { case chart, priceAxis, timeAxis, create, edit, rulerEdit }
     private enum PanAxis { case horizontal, vertical, free }
 
     private let axisW: CGFloat = 58
@@ -208,6 +211,7 @@ struct CandleChart: View {
     private func shouldBeginPan(start: CGPoint, velocity: CGPoint, size: CGSize) -> Bool {
         // A drawing tool, or a drag on the selected drawing, keeps every direction on the chart.
         if let dc = drawing {
+            if rulerHandleHit(start) != nil { return true }
             if dc.tool != .cursor { return true }
             if let h = hitTest(start), h.id == dc.selected { return true }
         }
@@ -239,7 +243,7 @@ struct CandleChart: View {
             if dragKind == .chart && autoScale && verticalSwipeScrollsPage { panAxis = .horizontal }
         }
         switch dragKind {
-        case .create, .edit:
+        case .create, .edit, .rulerEdit:
             drawingDragChanged(start: start, translation: translation)
         case .priceAxis:
             // Drag down compresses (wider range), up stretches — around the middle of the scale.
@@ -291,7 +295,7 @@ struct CandleChart: View {
     }
 
     private func dragEnded(velocityX: CGFloat, size: CGSize) {
-        if dragKind == .create || dragKind == .edit { drawingDragEnded() }
+        if dragKind == .create || dragKind == .edit || dragKind == .rulerEdit { drawingDragEnded() }
         if dragKind == .chart && (panAxis == .horizontal || panAxis == .free) {
             // Inertia: continue with the release speed and decelerate.
             startMomentum(velocity: velocityX, plotW: size.width - axisW)
@@ -1017,7 +1021,9 @@ extension CandleChart {
             dc.select(hitTest(loc)?.id)
         case .ruler:
             // Tap, tap: measure between two points; a further tap clears the measurement.
-            if ruler != nil { ruler = nil; pendingA = nil }
+            if ruler != nil {
+                if rulerHandleHit(loc) == nil { ruler = nil; pendingA = nil }
+            }
             else if let a = pendingA { ruler = (a, pt); pendingA = nil }
             else { pendingA = pt }
         case .hline, .hray:
@@ -1038,6 +1044,13 @@ extension CandleChart {
 
     /// Starts creating (a tool is active) or moving the selected drawing; false = an ordinary chart drag.
     fileprivate func beginDrawingDrag(_ dc: ChartDrawingContext, start: CGPoint) -> Bool {
+        // A ruler end point under the finger: adjust it instead of measuring again.
+        if let h = rulerHandleHit(start), let r = ruler {
+            dragKind = .rulerEdit
+            rulerHandle = h
+            rulerHandleStart = screen(h == 0 ? r.a : r.b)
+            return true
+        }
         if dc.tool != .cursor {
             dragKind = .create
             pendingA = nil
@@ -1072,6 +1085,12 @@ extension CandleChart {
                 d.id = id
                 draft = d
             }
+        case .rulerEdit:
+            guard let r = ruler else { return }
+            // Moves from where the handle was (not from the finger), so the point does not jump.
+            let p = chartPoint(at: CGPoint(x: rulerHandleStart.x + translation.width, y: rulerHandleStart.y + translation.height),
+                               magnet: dc.magnet)
+            ruler = rulerHandle == 0 ? (p, r.b) : (r.a, p)
         case .edit:
             guard var d = editStart else { return }
             if editHandle >= 0 {
@@ -1229,6 +1248,22 @@ extension CandleChart {
         box.origin.y = min(max(2, box.origin.y), cache.mainH - box.height - 2)
         main.fill(Path(roundedRect: box, cornerRadius: 5), with: .color(color.opacity(0.92)))
         main.draw(text, at: CGPoint(x: box.midX, y: box.midY), anchor: .center)
+        // Draggable end points (adjust the measurement precisely).
+        for h in [A, B] {
+            let r = CGRect(x: h.x - 7, y: h.y - 7, width: 14, height: 14)
+            main.fill(Path(ellipseIn: r), with: .color(Color.hlBg))
+            main.stroke(Path(ellipseIn: r), with: .color(color), lineWidth: 2.5)
+            main.fill(Path(ellipseIn: r.insetBy(dx: 4.5, dy: 4.5)), with: .color(color))
+        }
+    }
+
+    /// Ruler end point (0 / 1) within reach of a touch.
+    fileprivate func rulerHandleHit(_ loc: CGPoint) -> Int? {
+        guard let r = ruler else { return nil }
+        let a = screen(r.a), b = screen(r.b)
+        let da = hypot(a.x - loc.x, a.y - loc.y), db = hypot(b.x - loc.x, b.y - loc.y)
+        guard min(da, db) < 26 else { return nil }
+        return da <= db ? 0 : 1
     }
 
     private static func span(_ s: Int) -> String {
