@@ -1,40 +1,22 @@
 import SwiftUI
 
-/// Market scanner: biggest moves over 5 m / 15 m / 1 h / 24 h (price or open interest), gainers or losers,
-/// with a minimum 24 h volume so illiquid markets don't fill the list.
+/// Market scanner: biggest 24 h gainers / losers (from the exchange's day-ago price), with a minimum 24 h volume
+/// so illiquid markets don't fill the list.
 struct MoversView: View {
     @Environment(AppModel.self) private var model
-    @AppStorage("moversWindow") private var windowRaw = MoverWindow.h1.rawValue
     @AppStorage("moversGainers") private var gainers = true
-    @AppStorage("moversMetric") private var metric = 0          // 0 price, 1 open interest
     @AppStorage("moversScope") private var scope = 0            // 0 perps, 1 HIP-3, 2 spot, 3 all
     @AppStorage("moversMinVolume") private var minVolume = 1_000_000.0
 
-    private var window: MoverWindow { MoverWindow(rawValue: windowRaw) ?? .h1 }
-
     var body: some View {
-        _ = model.priceHistoryVersion   // refresh when a new snapshot arrives
         let rows = ranked
-        let wait = metric == 1 ? model.moverWaitSeconds(window == .h24 ? .h1 : window) : model.moverWaitSeconds(window)
-        return List {
+        List {
             Section {
-                Picker("", selection: $windowRaw) {
-                    ForEach(MoverWindow.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                Picker("", selection: $gainers) {
+                    Text(L("Gainers")).tag(true)
+                    Text(L("Losers")).tag(false)
                 }
                 .pickerStyle(.segmented)
-                HStack {
-                    Picker("", selection: $gainers) {
-                        Text(L("Gainers")).tag(true)
-                        Text(L("Losers")).tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    Picker("", selection: $metric) {
-                        Text(L("Price")).tag(0)
-                        Text("OI").tag(1)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 110)
-                }
                 HStack {
                     Menu {
                         Picker(L("Markets"), selection: $scope) {
@@ -63,40 +45,30 @@ struct MoversView: View {
             }
             .listRowBackground(Color.hlCard)
 
-            if wait > 0 {
-                Section {
-                    Label(L("Collecting prices: the {0} change is available in about {1} min. Keep the app open; the history survives short trips to the background.",
-                            metric == 1 && window == .h24 ? "1h" : window.rawValue, Int(ceil(wait / 60))),
-                          systemImage: "hourglass")
-                        .font(.caption).foregroundStyle(Color.hlMuted)
-                }
-                .listRowBackground(Color.hlCard)
-            }
-
             Section {
-                ForEach(Array(rows.prefix(50).enumerated()), id: \.element.0.id) { i, row in
-                    let (m, change) = row
+                ForEach(Array(rows.prefix(50).enumerated()), id: \.element.id) { i, m in
                     Button { model.select(m.id) } label: {
                         HStack(spacing: 10) {
                             Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(Color.hlMuted).frame(width: 22, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(m.name).font(.subheadline.bold())
-                                Text(metric == 1 ? L("OI {0}", Fmt.compactUsd(m.openInterestUsd)) : L("Vol {0}", Fmt.compactUsd(m.dayNtlVlm)))
-                                    .font(.caption2).foregroundStyle(Color.hlMuted)
+                                Text(L("Vol {0}", Fmt.compactUsd(m.dayNtlVlm))).font(.caption2).foregroundStyle(Color.hlMuted)
                             }
                             Spacer()
                             Text(Fmt.price(model.lastPrice(m.id))).font(.system(size: 13, design: .monospaced))
-                            Text(Fmt.pct(change, 2))
+                            Text(Fmt.pct(change(m), 2))
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .foregroundStyle(change >= 0 ? Color.hlGreen : Color.hlRed)
+                                .foregroundStyle(change(m) >= 0 ? Color.hlGreen : Color.hlRed)
                                 .frame(width: 82, alignment: .trailing)
                         }
                     }
                     .buttonStyle(.plain)
                 }
-                if rows.isEmpty && wait == 0 {
+                if rows.isEmpty && model.metaLoaded {
                     EmptyState(text: L("Nothing found"), icon: "magnifyingglass")
                 }
+            } header: {
+                Text(L("24h change"))
             }
             .listRowBackground(Color.hlBg)
         }
@@ -115,7 +87,13 @@ struct MoversView: View {
         }
     }
 
-    private var ranked: [(Market, Double)] {
+    /// 24 h change at the live price (the day-ago price from the exchange vs. now).
+    private func change(_ m: Market) -> Double {
+        let px = model.lastPrice(m.id)
+        return m.prevDayPx > 0 && px > 0 ? px / m.prevDayPx - 1 : m.change24h
+    }
+
+    private var ranked: [Market] {
         let base: [Market]
         switch scope {
         case 1: base = model.hip3
@@ -123,13 +101,7 @@ struct MoversView: View {
         case 3: base = model.perps + model.hip3 + model.spots
         default: base = model.perps
         }
-        let list: [(Market, Double)] = base.compactMap { m0 in
-            let m = model.marketById[m0.id] ?? m0
-            guard m.dayNtlVlm >= minVolume else { return nil }
-            let c = metric == 1 ? (m.isSpot ? nil : model.oiChange(m, window)) : model.priceChange(m, window)
-            guard let c, c.isFinite else { return nil }
-            return (m, c)
-        }
-        return list.sorted { gainers ? $0.1 > $1.1 : $0.1 < $1.1 }
+        let list = base.map { model.marketById[$0.id] ?? $0 }.filter { $0.dayNtlVlm >= minVolume && $0.prevDayPx > 0 }
+        return list.sorted { gainers ? change($0) > change($1) : change($0) < change($1) }
     }
 }

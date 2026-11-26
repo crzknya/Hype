@@ -98,9 +98,6 @@ final class AppModel {
     var marketById: [String: Market] = [:]
     var spotTokens: [Int: SpotToken] = [:]
     var mids: [String: Double] = [:]
-    /// Last hour of prices / OI for the market scanner (see Movers.swift); the version bumps the scanner view.
-    @ObservationIgnored var priceHistory: [PriceSnapshot] = AppModel.loadPriceHistory()
-    var priceHistoryVersion = 0
     var book = OrderBook()
     /// Live best bid/ask (bbo stream), fresher than the order-book snapshot.
     var bbo: BestBidAsk?
@@ -367,13 +364,6 @@ final class AppModel {
                 // REST fallback while the account streams are silent (reconnect, older servers).
                 if self?.accountStreamLive != true { await self?.refreshAccount() }
                 try? await Task.sleep(for: .seconds(3))
-            }
-        })
-        loops.append(Task { [weak self] in
-            // Price snapshots for the market scanner's 5 m / 15 m / 1 h moves.
-            while !Task.isCancelled {
-                self?.recordPriceSnapshot()
-                try? await Task.sleep(for: .seconds(30))
             }
         })
         loops.append(Task { [weak self] in
@@ -755,7 +745,6 @@ final class AppModel {
             }
         } else {
             if biometricLock { locked = true }
-            savePriceHistory()
         }
     }
 

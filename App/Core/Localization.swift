@@ -28,6 +28,7 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "24h change": "Изменение за 24ч",
         "Last update": "Последнее обновление",
         "Status": "Статус",
         "background updates off": "фоновые обновления выключены",
