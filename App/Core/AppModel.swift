@@ -205,8 +205,12 @@ final class AppModel {
 
         socket.onMessage = { [weak self] ch, data in self?.handle(channel: ch, data: data) }
         socket.onStatus = { [weak self] c in
-            self?.wsConnected = c
-            if c { self?.wsError = nil }
+            guard let self else { return }
+            let reconnected = c && !self.wsConnected
+            self.wsConnected = c
+            if c { self.wsError = nil }
+            // After a dropped connection the account streams resume without the gap: fill it from REST.
+            if reconnected { Task { await self.refreshHistoryThrottled() } }
         }
         socket.onError = { [weak self] e in
             self?.wsError = CertificatePinning.failedRecently ? CertificatePinning.failureMessage : e
@@ -345,8 +349,15 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(3))
             }
         })
+        loops.append(Task { [weak self] in
+            // Safety net: history (funding, fills, transfers) re-synced every 10 minutes.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(600))
+                await self?.refreshHistoryThrottled()
+            }
+        })
         Task { await loadCandles() }
-        Task { await refreshHistory() }
+        Task { await refreshHistoryThrottled() }
         Task { await refreshFees() }
         Task { await loadLimits() }
     }
@@ -686,7 +697,9 @@ final class AppModel {
             if loops.isEmpty { start() }
             else {
                 socket.connect()
-                Task { await refreshAccount(); await refreshMarkets(); await loadCandles() }
+                // Streams miss whatever happened while the app was suspended (funding, fills, transfers):
+                // reload the history too.
+                Task { await refreshAccount(); await refreshMarkets(); await loadCandles(); await refreshHistoryThrottled() }
             }
         } else {
             if biometricLock { locked = true }
@@ -1002,6 +1015,15 @@ final class AppModel {
     /// Value of all perp accounts (main + HIP-3 dexes).
     var totalPerpValue: Double {
         summary.accountValue + dexSummaries.values.reduce(0) { $0 + $1.accountValue }
+    }
+
+    @ObservationIgnored private var historyRefreshedAt: Date = .distantPast
+
+    /// refreshHistory at most every 20 s (resume, reconnect and the periodic re-sync can coincide).
+    func refreshHistoryThrottled() async {
+        guard Date().timeIntervalSince(historyRefreshedAt) > 20 else { return }
+        historyRefreshedAt = Date()
+        await refreshHistory()
     }
 
     func refreshHistory() async {

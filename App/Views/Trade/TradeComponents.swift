@@ -7,7 +7,7 @@ struct MarketDataTabs: View {
     let onExpand: (Int) -> Void
     @State private var tab: Tab = .book
 
-    enum Tab: Hashable { case book, trades, positions, orders, fills }
+    enum Tab: Hashable { case book, trades, positions, orders, fills, funding }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -18,6 +18,7 @@ struct MarketDataTabs: View {
                     .init(id: Tab.positions, title: L("Positions"), count: model.positions.count),
                     .init(id: Tab.orders, title: L("Orders"), count: model.openOrders.count),
                     .init(id: Tab.fills, title: L("Fills")),
+                    .init(id: Tab.funding, title: L("Funding")),
                 ], selection: $tab)
                 if tab == .trades { TradeFilterMenu() }
                 if tab == .book || tab == .trades {
@@ -36,6 +37,25 @@ struct MarketDataTabs: View {
             case .positions: AccountPanel(coin: market.id, fixedTab: 0)
             case .orders: AccountPanel(coin: market.id, fixedTab: 1)
             case .fills: AccountPanel(coin: market.id, fixedTab: 2)
+            case .funding: TradeFundingPanel(coin: market.id)
+            }
+        }
+    }
+}
+
+/// Funding payments on the trade screen, optionally only this market's.
+struct TradeFundingPanel: View {
+    @Environment(AppModel.self) private var model
+    let coin: String
+    @State private var onlyThisCoin = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(L("Only {0}", model.displayName(coin)), isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)
+            if model.account == nil {
+                EmptyState(text: L("Connect an account in Settings to see positions and trade"), icon: "person.crop.circle.badge.plus")
+            } else {
+                FundingSection(coin: onlyThisCoin ? coin : nil)
             }
         }
     }

@@ -552,14 +552,17 @@ struct FillsSection: View {
 
 struct FundingSection: View {
     @Environment(AppModel.self) private var model
+    /// Only this market's payments (trade screen), or all.
+    var coin: String? = nil
     var body: some View {
-        let total = model.fundingHistory.reduce(0) { $0 + $1.usdc }
+        let list = coin.map { c in model.fundingHistory.filter { $0.coin == c } } ?? model.fundingHistory
+        let total = list.reduce(0) { $0 + $1.usdc }
         VStack(spacing: 8) {
             Card {
                 Stat(title: L("Funding, 4 weeks"), value: Fmt.signedUsd(total, 4), color: Color.pnl(total))
             }
-            if model.fundingHistory.isEmpty { EmptyState(text: L("No funding payments")) }
-            ForEach(model.fundingHistory.prefix(200)) { f in
+            if list.isEmpty { EmptyState(text: L("No funding payments")) }
+            ForEach(list.prefix(200)) { f in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.displayName(f.coin)).font(.subheadline.bold())
