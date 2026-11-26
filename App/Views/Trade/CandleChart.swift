@@ -454,7 +454,8 @@ struct CandleChart: View {
                 var path = Path()
                 path.move(to: CGPoint(x: 0, y: yy)); path.addLine(to: CGPoint(x: plotW, y: yy))
                 ctx.stroke(path, with: .color(gridColor), lineWidth: 1)
-                if yy > 6, yy < mainH - 6, !reservedY.contains(where: { abs($0 - yy) < 13 }) {
+                // Not under the LOG / A buttons at the bottom of the scale.
+                if yy > 6, yy < mainH - 26, !reservedY.contains(where: { abs($0 - yy) < 13 }) {
                     ctx.draw(Text(Fmt.price(p, decimals: labelDec)).font(.system(size: 9, design: .monospaced)).foregroundColor(.hlMuted),
                              at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
                 }

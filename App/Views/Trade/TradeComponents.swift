@@ -11,29 +11,27 @@ struct MarketDataTabs: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(alignment: .center, spacing: 0) {
-                UnderlineTabs(items: [
+            // Tabs alone on their row (they scroll when they don't fit); the expand and filter buttons
+            // live in each panel's own header so nothing overlaps the tabs.
+            UnderlineTabs(items: [
                     .init(id: Tab.book, title: L("Book")),
                     .init(id: Tab.trades, title: L("Trades")),
                     .init(id: Tab.positions, title: L("Positions"), count: model.positions.count),
                     .init(id: Tab.orders, title: L("Orders"), count: model.openOrders.count),
                     .init(id: Tab.fills, title: L("Fills")),
                     .init(id: Tab.funding, title: L("Funding")),
-                ], selection: $tab)
-                if tab == .trades { TradeFilterMenu() }
-                if tab == .book || tab == .trades {
-                    Button { onExpand(tab == .book ? 0 : 1) } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: 30, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .foregroundStyle(Color.hlMuted)
-                }
-            }
+                ], selection: $tab, spacing: 16)
             switch tab {
-            case .book: SideBySideBook(market: market)
-            case .trades: TradesPanel(market: market, limit: 30, wide: true)
+            case .book: SideBySideBook(market: market, onExpand: { onExpand(0) })
+            case .trades:
+                VStack(spacing: 2) {
+                    HStack(spacing: 4) {
+                        Spacer()
+                        TradeFilterMenu()
+                        expandButton { onExpand(1) }
+                    }
+                    TradesPanel(market: market, limit: 30, wide: true)
+                }
             case .positions: AccountPanel(coin: market.id, fixedTab: 0)
             case .orders: AccountPanel(coin: market.id, fixedTab: 1)
             case .fills: AccountPanel(coin: market.id, fixedTab: 2)
@@ -41,6 +39,18 @@ struct MarketDataTabs: View {
             }
         }
     }
+}
+
+/// Full-screen button for the order book / trades panels.
+func expandButton(_ action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 12, weight: .medium))
+            .frame(width: 30, height: 24)
+            .contentShape(Rectangle())
+    }
+    .foregroundStyle(Color.hlMuted)
+    .accessibilityLabel(L("Full screen"))
 }
 
 /// Funding payments on the trade screen, optionally only this market's.
@@ -66,6 +76,7 @@ struct SideBySideBook: View {
     @Environment(AppModel.self) private var model
     let market: Market
     var rows = 12
+    var onExpand: (() -> Void)? = nil
     @State private var showUsd = false
 
     var body: some View {
@@ -104,6 +115,7 @@ struct SideBySideBook: View {
                     Text(showUsd ? "USD" : market.base).font(.system(size: 11, weight: .semibold))
                         .frame(minWidth: 28, minHeight: 22)
                 }
+                if let onExpand { expandButton(onExpand) }
             }
             .foregroundStyle(Color.hlMuted)
             HStack(spacing: 6) {
