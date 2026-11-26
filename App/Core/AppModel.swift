@@ -767,9 +767,10 @@ final class AppModel {
         socket.connect()
     }
 
-    /// Background keep-alive runs only in the background, with the option on and open positions.
+    /// Background keep-alive: on while the option is on and positions are open. Started already in the
+    /// foreground — iOS may refuse to start audio once the app is in the background.
     func updateKeepAlive() {
-        let want = isBackgrounded && liveActivityEnabled && liveActivityBackground && account != nil && !positions.isEmpty
+        let want = liveActivityEnabled && liveActivityBackground && account != nil && !positions.isEmpty
         if want { BackgroundKeepAlive.shared.start() } else { BackgroundKeepAlive.shared.stop() }
     }
 

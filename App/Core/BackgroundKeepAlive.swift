@@ -20,7 +20,7 @@ final class BackgroundKeepAlive {
             try session.setActive(true)
             let p = try AVAudioPlayer(data: Self.silence)
             p.numberOfLoops = -1
-            p.volume = 0
+            p.volume = 0.01   // the data is silence anyway; a zero volume may let iOS treat the app as idle
             p.prepareToPlay()
             p.play()
             player = p

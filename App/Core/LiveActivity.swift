@@ -7,14 +7,16 @@ import HyperCore
 /// occasionally (background refresh), so the card shows when it was last updated.
 @MainActor
 enum LiveActivityController {
-    private static var lastUpdate = Date.distantPast
+    private(set) static var lastUpdate = Date.distantPast
     private static var lastState: PositionActivityAttributes.ContentState?
 
     static var available: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
     static func sync(_ model: AppModel, force: Bool = false) {
         guard model.liveActivityEnabled, available, model.account != nil else { endAll(); return }
-        let state = makeState(positions: model.positions, mark: { model.market($0)?.markPx ?? model.lastPrice($0) })
+        // Live mid prices (the all-markets stream keeps running in the background); the account stream does
+        // not push on every price move, so PnL is recomputed from the price here.
+        let state = makeState(positions: model.positions, mark: { model.mids[$0] ?? model.lastPrice($0) })
         guard !state.items.isEmpty else { endAll(); return }
         let name = model.account?.name ?? "Hype"
         apply(state, accountName: name, force: force)
@@ -47,13 +49,21 @@ enum LiveActivityController {
         let sorted = positions.sorted { abs($0.positionValue) > abs($1.positionValue) }
         let items = sorted.prefix(3).map { p -> PositionActivityAttributes.Item in
             let m = mark(p.coin)
+            let pnl = livePnl(p, m)
+            let entryNotional = abs(p.szi) * p.entryPx
+            let roe = entryNotional > 0 ? pnl * Double(max(p.leverage, 1)) / entryNotional : p.returnOnEquity
             var dist: Double?
             if let liq = p.liquidationPx, liq > 0, m > 0 { dist = abs(m - liq) / m }
-            return PositionActivityAttributes.Item(coin: p.coin, isLong: p.isLong, leverage: p.leverage, pnl: p.unrealizedPnl,
-                                                   roe: p.returnOnEquity, mark: m, liq: p.liquidationPx, liqDistance: dist)
+            return PositionActivityAttributes.Item(coin: p.coin, isLong: p.isLong, leverage: p.leverage, pnl: pnl,
+                                                   roe: roe, mark: m, liq: p.liquidationPx, liqDistance: dist)
         }
-        return PositionActivityAttributes.ContentState(items: Array(items), totalPnl: positions.reduce(0) { $0 + $1.unrealizedPnl },
+        return PositionActivityAttributes.ContentState(items: Array(items), totalPnl: positions.reduce(0) { $0 + livePnl($1, mark($1.coin)) },
                                                        updatedAt: Date())
+    }
+
+    /// Unrealized PnL at the given price (size × move from entry); the account's figure if there is no price.
+    static func livePnl(_ p: Position, _ price: Double) -> Double {
+        price > 0 && p.entryPx > 0 ? p.szi * (price - p.entryPx) : p.unrealizedPnl
     }
 
     /// Background refresh: positions of the active account straight from the API.
