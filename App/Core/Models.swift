@@ -497,6 +497,61 @@ enum CandleInterval: String, CaseIterable, Identifiable, Codable {
         }
     }
     static let quick: [CandleInterval] = [.m1, .m5, .m15, .h1, .h4, .d1]
+
+    /// Hyperliquid's own 1w candles start on Thursday (epoch-aligned) and its 1M candles are 30-day blocks.
+    /// Like TradingView, these two are built here from daily candles: weeks from Monday 00:00 UTC and
+    /// calendar months.
+    var isAggregated: Bool { self == .w1 || self == .M1 }
+
+    /// Interval fetched and streamed from the exchange.
+    var source: CandleInterval { isAggregated ? .d1 : self }
+
+    private static let utcCalendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
+
+    /// Open time (ms) of the candle containing `ms`.
+    func bucketStart(_ ms: Double) -> Double {
+        switch self {
+        case .w1:
+            // 1970-01-01 was a Thursday: Monday-based weeks start 3 days after the epoch week.
+            let day = floor(ms / 86_400_000)
+            let weekday = Double((Int(day) % 7 + 7 + 3) % 7)
+            return (day - weekday) * 86_400_000
+        case .M1:
+            let c = Self.utcCalendar.dateComponents([.year, .month], from: Date(timeIntervalSince1970: ms / 1000))
+            return (Self.utcCalendar.date(from: c)?.timeIntervalSince1970 ?? ms / 1000) * 1000
+        default:
+            return floor(ms / (seconds * 1000)) * seconds * 1000
+        }
+    }
+
+    /// Close time (seconds) of the candle opened at `openSeconds`.
+    func closeTime(openSeconds t: Double) -> Double {
+        if self == .M1, let next = Self.utcCalendar.date(byAdding: .month, value: 1, to: Date(timeIntervalSince1970: t)) {
+            return next.timeIntervalSince1970
+        }
+        return t + seconds
+    }
+
+    /// Daily candles → this interval's candles (consecutive days in the same week / month).
+    func aggregate(_ src: [Candle]) -> [Candle] {
+        var out: [Candle] = []
+        var bucket = -1.0
+        for c in src {
+            let b = bucketStart(c.t)
+            if b == bucket, var last = out.last {
+                last.h = max(last.h, c.h); last.l = min(last.l, c.l); last.c = c.c; last.v += c.v
+                out[out.count - 1] = last
+            } else {
+                out.append(Candle(t: b, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v))
+                bucket = b
+            }
+        }
+        return out
+    }
 }
 
 struct PriceAlert: Identifiable, Codable, Hashable {

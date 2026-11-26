@@ -12,6 +12,7 @@ struct PriceChartView: View {
                         layers: model.chartLayers(),
                         decimals: nil, showVolume: model.showVolume,
                         logScale: model.logScale, intervalSeconds: model.interval.seconds,
+                        closeTime: { [iv = model.interval] t in iv.closeTime(openSeconds: t) },
                         onNeedHistory: { Task { await model.loadOlderCandles() } },
                         initialSpacing: model.chartSpacing,
                         onSpacingChange: { model.chartSpacing = $0 },

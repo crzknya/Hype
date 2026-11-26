@@ -447,7 +447,7 @@ final class AppModel {
         [
             l2Sub(coin, bookSigFigs),
             .map([("type", .str("trades")), ("coin", .str(coin))]),
-            .map([("type", .str("candle")), ("coin", .str(coin)), ("interval", .str(interval.rawValue))]),
+            .map([("type", .str("candle")), ("coin", .str(coin)), ("interval", .str(interval.source.rawValue))]),
             .map([("type", .str("bbo")), ("coin", .str(coin))]),
         ]
     }
@@ -515,6 +515,25 @@ final class AppModel {
             let batch = self.pendingCandles.values.sorted { $0.t < $1.t }
             self.pendingCandles = [:]
             guard self.pendingCandlesKey == "\(self.selectedCoin)|\(self.interval.rawValue)", !batch.isEmpty else { return }
+            if self.interval.isAggregated {
+                // Daily updates → rebuild the week / month they fall in.
+                let iv = self.interval
+                guard !self.sourceCandles.isEmpty else { return }   // the daily history is still loading
+                var src = self.sourceCandles
+                for c in batch {
+                    if let last = src.last, last.t == c.t { src[src.count - 1] = c }
+                    else if src.last.map({ c.t > $0.t }) ?? true { src.append(c) }
+                }
+                self.sourceCandles = src
+                var list = self.candles
+                for b in Set(batch.map { iv.bucketStart($0.t) }).sorted() {
+                    guard let agg = iv.aggregate(src.filter { iv.bucketStart($0.t) == b }).first else { continue }
+                    if let i = list.lastIndex(where: { $0.t == b }) { list[i] = agg }
+                    else if list.last.map({ b > $0.t }) ?? true { list.append(agg) }
+                }
+                self.candles = list
+                return
+            }
             var list = self.candles
             for c in batch {
                 if let last = list.last, last.t == c.t { list[list.count - 1] = c }
@@ -642,11 +661,11 @@ final class AppModel {
         let oldInterval = interval
         socket.unsubscribe(l2Sub(old, bookSigFigs))
         socket.unsubscribe(.map([("type", .str("trades")), ("coin", .str(old))]))
-        socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(old)), ("interval", .str(oldInterval.rawValue))]))
+        socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(old)), ("interval", .str(oldInterval.source.rawValue))]))
         socket.unsubscribe(.map([("type", .str("activeAssetCtx")), ("coin", .str(old))]))
         socket.unsubscribe(.map([("type", .str("bbo")), ("coin", .str(old))]))
         if let u = userAddress { socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(old))])) }
-        book = OrderBook(); bookReceivedAt = .distantPast; bbo = nil; trades = []; candles = []; activeAsset = ActiveAssetData()
+        book = OrderBook(); bookReceivedAt = .distantPast; bbo = nil; trades = []; candles = []; sourceCandles = []; activeAsset = ActiveAssetData()
         pendingPrice = nil
         subscribeCoin(selectedCoin)
         Task { await loadCandles() }
@@ -654,11 +673,14 @@ final class AppModel {
 
     private func intervalChanged(old: CandleInterval) {
         guard !loading else { return }
-        socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(old.rawValue))]))
+        if old.source != interval.source {
+            socket.unsubscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(old.source.rawValue))]))
+        }
         if !marketStreamsPaused {
-            socket.subscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(interval.rawValue))]))
+            socket.subscribe(.map([("type", .str("candle")), ("coin", .str(selectedCoin)), ("interval", .str(interval.source.rawValue))]))
         }
         candles = []
+        sourceCandles = []
         Task { await loadCandles() }
     }
 
@@ -1142,11 +1164,18 @@ final class AppModel {
         candlesLoading = true
         defer { candlesLoading = false }
         let end = Date().timeIntervalSince1970 * 1000
-        let start = end - iv.seconds * 1000 * 400
-        let req = MP.map([("coin", .str(coin)), ("interval", .str(iv.rawValue)),
+        // Weeks / months are built from daily candles: fetch the whole daily history at once (max 5000).
+        let start = iv.isAggregated ? end - 86_400_000 * 4999 : end - iv.seconds * 1000 * 400
+        let req = MP.map([("coin", .str(coin)), ("interval", .str(iv.source.rawValue)),
                           ("startTime", .int(Int64(start))), ("endTime", .int(Int64(end)))])
         guard let j = try? await api.info(type: "candleSnapshot", [("req", req)]), coin == selectedCoin, iv == interval else { return }
         let fresh = j.array.map(Candle.init).sorted { $0.t < $1.t }
+        if iv.isAggregated {
+            sourceCandles = fresh
+            candles = iv.aggregate(fresh)
+            candleHistoryEnd = "\(coin)|\(iv.rawValue)"
+            return
+        }
         // Keep older history already loaded by scrolling back; replace the recent part (fills gaps after
         // the app was in the background).
         if let first = fresh.first, let have = candles.first, have.t < first.t {
@@ -1156,6 +1185,8 @@ final class AppModel {
         }
     }
 
+    /// Daily candles behind the Monday-based weeks / calendar months.
+    @ObservationIgnored private var sourceCandles: [Candle] = []
     @ObservationIgnored private var olderCandlesLoading = false
     @ObservationIgnored private var candleHistoryEnd = ""
 
@@ -1213,7 +1244,7 @@ final class AppModel {
             guard !new.isEmpty else { return }
             if energySaving { scheduleTradesFlush(new) } else { addTrades(new) }
         case "candle":
-            guard data["s"].str == selectedCoin, data["i"].str == interval.rawValue else { return }
+            guard data["s"].str == selectedCoin, data["i"].str == interval.source.rawValue else { return }
             // One update per trade: batch them (4 per second) so the chart and indicators are not
             // recomputed on every trade.
             let c = Candle(data)

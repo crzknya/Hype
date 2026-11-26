@@ -32,6 +32,8 @@ struct CandleChart: View {
     var showVolume = true
     var logScale = false
     var intervalSeconds: Double = 3600
+    /// Close time (seconds) of a candle from its open time; calendar months are not fixed-length.
+    var closeTime: ((Double) -> Double)? = nil
     /// Called when the view nears the oldest loaded candle.
     var onNeedHistory: (() -> Void)? = nil
     /// Bar width to start with (kept across markets and intervals, as TradingView) and its change callback.
@@ -474,7 +476,8 @@ struct CandleChart: View {
                 ctx.draw(Text(Fmt.price(last.c, decimals: dec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlOnAccent),
                          at: CGPoint(x: plotW + 4, y: yy), anchor: .leading)
                 // Time left until the current candle closes.
-                let remaining = Int(last.t / 1000 + intervalSeconds - now.timeIntervalSince1970)
+                let close = closeTime?(last.t / 1000) ?? last.t / 1000 + intervalSeconds
+                let remaining = Int(close - now.timeIntervalSince1970)
                 if remaining > 0 && lastVisible {
                     let text = remaining >= 3600 ? Fmt.countdown(remaining) : String(format: "%02d:%02d", remaining / 60, remaining % 60)
                     // Below the price tag, or above it near the bottom edge.
