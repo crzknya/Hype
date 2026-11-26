@@ -16,13 +16,11 @@ targets:
     platform: iOS
     sources:
       - path: App
-      - path: Shared
     dependencies:
       - package: HyperCore
         product: HyperCore
       - package: reown
         product: WalletConnect
-      - target: HypeWidgets
     info:
       path: App/Info.plist
       properties:
@@ -36,10 +34,9 @@ targets:
         # Landscape is allowed only while the full-screen chart is open (OrientationLock).
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIUserInterfaceStyle: Dark
-        UIBackgroundModes: [fetch, audio]
+        UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.hype.trader.refresh]
         NSFaceIDUsageDescription: Unlock the app and confirm sensitive actions
-        NSSupportsLiveActivities: true
         ITSAppUsesNonExemptEncryption: false
         LSApplicationQueriesSchemes: [https, rabby, metamask, trust, rainbow, wc]
         CFBundleURLTypes:
@@ -60,31 +57,3 @@ targets:
         CODE_SIGN_IDENTITY: ""
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
     scheme: {}
-  # Widget extension: the positions Live Activity (lock screen and Dynamic Island).
-  HypeWidgets:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: Widgets
-      - path: Shared
-    info:
-      path: Widgets/Info.plist
-      properties:
-        CFBundleDisplayName: Hype
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hype.trader.widgets
-        PRODUCT_NAME: HypeWidgets
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
-        SKIP_INSTALL: "YES"
-        CODE_SIGNING_ALLOWED: "NO"
-        CODE_SIGNING_REQUIRED: "NO"
-        CODE_SIGN_IDENTITY: ""
-        ENABLE_USER_SCRIPT_SANDBOXING: "NO"

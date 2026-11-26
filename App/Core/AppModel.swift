@@ -39,21 +39,6 @@ final class AppModel {
     /// Fill notifications: in-app toast, sound, and a local notification while the app is in the background.
     /// Small CPU / memory / FPS overlay for diagnosing heat and battery use.
     var perfOverlay = false
-    /// Positions Live Activity on the lock screen / Dynamic Island (own storage key, read in the background too).
-    var liveActivityEnabled = UserDefaults.standard.object(forKey: "liveActivity") as? Bool ?? true {
-        didSet {
-            UserDefaults.standard.set(liveActivityEnabled, forKey: "liveActivity")
-            LiveActivityController.sync(self, force: true)
-            updateKeepAlive()
-        }
-    }
-    /// Keep running in the background while positions are open, so the Live Activity stays live.
-    var liveActivityBackground = UserDefaults.standard.object(forKey: "liveActivityBackground") as? Bool ?? true {
-        didSet {
-            UserDefaults.standard.set(liveActivityBackground, forKey: "liveActivityBackground")
-            updateKeepAlive()
-        }
-    }
     @ObservationIgnored var isBackgrounded = false
     /// Experimental energy saving: market streams only while the Trade tab is open, slower UI updates.
     var energySaving = false { didSet { save(); if oldValue != energySaving { updateMarketStreams() } } }
@@ -389,16 +374,6 @@ final class AppModel {
             while !Task.isCancelled {
                 self?.recordPriceSnapshot()
                 try? await Task.sleep(for: .seconds(30))
-            }
-        })
-        loops.append(Task { [weak self] in
-            // Live Activity with the open positions (throttled inside).
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                if let self {
-                    LiveActivityController.sync(self)
-                    self.updateKeepAlive()
-                }
             }
         })
         loops.append(Task { [weak self] in
@@ -767,16 +742,8 @@ final class AppModel {
         socket.connect()
     }
 
-    /// Background keep-alive: on while the option is on and positions are open. Started already in the
-    /// foreground — iOS may refuse to start audio once the app is in the background.
-    func updateKeepAlive() {
-        let want = liveActivityEnabled && liveActivityBackground && account != nil && !positions.isEmpty
-        if want { BackgroundKeepAlive.shared.start() } else { BackgroundKeepAlive.shared.stop() }
-    }
-
     func sceneActive(_ active: Bool) {
         isBackgrounded = !active
-        updateKeepAlive()
         updateMarketStreams()
         if active {
             if loops.isEmpty { start() }
@@ -788,8 +755,6 @@ final class AppModel {
             }
         } else {
             if biometricLock { locked = true }
-            // Freshest numbers before going to the background (updates there are occasional).
-            LiveActivityController.sync(self, force: true)
             savePriceHistory()
         }
     }
