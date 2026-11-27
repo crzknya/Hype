@@ -164,7 +164,7 @@ struct TradesPanel: View {
     @State private var picked: PublicTrade?
 
     var body: some View {
-        let trades = model.trades.filter { $0.px * $0.sz >= model.minTradeUsd }
+        let trades = model.visibleTrades
         VStack(spacing: 1) {
             if wide { wideHeader } else { compactHeader }
             ForEach(trades.prefix(limit)) { t in

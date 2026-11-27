@@ -57,7 +57,12 @@ final class AppModel {
     var interval: CandleInterval = .h1 { didSet { save(); if oldValue != interval { intervalChanged(old: oldValue) } } }
     var bookSigFigs: Int? = nil { didSet { if oldValue != bookSigFigs { bookAggChanged(old: oldValue) } } }
     var showChart = true { didSet { save() } }
-    var minTradeUsd: Double = 0 { didSet { save() } }
+    var minTradeUsd: Double = 0 {
+        didSet {
+            save()
+            bigTrades = Array(trades.filter { $0.px * $0.sz >= minTradeUsd }.prefix(300))
+        }
+    }
     var indicators: [IndicatorConfig] = IndicatorConfig.defaults { didSet { save() } }
     var showVolume = true { didSet { save() } }
     var chartHeight: Double = 250 { didSet { save() } }
@@ -109,6 +114,11 @@ final class AppModel {
     /// When the shown order-book snapshot arrived (for the staleness indicator).
     var bookReceivedAt: Date = .distantPast
     var trades: [PublicTrade] = []
+    /// Trades passing the size filter, kept apart: on a busy market the 500 latest trades roll over in
+    /// seconds, and large ones would vanish from a filtered list almost at once.
+    var bigTrades: [PublicTrade] = []
+    /// What the trades list shows: everything, or the filtered buffer.
+    var visibleTrades: [PublicTrade] { minTradeUsd > 0 ? bigTrades : trades }
     var candles: [Candle] = []
     var candlesLoading = false
     var wsConnected = false
@@ -658,6 +668,10 @@ final class AppModel {
         let fresh = new.reversed().filter { seen.insert($0.tid).inserted }
         guard !fresh.isEmpty else { return }
         trades = Array((fresh + trades).prefix(500))
+        if minTradeUsd > 0 {
+            let big = fresh.filter { $0.px * $0.sz >= minTradeUsd }
+            if !big.isEmpty { bigTrades = Array((big + bigTrades).prefix(300)) }
+        }
     }
 
     /// Energy saving: trades are added once a second instead of on every message.
@@ -685,7 +699,7 @@ final class AppModel {
         socket.unsubscribe(.map([("type", .str("activeAssetCtx")), ("coin", .str(old))]))
         socket.unsubscribe(.map([("type", .str("bbo")), ("coin", .str(old))]))
         if let u = userAddress { socket.unsubscribe(.map([("type", .str("activeAssetData")), ("user", .str(u)), ("coin", .str(old))])) }
-        book = OrderBook(); bookReceivedAt = .distantPast; bbo = nil; trades = []; candles = []; sourceCandles = []; activeAsset = ActiveAssetData()
+        book = OrderBook(); bookReceivedAt = .distantPast; bbo = nil; trades = []; bigTrades = []; candles = []; sourceCandles = []; activeAsset = ActiveAssetData()
         pendingPrice = nil
         subscribeCoin(selectedCoin)
         Task { await loadCandles() }
