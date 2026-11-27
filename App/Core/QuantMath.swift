@@ -99,7 +99,9 @@ enum QuantMath {
         guard n > 3 else { return nil }
         var r: [Double] = []
         for i in 1..<n where accountValue[i - 1].1 > 0 {
-            r.append((pnl[i].1 - pnl[i - 1].1) / accountValue[i - 1].1)
+            // A loss can't exceed the whole account; larger ratios come from deposits landing between
+            // history points and would push the compounded equity below zero (drawdowns over 100 %).
+            r.append(max((pnl[i].1 - pnl[i - 1].1) / accountValue[i - 1].1, -0.99))
         }
         guard r.count > 2 else { return nil }
         let span = pnl[n - 1].0.timeIntervalSince(pnl[0].0)

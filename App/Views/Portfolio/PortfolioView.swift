@@ -182,6 +182,15 @@ struct PortfolioView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: axisFormat) }
                 }
+                // Dollar amounts as $5M / -$10M instead of the default 5,0E6.
+                .chartYAxis {
+                    AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { v in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let d = v.as(Double.self) { Text(Fmt.compactUsd(d)).font(.system(size: 9, design: .monospaced)) }
+                        }
+                    }
+                }
                 .frame(height: 120)
             } else {
                 Text(L("No history yet")).font(.caption).foregroundStyle(Color.hlMuted)
