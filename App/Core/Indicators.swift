@@ -487,12 +487,26 @@ struct VolumeProfile {
     }
 }
 
+/// One row of the on-chart indicator list.
+struct IndicatorLegendItem: Identifiable {
+    let id: UUID
+    let title: String
+    let color: Color
+    /// Lines of the indicator, aligned with the candles (values shown at the crosshair or the last candle).
+    let series: [[Double?]]
+    let visible: Bool
+    /// Values in price units (overlays) vs. oscillator units (panes).
+    let priceLike: Bool
+}
+
 struct ChartLayers {
     var volumeProfile: VolumeProfileSpec?
     var overlays: [ChartSeries] = []
     var bands: [(up: [Double?], low: [Double?], color: Color)] = []
     var panes: [ChartPane] = []
     var legend: [(String, Color)] = []
+    /// Every configured indicator (hidden ones too) with its series, for the on-chart list and crosshair values.
+    var items: [IndicatorLegendItem] = []
     /// Marks of the highest high and lowest low among the candles on screen (with % from the last price).
     var highLow: (color: Color, showPercent: Bool)?
 
@@ -500,8 +514,22 @@ struct ChartLayers {
         var r = ChartLayers()
         guard !candles.isEmpty else { return r }
         let close: [Double] = candles.map(\.c)
-        for cfg in configs where cfg.visible {
+        for cfg in configs {
             let color = IndicatorPalette.color(cfg.color)
+            guard cfg.visible else {
+                r.items.append(IndicatorLegendItem(id: cfg.id, title: cfg.label, color: color, series: [], visible: false, priceLike: !cfg.kind.isPane))
+                continue
+            }
+            let o0 = r.overlays.count, p0 = r.panes.count
+            defer {
+                // Series this indicator added: overlay lines, or its pane's lines (+ MACD histogram).
+                var series = r.overlays[o0...].map(\.values)
+                for pane in r.panes[p0...] {
+                    series += pane.lines.map(\.values)
+                    if cfg.kind == .macd, let h = pane.histogram { series.append(h) }
+                }
+                r.items.append(IndicatorLegendItem(id: cfg.id, title: cfg.label, color: color, series: series, visible: true, priceLike: !cfg.kind.isPane))
+            }
             switch cfg.kind {
             case .ema:
                 r.overlays.append(ChartSeries(values: TA.ema(close, cfg.p1), color: color))

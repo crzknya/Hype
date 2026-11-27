@@ -66,6 +66,8 @@ struct CandleChart: View {
     var onToggleLog: (() -> Void)? = nil
     /// Drawing tools: ruler, lines, rectangles, Fibonacci.
     var drawing: ChartDrawingContext? = nil
+    /// Show / hide an indicator from the on-chart list.
+    var onToggleIndicator: ((UUID) -> Void)? = nil
     /// Dashed line across the chart at the last price (the tag on the scale always stays).
     var showLastPriceLine = true
 
@@ -91,6 +93,8 @@ struct CandleChart: View {
     @State private var pinchStart: (spacing: CGFloat, right: CGFloat, x: CGFloat)?
     @State private var momentum: Task<Void, Never>?
     @State private var crosshair: CGPoint?
+    @AppStorage("chartLegendCollapsed") private var legendCollapsed = false
+    @State private var showHiddenIndicators = false
     // Drawing state: a measurement, the drawing being created or moved, the first tapped point.
     @State private var ruler: (a: ChartPoint, b: ChartPoint)?
     @State private var draft: ChartDrawing?
@@ -121,17 +125,13 @@ struct CandleChart: View {
                 }
                 // No cross-fade between redraws (it made the countdown text look doubled).
                 .transaction { $0.animation = nil }
-                if let info = crosshairInfo(size: size) {
-                    Text(info)
-                        .font(.system(size: 10, design: .monospaced))
-                        .padding(4)
-                        .background(Color.hlCard.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
-                        .padding(4)
-                }
                 // All touches go through one UIKit view: a SwiftUI drag inside the page's ScrollView would always
                 // take vertical swipes from it, a UIKit pan can decline them.
                 ChartTouchSurface(handlers: touchHandlers(size))
                     .frame(width: size.width, height: size.height)
+                // Indicator list with values at the crosshair (or the newest visible candle); tap to hide / show.
+                legendView(size: size)
+                    .padding(4)
                 // Auto-scale toggle, as TradingView's "A" under the price scale.
                 Button {
                     autoScale = true
@@ -558,15 +558,6 @@ struct CandleChart: View {
             }
         }
 
-        // Legend
-        var lx: CGFloat = 4
-        for (name, color) in layers.legend {
-            let t = ctx.resolve(Text(name).font(.system(size: 9, weight: .semibold)).foregroundColor(color))
-            let w = t.measure(in: CGSize(width: 300, height: 20)).width
-            if lx + w > plotW - 4 { break }
-            ctx.draw(t, at: CGPoint(x: lx, y: 8), anchor: .leading)
-            lx += w + 8
-        }
 
         // Volume
         if showVolume && L0.volH > 0 {
@@ -760,6 +751,90 @@ struct CandleChart: View {
             i -= 1
         }
         return nil
+    }
+
+    /// Candle the list shows values for: under the crosshair, else the newest one on screen.
+    private func legendIndex(_ size: CGSize) -> Int? {
+        guard !candles.isEmpty else { return nil }
+        let plotW = size.width - axisW
+        let lastIdx = candles.count - 1
+        if let p = crosshair {
+            let idx = lastIdx - Int(((plotW - p.x) / spacing - rightOffset - 0.5).rounded())
+            return min(lastIdx, max(0, idx))
+        }
+        return visibleRange(plotW: plotW).last.map { min($0, lastIdx) } ?? lastIdx
+    }
+
+    @ViewBuilder
+    private func legendView(size: CGSize) -> some View {
+        let idx = legendIndex(size)
+        let dec = decimals ?? Fmt.autoDecimals(candles.last?.c ?? 1)
+        let all = layers.items
+        let hiddenCount = all.filter { !$0.visible }.count
+        let items = showHiddenIndicators ? all : all.filter(\.visible)
+        VStack(alignment: .leading, spacing: 2) {
+            if crosshair != nil, let i = idx {
+                // Candle under the crosshair: time, OHLC and change.
+                let c = candles[i]
+                let ch = c.o > 0 ? c.c / c.o - 1 : 0
+                Text(Fmt.dateTime(Date(timeIntervalSince1970: c.t / 1000))).foregroundStyle(Color.hlMuted)
+                Text("O \(Fmt.price(c.o, decimals: dec))  H \(Fmt.price(c.h, decimals: dec))  L \(Fmt.price(c.l, decimals: dec))  C \(Fmt.price(c.c, decimals: dec))  ")
+                    + Text(Fmt.pct(ch)).foregroundColor(ch >= 0 ? .hlGreen : .hlRed)
+            }
+            if !items.isEmpty || showVolume {
+                Button { legendCollapsed.toggle() } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: legendCollapsed ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .bold))
+                        Text(legendCollapsed ? L("Indicators ({0})", all.count - hiddenCount) : L("Indicators")).foregroundStyle(Color.hlMuted)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            if !legendCollapsed {
+                if showVolume, let i = idx {
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.hlMuted).frame(width: 5, height: 5)
+                        Text(L("Volume")).foregroundStyle(Color.hlMuted)
+                        Text(Fmt.compact(candles[i].v))
+                    }
+                }
+                ForEach(items) { item in
+                    HStack(spacing: 4) {
+                        Circle().fill(item.color.opacity(item.visible ? 1 : 0.35)).frame(width: 5, height: 5)
+                        Text(item.title).foregroundStyle(item.visible ? item.color : Color.hlMuted.opacity(0.6))
+                        if item.visible, let i = idx {
+                            Text(item.series.compactMap { s in i < s.count ? s[i] : nil }
+                                .map { item.priceLike ? Fmt.price($0, decimals: dec) : Fmt.num($0, 2) }
+                                .joined(separator: "  "))
+                        }
+                        if let onToggleIndicator {
+                            Button { onToggleIndicator(item.id) } label: {
+                                Image(systemName: item.visible ? "eye" : "eye.slash")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Color.hlMuted)
+                                    .frame(width: 18, height: 14)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if hiddenCount > 0 && onToggleIndicator != nil {
+                    // Hidden indicators stay out of the way; this shows them to turn one back on.
+                    Button { showHiddenIndicators.toggle() } label: {
+                        Text(showHiddenIndicators ? L("Hide off indicators") : L("+{0} off", hiddenCount))
+                            .foregroundStyle(Color.hlAccent)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .lineLimit(1)
+        .padding(.horizontal, 5).padding(.vertical, 3)
+        .background(Color.hlBg.opacity(crosshair != nil ? 0.85 : 0.55), in: RoundedRectangle(cornerRadius: 6))
+        .frame(maxWidth: size.width - axisW - 8, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func crosshairInfo(size: CGSize) -> String? {

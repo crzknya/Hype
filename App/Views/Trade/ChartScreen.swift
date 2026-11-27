@@ -20,6 +20,9 @@ struct PriceChartView: View {
                         clockInterval: model.energySaving ? 5 : 1,
                         onToggleLog: { model.logScale.toggle() },
                         drawing: drawingContext,
+                        onToggleIndicator: { id in
+                            if let i = model.indicators.firstIndex(where: { $0.id == id }) { model.indicators[i].visible.toggle() }
+                        },
                         showLastPriceLine: model.chartLineSettings.lastPrice)
                 .id("\(market.id)-\(model.interval.rawValue)")
             if model.candlesLoading && model.candles.isEmpty { ProgressView() }
