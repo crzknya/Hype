@@ -47,8 +47,9 @@ struct OrderBookPanel: View {
             .foregroundStyle(Color.hlMuted)
             .padding(.bottom, 2)
 
-            // Fixed row count so the panel never changes height when a side is thin.
-            ForEach(0..<max(0, rows - asks.count), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
+            // Fixed row count so the panel never changes height when a side is thin (not in full screen: the
+            // exchange sends 20 levels a side, padding to 30 left a blank screen above the asks).
+            ForEach(0..<(wide ? 0 : max(0, rows - asks.count)), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
             ForEach(Array(asks.enumerated().reversed()), id: \.element.id) { i, l in
                 row(l, cum: askCum[i], maxCum: maxCum, isBid: false, dec: dec)
             }
@@ -66,7 +67,7 @@ struct OrderBookPanel: View {
             ForEach(Array(bids.enumerated()), id: \.element.id) { i, l in
                 row(l, cum: bidCum[i], maxCum: maxCum, isBid: true, dec: dec)
             }
-            ForEach(0..<max(0, rows - bids.count), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
+            ForEach(0..<(wide ? 0 : max(0, rows - bids.count)), id: \.self) { _ in Color.clear.frame(height: wide ? 26 : 17) }
             if model.book.bids.isEmpty && model.book.asks.isEmpty {
                 ProgressView().padding()
             }
@@ -289,6 +290,9 @@ struct MarketDepthScreen: View {
                             .padding(.horizontal)
                     }
                 }
+                // The book opens on the spread (asks above, bids below); the trades list from the newest.
+                .defaultScrollAnchor(tab == 0 ? .center : .top)
+                .id(tab)
             }
             .themedBackground()
             .navigationTitle(market.name)
