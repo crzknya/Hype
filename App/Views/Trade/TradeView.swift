@@ -163,10 +163,8 @@ struct TradeView: View {
     private func bottomBar(_ m: Market) -> some View {
         switch model.tradeLayout {
         case .sheet:
-            LongShortBar(market: m) { buy in
-                lastSide = buy
-                orderSheet = OrderSheetRequest(isBuy: buy)
-            }
+            // No Long / Short bar: the order sheet opens by tapping Trade again or a price in the book.
+            EmptyView()
         case .tabs:
             // Chart page: no Long / Short bar (orders are placed on the Order page).
             if page == 1 {
