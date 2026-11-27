@@ -134,6 +134,18 @@ struct CandleChart: View {
                 // Indicator list with values at the crosshair (or the newest visible candle); tap to hide / show.
                 legendView(size: size)
                     .padding(4)
+                // Volume of the crosshair (or newest visible) candle, in the volume area's top-left corner.
+                if showVolume, let i = legendIndex(size) {
+                    let L0 = layout(size)
+                    let c = candles[i]
+                    (Text("Vol ").foregroundColor(.hlMuted)
+                     + Text(Fmt.compact(c.v)).foregroundColor(c.c >= c.o ? .hlGreen : .hlRed))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 3)
+                        .background(Color.hlBg.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
+                        .offset(x: 4, y: L0.volTop + 2)
+                        .allowsHitTesting(false)
+                }
                 // Auto-scale toggle, as TradingView's "A" under the price scale.
                 Button {
                     autoScale = true
@@ -425,15 +437,10 @@ struct CandleChart: View {
             if lo > hi { lo = s.map(\.l).min() ?? 0; hi = s.map(\.h).max() ?? 1 }
             loS = toScale(lo); hiS = toScale(hi)
             if hiS <= loS { let d = max(abs(hiS) * 0.01, 1e-9); loS -= d; hiS += d }
-            // Margins as TradingView (10% top, 8% bottom), but the top one at least clears the indicator list
-            // (and the High label under it), so the newest candles never hide behind the list.
-            let mh = Double(L0.mainH)
-            let legendRoom = legendSize.height > 0 ? Double(legendSize.height) + 10 + (layers.highLow != nil ? 16 : 0) : 0
-            let topPx = min(max(mh * 0.10, legendRoom), mh * 0.45)
-            let botPx = mh * 0.08
-            let unit = (hiS - loS) / max(mh - topPx - botPx, 1)
-            hiS += topPx * unit
-            loS -= botPx * unit
+            // TradingView margins: 10% top, 8% bottom (candles may pass under the indicator list).
+            let span = hiS - loS
+            hiS += span * 0.10 / 0.82
+            loS -= span * 0.08 / 0.82
         } else {
             loS = manualLo; hiS = manualHi
         }
@@ -802,7 +809,7 @@ struct CandleChart: View {
         let all = layers.items
         let hiddenCount = all.filter { !$0.visible }.count
         let items = showHiddenIndicators ? all : all.filter(\.visible)
-        if crosshair != nil || !all.isEmpty || showVolume {
+        if crosshair != nil || !all.isEmpty {
         VStack(alignment: .leading, spacing: 2) {
             // One fixed slot: the candle's OHLC while the crosshair is on (the time is on the time axis),
             // otherwise the list's header. Swapping in place keeps the rows below from jumping.
@@ -824,13 +831,6 @@ struct CandleChart: View {
             }
             .frame(height: 14)
             if !legendCollapsed {
-                if showVolume, let i = idx {
-                    HStack(spacing: 4) {
-                        Circle().fill(Color.hlMuted).frame(width: 5, height: 5)
-                        Text(L("Volume")).foregroundStyle(Color.hlMuted)
-                        Text(Fmt.compact(candles[i].v))
-                    }
-                }
                 ForEach(items) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color.opacity(item.visible ? 1 : 0.35)).frame(width: 5, height: 5)
