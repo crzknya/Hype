@@ -36,7 +36,22 @@ struct PriceChartView: View {
             magnet: model.magnet, hidden: model.drawingsHidden,
             commit: { model.updateDrawing($0, coin: coin) },
             select: { model.selectedDrawingId = $0 },
-            toolDone: { model.drawTool = .cursor })
+            toolDone: { model.drawTool = .cursor },
+            pickTime: anchorPicker)
+    }
+
+    /// While an anchored VWAP waits for its start: a tap on the chart sets it.
+    private var anchorPicker: ((Double) -> Void)? {
+        guard let id = model.vwapAnchorPickId else { return nil }
+        let model = model
+        return { (t: Double) in
+            if let i = model.indicators.firstIndex(where: { $0.id == id }) {
+                model.indicators[i].anchor = t
+                model.indicators[i].visible = true
+                model.show(.success, L("VWAP anchored at {0}", Fmt.dateTime(Date(timeIntervalSince1970: t / 1000))))
+            }
+            model.vwapAnchorPickId = nil
+        }
     }
 }
 
@@ -301,6 +316,8 @@ struct IndicatorsSheet: View {
             .navigationDestination(item: $editing) { id in
                 IndicatorEditor(config: binding(for: id))
             }
+            // "Pick a candle on the chart": close the sheet so the chart can be tapped.
+            .onChange(of: model.vwapAnchorPickId) { _, id in if id != nil { dismiss() } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(isEditing ? L("Finish") : L("Reorder")) {
@@ -357,6 +374,7 @@ private struct IndicatorRow: View {
 }
 
 struct IndicatorEditor: View {
+    @Environment(AppModel.self) private var model
     @Binding var config: IndicatorConfig
 
     var body: some View {
@@ -373,7 +391,31 @@ struct IndicatorEditor: View {
                     Stepper(L("Period: {0}", config.p1), value: $config.p1, in: 2...200)
                     Stepper(L("Std. deviation: {0}", Fmt.input(config.mult, 1)), value: $config.mult, in: 0.5...5, step: 0.1)
                 case .vwap:
-                    Text(L("VWAP resets every day (UTC) on intraday timeframes.")).font(.caption).foregroundStyle(Color.hlMuted)
+                    Picker(L("Start"), selection: Binding(
+                        get: { config.anchor != nil },
+                        set: { anchored in config.anchor = anchored ? (config.anchor ?? Date().addingTimeInterval(-86_400).timeIntervalSince1970 * 1000) : nil })) {
+                        Text(L("Every day (UTC)")).tag(false)
+                        Text(L("From a point")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    if let anchor = config.anchor {
+                        DatePicker(L("From"), selection: Binding(
+                            get: { Date(timeIntervalSince1970: anchor / 1000) },
+                            set: { config.anchor = $0.timeIntervalSince1970 * 1000 }),
+                                   in: ...Date(), displayedComponents: [.date, .hourAndMinute])
+                        Button {
+                            model.vwapAnchorPickId = config.id
+                        } label: {
+                            Label(L("Pick a candle on the chart"), systemImage: "hand.tap")
+                        }
+                        Toggle(L("±σ bands"), isOn: Binding(get: { config.p2 != 0 }, set: { config.p2 = $0 ? 1 : 0 }))
+                        if config.p2 != 0 {
+                            Stepper(L("Bands: ±{0} σ", Fmt.input(config.mult, 1)), value: $config.mult, in: 0.5...4, step: 0.5)
+                        }
+                        Text(L("Anchored VWAP: volume-weighted average price from the chosen candle on (e.g. a swing high or low, a news candle). Bands show volume-weighted standard deviations around it.")).font(.caption).foregroundStyle(Color.hlMuted)
+                    } else {
+                        Text(L("VWAP resets every day (UTC) on intraday timeframes.")).font(.caption).foregroundStyle(Color.hlMuted)
+                    }
                 case .rsi:
                     Stepper(L("Period: {0}", config.p1), value: $config.p1, in: 2...100)
                     Stepper(L("Overbought: {0}", Int(config.upper)), value: $config.upper, in: 50...95, step: 1)

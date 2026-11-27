@@ -78,6 +78,8 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
     var lower: Double = 30   // RSI / Stoch oversold
     var color: Int = 0
     var visible = true
+    /// Anchored VWAP: start time (ms); nil = reset every UTC day. Optional so older saved settings decode.
+    var anchor: Double? = nil
 
     static func make(_ kind: IndicatorKind, color: Int) -> IndicatorConfig {
         switch kind {
@@ -115,7 +117,7 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         switch kind {
         case .ema, .sma, .rsi: return "\(kind.title) \(p1)"
         case .bollinger: return "BB \(p1), \(Fmt.input(mult, 1))"
-        case .vwap: return "VWAP"
+        case .vwap: return anchor != nil ? L("VWAP (anchored)") : "VWAP"
         case .macd: return "MACD \(p1), \(p2), \(p3)"
         case .stochastic: return "Stoch \(p1), \(p2), \(p3)"
         case .volumeProfile: return "VPVR \(p1)"
@@ -194,6 +196,25 @@ enum TA {
             low[i] = m - k * sd
         }
         return (mid, up, low)
+    }
+
+    /// VWAP from an anchor time (ms) on: Σ(typical price × volume) / Σ volume, with the volume-weighted
+    /// standard deviation for ±σ bands. Nil before the anchor.
+    static func anchoredVwap(_ c: [Candle], anchor: Double) -> (vwap: [Double?], sd: [Double?]) {
+        var out = [Double?](repeating: nil, count: c.count), sd = [Double?](repeating: nil, count: c.count)
+        var pv = 0.0, pv2 = 0.0, vol = 0.0
+        // The candle containing the anchor starts the sum.
+        let start = c.lastIndex { $0.t <= anchor } ?? 0
+        guard start < c.count else { return (out, sd) }
+        for i in start..<c.count {
+            let k = c[i]
+            let tp = (k.h + k.l + k.c) / 3
+            pv += tp * k.v; pv2 += tp * tp * k.v; vol += k.v
+            let v = vol > 0 ? pv / vol : tp
+            out[i] = v
+            sd[i] = vol > 0 ? max(0, pv2 / vol - v * v).squareRoot() : 0
+        }
+        return (out, sd)
     }
 
     /// VWAP that resets every UTC day for intraday candles, cumulative otherwise.
@@ -496,7 +517,21 @@ struct ChartLayers {
                 r.overlays.append(ChartSeries(values: bb.low, color: color, width: 1))
                 r.legend.append((cfg.label, color))
             case .vwap:
-                r.overlays.append(ChartSeries(values: TA.vwap(candles, intervalSeconds: interval.seconds), color: color, width: 1.4))
+                if let anchor = cfg.anchor {
+                    let a = TA.anchoredVwap(candles, anchor: anchor)
+                    r.overlays.append(ChartSeries(values: a.vwap, color: color, width: 1.4))
+                    if cfg.p2 != 0 {
+                        // ±k σ bands around the anchored VWAP.
+                        let k = cfg.mult
+                        let up: [Double?] = zip(a.vwap, a.sd).map { v, s in v.flatMap { v in s.map { v + k * $0 } } }
+                        let low: [Double?] = zip(a.vwap, a.sd).map { v, s in v.flatMap { v in s.map { v - k * $0 } } }
+                        r.bands.append((up, low, color))
+                        r.overlays.append(ChartSeries(values: up, color: color.opacity(0.7), width: 1, dashed: true))
+                        r.overlays.append(ChartSeries(values: low, color: color.opacity(0.7), width: 1, dashed: true))
+                    }
+                } else {
+                    r.overlays.append(ChartSeries(values: TA.vwap(candles, intervalSeconds: interval.seconds), color: color, width: 1.4))
+                }
                 r.legend.append((cfg.label, color))
             case .rsi:
                 r.panes.append(ChartPane(title: cfg.label, titleColor: color,

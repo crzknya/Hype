@@ -79,6 +79,8 @@ final class AppModel {
         didSet { UserDefaults.standard.set(magnet.rawValue, forKey: "drawMagnet") }
     }
     var drawingsHidden = false
+    /// Anchored VWAP waiting for a tap on the chart to set its start (indicator id).
+    var vwapAnchorPickId: UUID?
     var chartLineSettings = ChartLineSettings.load() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(chartLineSettings), forKey: "chartLineSettings") }
     }

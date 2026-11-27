@@ -31,6 +31,8 @@ struct ChartDrawingContext {
     var select: (UUID?) -> Void
     /// A one-shot tool finished: back to the cursor.
     var toolDone: () -> Void
+    /// Picking a time on the chart (anchored VWAP start): a tap returns the candle time (ms).
+    var pickTime: ((Double) -> Void)? = nil
 }
 
 /// Candle chart that behaves like TradingView:
@@ -1049,6 +1051,7 @@ extension CandleChart {
         let plotW = size.width - axisW, mainH = layout(size).mainH
         guard loc.x <= plotW, loc.y <= mainH, !candles.isEmpty else { return }
         let pt = chartPoint(at: loc, magnet: dc.magnet)
+        if let pick = dc.pickTime { pick(pt.t); return }
         switch dc.tool {
         case .cursor:
             ruler = nil

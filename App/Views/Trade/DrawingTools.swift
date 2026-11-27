@@ -87,7 +87,14 @@ struct DrawingOverlay: View {
 
     var body: some View {
         VStack {
-            if let id = model.selectedDrawingId, let d = model.drawings(for: coin).first(where: { $0.id == id }) {
+            if model.vwapAnchorPickId != nil {
+                HStack(spacing: 8) {
+                    Text(L("Tap a candle to start the VWAP there")).font(.caption2.weight(.semibold))
+                    Button(L("Cancel")) { model.vwapAnchorPickId = nil }.font(.caption2.bold())
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+            } else if let id = model.selectedDrawingId, let d = model.drawings(for: coin).first(where: { $0.id == id }) {
                 HStack(spacing: 10) {
                     Menu {
                         ForEach(ChartDrawing.palette.indices, id: \.self) { i in

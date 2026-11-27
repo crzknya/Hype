@@ -28,6 +28,15 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Anchored VWAP: volume-weighted average price from the chosen candle on (e.g. a swing high or low, a news candle). Bands show volume-weighted standard deviations around it.": "Anchored VWAP: средневзвешенная по объёму цена начиная с выбранной свечи (например, от локального максимума или минимума, от новостной свечи). Полосы — взвешенные по объёму стандартные отклонения вокруг неё.",
+        "Bands: ±{0} σ": "Полосы: ±{0} σ",
+        "Every day (UTC)": "Каждый день (UTC)",
+        "From a point": "От точки",
+        "Pick a candle on the chart": "Выбрать свечу на чарте",
+        "Tap a candle to start the VWAP there": "Коснитесь свечи, чтобы начать VWAP с неё",
+        "VWAP (anchored)": "VWAP (от точки)",
+        "VWAP anchored at {0}": "VWAP начинается с {0}",
+        "±σ bands": "Полосы ±σ",
         "Oscillators": "Осцилляторы",
         "Trend & overlays": "Тренд и наложения",
         "Volatility": "Волатильность",
