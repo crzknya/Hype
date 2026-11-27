@@ -351,6 +351,15 @@ struct OrderFormView: View {
         }
     }
 
+    /// Limit (GTC / IOC) priced at or through the best opposite price: executes immediately as a taker.
+    private func limitCrosses(_ d: OrderDraft) -> Bool {
+        guard d.type == .limit, d.tif != .alo, let p = d.price, p > 0, market.id == model.selectedCoin else { return false }
+        let bid = model.bbo?.bid ?? model.book.bestBid, ask = model.bbo?.ask ?? model.book.bestAsk
+        if d.isBuy, let ask { return p >= ask }
+        if !d.isBuy, let bid { return p <= bid }
+        return false
+    }
+
     /// ATR(14) of the chart's candles for this market (volatility stop distance).
     private var currentATR: Double? {
         guard market.id == model.selectedCoin else { return nil }
@@ -503,17 +512,21 @@ struct OrderFormView: View {
             }
         }
         let rates = model.fees(for: market)
-        let fee = d.type.isTaker ? rates.taker : rates.maker
-        lines.append(SummaryLine(L("Fee ≈"), value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
+        // A limit order priced through the opposite side fills at once as a taker (not post-only).
+        let crosses = limitCrosses(d)
+        let fee = d.type.isTaker || crosses ? rates.taker : rates.maker
+        lines.append(SummaryLine(crosses ? L("Fee ≈ (taker, crosses the spread)") : L("Fee ≈"),
+                                 value > 0 ? Fmt.usd(value * fee, 3) : "—", crosses ? .orange : .primary))
         // Expected fill of a market order from the live book (and √-impact beyond its visible depth).
         var slip = 0.0
-        if d.type == .market, d.size > 0, market.id == model.selectedCoin,
-           let est = QuantMath.estimateFill(book: model.book, isBuy: d.isBuy, size: d.size) {
+        if d.type == .market || crosses, d.size > 0, market.id == model.selectedCoin,
+           let est = QuantMath.estimateFill(book: model.book, isBuy: d.isBuy, size: d.size,
+                                            limit: crosses ? d.price : nil) {
             slip = est.slippage
             lines.append(SummaryLine(L("Est. fill ≈"), Fmt.price(est.avgPrice), .primary))
             lines.append(SummaryLine(L("Est. slippage"), "\(Fmt.pct(est.slippage, 3, signed: false)) · \(Fmt.usd(est.slippage * est.avgPrice * est.filled, 2)) · \(L("{0} lvl", est.levels))",
                                      est.slippage > 0.005 ? .orange : .primary))
-            if est.exhausted {
+            if est.exhausted && d.type == .market {
                 let impact = QuantMath.sqrtImpact(notional: value, dailyVolume: market.dayNtlVlm,
                                                   dailyVol: QuantMath.dailyVol(model.candles, interval: model.interval) ?? 0)
                 lines.append(SummaryLine(L("Beyond visible book"), impact.map { L("impact ≈ {0}", Fmt.pct($0, 2, signed: false)) } ?? "—", .orange))

@@ -120,10 +120,6 @@ struct SideBySideBook: View {
             .foregroundStyle(Color.hlMuted)
             HStack(spacing: 6) {
                 Text(L("Bids")).foregroundStyle(Color.hlGreen).frame(maxWidth: .infinity, alignment: .leading)
-                // Size-weighted mid: leans toward the thinner side, where the price tends to move.
-                if let mp = QuantMath.microprice(model.book) {
-                    Text(L("Microprice {0}", Fmt.price(mp, decimals: dec + 1))).foregroundStyle(Color.hlMuted).fixedSize()
-                }
                 Text(L("Asks")).foregroundStyle(Color.hlRed).frame(maxWidth: .infinity, alignment: .trailing)
             }
             .font(.system(size: 10, weight: .semibold))

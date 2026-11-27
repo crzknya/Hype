@@ -13,9 +13,11 @@ enum QuantMath {
         let exhausted: Bool         // the visible book is not deep enough
     }
 
-    /// Walks the visible book for a market order of `size` (coin units).
-    static func estimateFill(book: OrderBook, isBuy: Bool, size: Double) -> FillEstimate? {
-        let levels = isBuy ? book.asks : book.bids
+    /// Walks the visible book for a market order of `size` (coin units); with `limit`, only levels up to that
+    /// price fill (the rest of a marketable limit order would rest on the book).
+    static func estimateFill(book: OrderBook, isBuy: Bool, size: Double, limit: Double? = nil) -> FillEstimate? {
+        var levels = isBuy ? book.asks : book.bids
+        if let limit { levels = levels.filter { isBuy ? $0.px <= limit : $0.px >= limit } }
         guard size > 0, let mid = book.mid, mid > 0, !levels.isEmpty else { return nil }
         var left = size, cost = 0.0, used = 0
         for l in levels where left > 0 {
