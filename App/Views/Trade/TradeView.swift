@@ -168,13 +168,9 @@ struct TradeView: View {
                 orderSheet = OrderSheetRequest(isBuy: buy)
             }
         case .tabs:
+            // Chart page: no Long / Short bar (orders are placed on the Order page).
             if page == 1 {
                 OrderActionBar(bar: orderBar)
-            } else {
-                LongShortBar(market: m) { buy in
-                    pageSide = buy
-                    withAnimation { page = 1 }
-                }
             }
         case .classic:
             OrderActionBar(bar: orderBar)
