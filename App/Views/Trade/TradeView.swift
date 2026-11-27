@@ -181,19 +181,22 @@ struct TradeView: View {
             OrderFormView(market: m, bar: orderBar, initialBuy: pageSide)
                 .frame(maxWidth: .infinity)
             VStack(spacing: 6) {
-                Picker("", selection: $rightPanel) {
-                    Text(L("Book")).tag(0)
-                    Text(L("Trades")).tag(1)
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.mini)
-                HStack {
-                    if rightPanel == 1 { TradeFilterMenu() }
-                    Spacer()
+                // Same underline tabs as the rest of the trade screen; full screen sits in the tab row.
+                HStack(spacing: 2) {
+                    UnderlineTabs(items: [.init(id: 0, title: L("Book")), .init(id: 1, title: L("Trades"))],
+                                  selection: $rightPanel, spacing: 12)
                     Button { depthTab = rightPanel; depthFullScreen = true } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11))
+                            .frame(width: 22, height: 28)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .foregroundStyle(Color.hlMuted)
+                    .accessibilityLabel(L("Full screen"))
+                }
+                if rightPanel == 1 {
+                    HStack { TradeFilterMenu(); Spacer() }
                 }
                 if rightPanel == 0 { OrderBookPanel(market: m) } else { TradesPanel(market: m) }
             }
@@ -371,6 +374,8 @@ struct OrderActionBar: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 6)
-        .background(.ultraThinMaterial)
+        // Solid enough that content scrolling under it doesn't look cut in half.
+        .background(Color.hlBg.opacity(0.96))
+        .overlay(alignment: .top) { Rectangle().fill(Color.hlMuted.opacity(0.2)).frame(height: 0.5) }
     }
 }

@@ -373,12 +373,11 @@ struct AccountPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if fixedTab == nil {
-            Picker("", selection: $tab) {
-                Text(L("Positions ({0})", model.positions.count)).tag(0)
-                Text(L("Orders ({0})", model.openOrders.count)).tag(1)
-                Text(L("Trades")).tag(2)
-            }
-            .pickerStyle(.segmented)
+                UnderlineTabs(items: [
+                    .init(id: 0, title: L("Positions"), count: model.positions.count),
+                    .init(id: 1, title: L("Orders"), count: model.openOrders.count),
+                    .init(id: 2, title: L("Trades")),
+                ], selection: $tab)
             }
             HStack {
                 Toggle(L("Only {0}", model.displayName(coin)), isOn: $onlyThisCoin).toggleStyle(CheckToggle()).font(.caption)

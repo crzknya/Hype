@@ -70,12 +70,10 @@ struct OrderFormView: View {
             }
 
             sizeField
-            Slider(value: $f.pct, in: 0...1)
-            .tint(f.isBuy ? .hlGreen : .hlRed)
-            .onChange(of: f.pct) { _, v in applyPct(v) }
+            sizeSlider
 
             HStack {
-                Text(L("Available")).font(.caption2).foregroundStyle(Color.hlMuted)
+                Text(L("Available")).font(.system(size: 11)).foregroundStyle(Color.hlMuted)
                 Spacer()
                 Text(availableText).font(.system(size: 11, design: .monospaced))
             }
@@ -89,7 +87,7 @@ struct OrderFormView: View {
                     .font(.caption2).foregroundStyle(Color.hlMuted)
             }
         }
-        .font(.subheadline)
+        .font(.system(size: 13))
         .onChange(of: model.pendingPrice) { _, _ in applyPendingPrice() }
         .onChange(of: market.id) { _, _ in reset(); syncBar() }
         .onAppear {
@@ -134,7 +132,7 @@ struct OrderFormView: View {
                 Text("\(currentLeverage)x").bold()
                 Image(systemName: "slider.horizontal.3").font(.caption)
             }
-            .font(.caption)
+            .font(.system(size: 12))
             .padding(.horizontal, 10).frame(height: 30)
             .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
         }
@@ -154,7 +152,7 @@ struct OrderFormView: View {
         Button { withAnimation(.easeOut(duration: 0.15)) { f.isBuy = buy } } label: {
             Text(buy ? (market.isSpot ? L("Buy") : L("Long")) : (market.isSpot ? L("Sell") : L("Short")))
                 .font(.system(size: 14, weight: .bold))
-                .frame(maxWidth: .infinity).frame(height: 34)
+                .frame(maxWidth: .infinity).frame(height: 32)
                 .foregroundStyle(f.isBuy == buy ? Color.hlOnAccent : Color.hlMuted)
                 .background(f.isBuy == buy ? (buy ? Color.hlGreen : Color.hlRed) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }
@@ -168,9 +166,9 @@ struct OrderFormView: View {
             }
         } label: {
             HStack {
-                Text(f.type.title).font(.subheadline.weight(.semibold))
+                Text(f.type.title).font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.caption)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.hlMuted)
             }
             .padding(.horizontal, 10).frame(height: 34)
             .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
@@ -213,13 +211,22 @@ struct OrderFormView: View {
                 if !market.isSpot { Toggle("Reduce", isOn: $f.reduceOnly).toggleStyle(CheckToggle()) }
                 Spacer()
                 if f.type == .limit {
-                    Picker("TIF", selection: $f.tif) {
-                        Text("GTC").tag(TIF.gtc)
-                        Text("IOC").tag(TIF.ioc)
-                        Text("Post").tag(TIF.alo)
+                    // Same size as the checkboxes in this row (a menu picker uses the large body font).
+                    Menu {
+                        Picker("TIF", selection: $f.tif) {
+                            Text("GTC").tag(TIF.gtc)
+                            Text("IOC").tag(TIF.ioc)
+                            Text("Post").tag(TIF.alo)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(f.tif == .gtc ? "GTC" : f.tif == .ioc ? "IOC" : "Post").font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.hlAccent)
+                        .padding(.horizontal, 8).frame(height: 24)
+                        .background(Color.hlAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
                 }
             }
             if !market.isSpot && f.type.allowsTpsl {
@@ -230,7 +237,34 @@ struct OrderFormView: View {
                 }
             }
         }
-        .font(.caption)
+        .font(.system(size: 12))
+    }
+
+    /// Size as a share of what's available: slider with its percentage and quick 25 / 50 / 75 / 100 % steps.
+    private var sizeSlider: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Slider(value: $f.pct, in: 0...1)
+                    .tint(f.isBuy ? .hlGreen : .hlRed)
+                Text("\(Int((f.pct * 100).rounded()))%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(f.pct > 0 ? Color.primary : Color.hlMuted)
+                    .frame(width: 36, alignment: .trailing)
+            }
+            HStack(spacing: 4) {
+                ForEach([0.25, 0.5, 0.75, 1.0], id: \.self) { p in
+                    let on = abs(f.pct - p) < 0.005
+                    Button("\(Int(p * 100))%") { f.pct = p }
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                        .foregroundStyle(on ? Color.primary : Color.hlMuted)
+                        .background(on ? (f.isBuy ? Color.hlGreen : Color.hlRed).opacity(0.25) : Color.hlCard2,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+        .onChange(of: f.pct) { _, v in applyPct(v) }
     }
 
     private var trailingFields: some View {
@@ -450,7 +484,8 @@ struct OrderFormView: View {
         bar.busy = busy
         bar.enabled = model.canTrade
         let value = sizeCoin * refPrice
-        bar.detail = value > 0 ? "\(f.type.title) · \(Fmt.usd(value))" : ""
+        // Value and the rest are in the summary right above; the button needs no repeat of it.
+        bar.detail = ""
         bar.submit = { submit() }
     }
 
@@ -516,7 +551,7 @@ struct OrderFormView: View {
         let crosses = limitCrosses(d)
         let fee = d.type.isTaker || crosses ? rates.taker : rates.maker
         lines.append(SummaryLine(crosses ? L("Fee ≈ (taker, crosses the spread)") : L("Fee ≈"),
-                                 value > 0 ? Fmt.usd(value * fee, 3) : "—", crosses ? .orange : .primary))
+                                 value > 0 ? Fmt.usd(value * fee) : "—", crosses ? .orange : .primary))
         // Expected fill of a market order from the live book (and √-impact beyond its visible depth).
         var slip = 0.0
         if d.type == .market || crosses, d.size > 0, market.id == model.selectedCoin,
@@ -536,7 +571,7 @@ struct OrderFormView: View {
         // Round trip: this entry + a taker exit; the move needed to cover it (plus slippage).
         if value > 0, !d.reduceOnly {
             let rt = value * (fee + rates.taker)
-            lines.append(SummaryLine(L("Round-trip fees ≈"), Fmt.usd(rt, 3), .primary))
+            lines.append(SummaryLine(L("Round-trip fees ≈"), Fmt.usd(rt), .primary))
             lines.append(SummaryLine(L("Break-even move"), Fmt.pct(fee + rates.taker + slip, 3, signed: false), .primary))
         }
         if let sl = d.sl, sl > 0, d.size > 0 {
