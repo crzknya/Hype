@@ -425,9 +425,15 @@ struct CandleChart: View {
             if lo > hi { lo = s.map(\.l).min() ?? 0; hi = s.map(\.h).max() ?? 1 }
             loS = toScale(lo); hiS = toScale(hi)
             if hiS <= loS { let d = max(abs(hiS) * 0.01, 1e-9); loS -= d; hiS += d }
-            let span = hiS - loS
-            hiS += span * 0.10 / 0.82
-            loS -= span * 0.08 / 0.82
+            // Margins as TradingView (10% top, 8% bottom), but the top one at least clears the indicator list
+            // (and the High label under it), so the newest candles never hide behind the list.
+            let mh = Double(L0.mainH)
+            let legendRoom = legendSize.height > 0 ? Double(legendSize.height) + 10 + (layers.highLow != nil ? 16 : 0) : 0
+            let topPx = min(max(mh * 0.10, legendRoom), mh * 0.45)
+            let botPx = mh * 0.08
+            let unit = (hiS - loS) / max(mh - topPx - botPx, 1)
+            hiS += topPx * unit
+            loS -= botPx * unit
         } else {
             loS = manualLo; hiS = manualHi
         }
@@ -695,6 +701,10 @@ struct CandleChart: View {
             lead.move(to: CGPoint(x: px, y: py)); lead.addLine(to: CGPoint(x: lx, y: ly))
             ctx.stroke(lead, with: .color(hl.color.opacity(0.8)), lineWidth: 1)
             ctx.fill(Path(ellipseIn: CGRect(x: px - 2, y: py - 2, width: 4, height: 4)), with: .color(hl.color))
+            // Backing pill so the label stays readable over candles.
+            let lx0 = toRight ? lx + 2 : lx - 2 - size.width
+            ctx.fill(Path(roundedRect: CGRect(x: lx0 - 3, y: ly - size.height / 2 - 1, width: size.width + 6, height: size.height + 2),
+                          cornerRadius: 3), with: .color(Color.hlBg.opacity(0.85)))
             ctx.draw(resolved, at: CGPoint(x: toRight ? lx + 2 : lx - 2, y: ly), anchor: toRight ? .leading : .trailing)
         }
     }
