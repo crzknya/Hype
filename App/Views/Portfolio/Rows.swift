@@ -47,6 +47,16 @@ struct PositionRow: View {
                     Stat(title: L("Mark"), value: Fmt.price(mark))
                     Stat(title: L("Liquidation"), value: p.liquidationPx.map { Fmt.price($0) } ?? "—", color: .orange)
                 }
+                let taker = m.map { model.fees(for: $0).taker } ?? model.takerFee
+                if let be = QuantMath.breakEven(p, takerFee: taker) {
+                    GridRow {
+                        // Price that covers both fees and the funding paid so far; distance from the mark.
+                        Stat(title: L("Break-even"), value: Fmt.price(be))
+                        Stat(title: L("To break-even"), value: mark > 0 ? Fmt.pct(be / mark - 1, 2) : "—",
+                             color: (p.isLong ? mark >= be : mark <= be) ? .hlGreen : .hlMuted)
+                        Stat(title: L("Close fee ≈"), value: Fmt.usd(p.size * mark * taker, 2))
+                    }
+                }
                 GridRow {
                     Stat(title: L("Funding"), value: Fmt.signedUsd(-p.fundingSinceOpen), color: Color.pnl(-p.fundingSinceOpen))
                     Stat(title: "TP", value: tpsl.first { $0.orderType.hasPrefix("Take") }.map { Fmt.price($0.triggerPx) } ?? "—", color: .hlGreen)

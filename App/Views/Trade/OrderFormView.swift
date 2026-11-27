@@ -287,7 +287,23 @@ struct OrderFormView: View {
                     .buttonStyle(.plain)
                 }
             }
-            Text(L("Buttons: SL at ±%, TP at double the distance (R:R 1:2)")).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+            if let atr = currentATR, atr > 0 {
+                // Volatility stops: SL at k × ATR(14) of the chart's interval, TP at twice the distance.
+                HStack(spacing: 4) {
+                    ForEach([1.0, 1.5, 2.0], id: \.self) { k in
+                        Button("\(Fmt.num(k, k == 1.5 ? 1 : 0))×ATR") {
+                            let e = refPrice
+                            f.slText = Fmt.input(f.isBuy ? e - k * atr : e + k * atr, market.priceDecimals(e))
+                            f.tpText = Fmt.input(f.isBuy ? e + 2 * k * atr : e - 2 * k * atr, market.priceDecimals(e))
+                        }
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
+                        .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 6))
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Text(L("Buttons: SL at ±% or k × ATR (chart interval), TP at double the distance (R:R 1:2)")).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             if f.riskOn {
                 NumField(title: L("Risk $"), text: $f.riskText, placeholder: "50") {
                     Menu {
@@ -333,6 +349,12 @@ struct OrderFormView: View {
             return (a + b) / 2
         default: return refMid
         }
+    }
+
+    /// ATR(14) of the chart's candles for this market (volatility stop distance).
+    private var currentATR: Double? {
+        guard market.id == model.selectedCoin else { return nil }
+        return TA.atr(model.candles, 14).last ?? nil
     }
 
     private var currentLeverage: Int {
@@ -483,6 +505,27 @@ struct OrderFormView: View {
         let rates = model.fees(for: market)
         let fee = d.type.isTaker ? rates.taker : rates.maker
         lines.append(SummaryLine(L("Fee ≈"), value > 0 ? Fmt.usd(value * fee, 3) : "—", .primary))
+        // Expected fill of a market order from the live book (and √-impact beyond its visible depth).
+        var slip = 0.0
+        if d.type == .market, d.size > 0, market.id == model.selectedCoin,
+           let est = QuantMath.estimateFill(book: model.book, isBuy: d.isBuy, size: d.size) {
+            slip = est.slippage
+            lines.append(SummaryLine(L("Est. fill ≈"), Fmt.price(est.avgPrice), .primary))
+            lines.append(SummaryLine(L("Est. slippage"), "\(Fmt.pct(est.slippage, 3, signed: false)) · \(Fmt.usd(est.slippage * est.avgPrice * est.filled, 2)) · \(L("{0} lvl", est.levels))",
+                                     est.slippage > 0.005 ? .orange : .primary))
+            if est.exhausted {
+                let impact = QuantMath.sqrtImpact(notional: value, dailyVolume: market.dayNtlVlm,
+                                                  dailyVol: QuantMath.dailyVol(model.candles, interval: model.interval) ?? 0)
+                lines.append(SummaryLine(L("Beyond visible book"), impact.map { L("impact ≈ {0}", Fmt.pct($0, 2, signed: false)) } ?? "—", .orange))
+                if let impact { slip = max(slip, impact) }
+            }
+        }
+        // Round trip: this entry + a taker exit; the move needed to cover it (plus slippage).
+        if value > 0, !d.reduceOnly {
+            let rt = value * (fee + rates.taker)
+            lines.append(SummaryLine(L("Round-trip fees ≈"), Fmt.usd(rt, 3), .primary))
+            lines.append(SummaryLine(L("Break-even move"), Fmt.pct(fee + rates.taker + slip, 3, signed: false), .primary))
+        }
         if let sl = d.sl, sl > 0, d.size > 0 {
             lines.append(SummaryLine(L("Loss at SL"), Fmt.signedUsd(-abs(px - sl) * d.size), .hlRed))
         }

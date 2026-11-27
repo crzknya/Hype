@@ -120,9 +120,16 @@ struct SideBySideBook: View {
             .foregroundStyle(Color.hlMuted)
             HStack(spacing: 6) {
                 Text(L("Bids")).foregroundStyle(Color.hlGreen).frame(maxWidth: .infinity, alignment: .leading)
+                // Size-weighted mid: leans toward the thinner side, where the price tends to move.
+                if let mp = QuantMath.microprice(model.book) {
+                    Text(L("Microprice {0}", Fmt.price(mp, decimals: dec + 1))).foregroundStyle(Color.hlMuted).fixedSize()
+                }
                 Text(L("Asks")).foregroundStyle(Color.hlRed).frame(maxWidth: .infinity, alignment: .trailing)
             }
             .font(.system(size: 10, weight: .semibold))
+            if let imb = QuantMath.imbalance(model.book) {
+                ImbalanceBar(bidShare: imb)
+            }
             HStack(alignment: .top, spacing: 6) {
                 VStack(spacing: 1) {
                     ForEach(Array(bids.enumerated()), id: \.element.id) { i, l in
@@ -239,5 +246,28 @@ struct BookAgeBadge: View {
                 Text("⚠ \(Int(age))s").font(.system(size: 10, weight: .semibold)).foregroundStyle(.orange)
             }
         }
+    }
+}
+
+
+/// Order-book imbalance over the first 10 levels: bid share (green) vs. ask share (red).
+struct ImbalanceBar: View {
+    let bidShare: Double
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(Fmt.pct(bidShare, 0, signed: false)).foregroundStyle(Color.hlGreen)
+            GeometryReader { g in
+                HStack(spacing: 1) {
+                    Rectangle().fill(Color.hlGreen.opacity(0.7)).frame(width: max(1, g.size.width * bidShare))
+                    Rectangle().fill(Color.hlRed.opacity(0.7))
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 4)
+            Text(Fmt.pct(1 - bidShare, 0, signed: false)).foregroundStyle(Color.hlRed)
+        }
+        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+        .accessibilityLabel(L("Order book imbalance"))
     }
 }

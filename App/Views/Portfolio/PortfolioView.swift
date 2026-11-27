@@ -50,6 +50,7 @@ struct PortfolioView: View {
                     } else {
                         summaryCard
                         chartCard
+                        performanceCard
                         actions
                         tabs
                         content
@@ -191,6 +192,40 @@ struct PortfolioView: View {
                     Stat(title: L("PnL"), value: Fmt.signedUsd(r.pnlChange), color: Color.pnl(r.pnlChange))
                     Stat(title: L("Volume"), value: Fmt.usd(r.volume))
                 }
+            }
+        }
+    }
+
+    /// Sharpe / Sortino / drawdown / Calmar of the selected range (returns net of deposits and withdrawals).
+    @ViewBuilder
+    private var performanceCard: some View {
+        if let r = model.portfolioRanges[range.rawValue],
+           let perf = QuantMath.performance(accountValue: r.accountValue, pnl: r.pnl) {
+            Card {
+                HStack {
+                    Text(L("Performance · {0}", range.title)).font(.caption.bold())
+                    Spacer()
+                    Text(L("{0} periods", perf.periods)).font(.caption2).foregroundStyle(Color.hlMuted)
+                }
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    GridRow {
+                        Stat(title: L("Return"), value: Fmt.pct(perf.totalReturn, 2), color: Color.pnl(perf.totalReturn))
+                        Stat(title: L("Max drawdown"), value: Fmt.pct(-perf.maxDrawdown, 2), color: .hlRed)
+                        Stat(title: L("Win periods"), value: Fmt.pct(perf.winRate, 0, signed: false))
+                    }
+                    GridRow {
+                        Stat(title: "Sharpe", value: perf.sharpe.map { Fmt.num($0, 2) } ?? "—", color: Color.pnl(perf.sharpe ?? 0))
+                        Stat(title: "Sortino", value: perf.sortino.map { Fmt.num($0, 2) } ?? "—", color: Color.pnl(perf.sortino ?? 0))
+                        Stat(title: "Calmar", value: perf.calmar.map { Fmt.num($0, 2) } ?? "—", color: Color.pnl(perf.calmar ?? 0))
+                    }
+                    GridRow {
+                        Stat(title: L("Volatility (ann.)"), value: Fmt.pct(perf.annualVol, 1, signed: false))
+                        Stat(title: L("Return (ann.)"), value: abs(perf.annualReturn) < 100 ? Fmt.pct(perf.annualReturn, 1) : "—",
+                             color: Color.pnl(perf.annualReturn))
+                    }
+                }
+                Text(L("Returns between history points, net of deposits and withdrawals; Sharpe and Sortino annualized, no risk-free rate. Short ranges give noisy numbers."))
+                    .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             }
         }
     }

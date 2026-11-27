@@ -375,6 +375,28 @@ struct IndicatorEditor: View {
                     Stepper(L("Fast: {0}", config.p1), value: $config.p1, in: 2...100)
                     Stepper(L("Slow: {0}", config.p2), value: $config.p2, in: 3...200)
                     Stepper(L("Signal: {0}", config.p3), value: $config.p3, in: 2...100)
+                case .realizedVol:
+                    Stepper(L("Window: {0} bars", config.p1), value: $config.p1, in: 5...200)
+                    Text(L("Standard deviation of log returns over the window, annualized (× √bars per year), in %.")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .ewmaVol:
+                    Stepper(L("Decay λ: {0}", Fmt.input(Double(config.p1) / 100, 2)), value: $config.p1, in: 80...99)
+                    Text(L("RiskMetrics EWMA: recent moves weigh more (λ = 0.94 is the classic daily value). Annualized, in %.")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .garchVol:
+                    Stepper("α: \(Fmt.input(Double(config.p1) / 100, 2))", value: $config.p1, in: 1...30)
+                    Stepper("β: \(Fmt.input(Double(config.p2) / 100, 2))", value: $config.p2, in: 50...97)
+                    Text(L("GARCH(1,1): volatility reacts to shocks (α) and decays slowly (β) toward its long-run level. α + β must stay below 1. Annualized, in %.")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .atr:
+                    Stepper(L("Period: {0}", config.p1), value: $config.p1, in: 2...100)
+                    Text(L("Average true range in price units — a common distance for stops (e.g. 1.5–2 × ATR).")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .zscore:
+                    Stepper(L("Period: {0}", config.p1), value: $config.p1, in: 5...200)
+                    Text(L("How many standard deviations the price is from its moving average. Beyond ±2 is stretched.")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .momentum:
+                    Stepper(L("Lookback: {0} bars", config.p1), value: $config.p1, in: 5...200)
+                    Text(L("Time-series momentum: the move over the lookback divided by its usual size (volatility × √bars). Around ±1 is normal, beyond ±2 a strong trend.")).font(.caption).foregroundStyle(Color.hlMuted)
+                case .kalman:
+                    Stepper(L("Smoothing: {0}", config.p1), value: $config.p1, in: 1...100)
+                    Text(L("Kalman filter estimate of the price level: smoother than a moving average with less lag. Higher = smoother.")).font(.caption).foregroundStyle(Color.hlMuted)
                 case .highLow:
                     Toggle(L("Distance from the current price, %"), isOn: Binding(get: { config.p2 != 0 }, set: { config.p2 = $0 ? 1 : 0 }))
                     Text(L("Marks the highest high and the lowest low among the candles on screen; updates as you scroll and zoom.")).font(.caption).foregroundStyle(Color.hlMuted)

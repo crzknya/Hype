@@ -3,6 +3,7 @@ import SwiftUI
 
 enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
     case ema, sma, bollinger, vwap, rsi, macd, stochastic, volumeProfile, highLow
+    case realizedVol, ewmaVol, garchVol, atr, zscore, momentum, kalman
     var id: String { rawValue }
 
     var title: String {
@@ -16,11 +17,23 @@ enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
         case .stochastic: return L("Stochastic")
         case .volumeProfile: return L("Volume Profile")
         case .highLow: return L("High / Low (visible range)")
+        case .realizedVol: return L("Realized volatility")
+        case .ewmaVol: return L("EWMA volatility")
+        case .garchVol: return L("GARCH(1,1) volatility")
+        case .atr: return "ATR"
+        case .zscore: return L("Z-score")
+        case .momentum: return L("Momentum (vol-scaled)")
+        case .kalman: return L("Kalman filter")
         }
     }
 
     /// Drawn in its own pane under the price chart.
-    var isPane: Bool { self == .rsi || self == .macd || self == .stochastic }
+    var isPane: Bool {
+        switch self {
+        case .rsi, .macd, .stochastic, .realizedVol, .ewmaVol, .garchVol, .atr, .zscore, .momentum: return true
+        default: return false
+        }
+    }
 }
 
 /// A user-configured indicator instance. Several instances of the same kind are allowed.
@@ -47,6 +60,13 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .stochastic: return IndicatorConfig(kind: kind, p1: 14, p2: 3, p3: 3, upper: 80, lower: 20, color: color)
         case .volumeProfile: return IndicatorConfig(kind: kind, p1: 40, p2: 30, upper: 70, color: color)
         case .highLow: return IndicatorConfig(kind: kind, p1: 0, p2: 1, color: color)
+        case .realizedVol: return IndicatorConfig(kind: kind, p1: 20, color: color)
+        case .ewmaVol: return IndicatorConfig(kind: kind, p1: 94, color: color)            // λ = 0.94 (RiskMetrics)
+        case .garchVol: return IndicatorConfig(kind: kind, p1: 10, p2: 85, color: color)   // α = 0.10, β = 0.85
+        case .atr: return IndicatorConfig(kind: kind, p1: 14, color: color)
+        case .zscore: return IndicatorConfig(kind: kind, p1: 20, upper: 2, lower: -2, color: color)
+        case .momentum: return IndicatorConfig(kind: kind, p1: 20, upper: 1, lower: -1, color: color)
+        case .kalman: return IndicatorConfig(kind: kind, p1: 10, color: color)
         }
     }
 
@@ -70,6 +90,13 @@ struct IndicatorConfig: Identifiable, Codable, Hashable {
         case .stochastic: return "Stoch \(p1), \(p2), \(p3)"
         case .volumeProfile: return "VPVR \(p1)"
         case .highLow: return L("High / Low")
+        case .realizedVol: return L("Vol {0}", p1)
+        case .ewmaVol: return "EWMA \(Fmt.input(Double(p1) / 100, 2))"
+        case .garchVol: return "GARCH \(Fmt.input(Double(p1) / 100, 2)), \(Fmt.input(Double(p2) / 100, 2))"
+        case .atr: return "ATR \(p1)"
+        case .zscore: return "Z \(p1)"
+        case .momentum: return "TSMOM \(p1)"
+        case .kalman: return "Kalman \(p1)"
         }
     }
 }
@@ -204,6 +231,135 @@ enum TA {
         return (k, smaOpt(k, max(1, d)))
     }
 
+    // MARK: Volatility, z-score, momentum, Kalman
+
+    /// Bars per year for annualizing (crypto trades 24/7).
+    static func barsPerYear(_ interval: CandleInterval) -> Double { 365 * 86_400 / max(interval.seconds, 1) }
+
+    static func logReturns(_ x: [Double]) -> [Double?] {
+        var r = [Double?](repeating: nil, count: x.count)
+        for i in 1..<max(1, x.count) where x[i] > 0 && x[i - 1] > 0 { r[i] = Foundation.log(x[i] / x[i - 1]) }
+        return r
+    }
+
+    /// Rolling sample standard deviation of log returns, annualized, in %.
+    static func realizedVol(_ x: [Double], _ n: Int, annualize: Double) -> [Double?] {
+        let r = logReturns(x)
+        var out = [Double?](repeating: nil, count: x.count)
+        guard n > 1, x.count > n else { return out }
+        for i in n..<x.count {
+            var s = 0.0, s2 = 0.0, k = 0.0
+            for j in (i - n + 1)...i { if let v = r[j] { s += v; s2 += v * v; k += 1 } }
+            guard k > 1 else { continue }
+            let mean = s / k, variance = max(0, (s2 - k * mean * mean) / (k - 1))
+            out[i] = variance.squareRoot() * annualize.squareRoot() * 100
+        }
+        return out
+    }
+
+    /// RiskMetrics EWMA volatility: σ²ₜ = λσ²ₜ₋₁ + (1 − λ)r²ₜ₋₁, annualized, in %.
+    static func ewmaVol(_ x: [Double], lambda: Double, annualize: Double) -> [Double?] {
+        let r = logReturns(x)
+        var out = [Double?](repeating: nil, count: x.count)
+        guard x.count > 21 else { return out }
+        // Seed with the variance of the first 20 returns.
+        let seed = r[1...20].compactMap { $0 }
+        var v = seed.reduce(0) { $0 + $1 * $1 } / Double(max(seed.count, 1))
+        for i in 21..<x.count {
+            if let prev = r[i - 1] { v = lambda * v + (1 - lambda) * prev * prev }
+            out[i] = v.squareRoot() * annualize.squareRoot() * 100
+        }
+        return out
+    }
+
+    /// GARCH(1,1) conditional volatility with given α, β; ω is set by variance targeting (long-run variance =
+    /// sample variance of the returns). Annualized, in %.
+    static func garchVol(_ x: [Double], alpha: Double, beta: Double, annualize: Double) -> [Double?] {
+        let r = logReturns(x)
+        let all = r.compactMap { $0 }
+        var out = [Double?](repeating: nil, count: x.count)
+        guard all.count > 30, alpha + beta < 1 else { return out }
+        let mean = all.reduce(0, +) / Double(all.count)
+        let longRun = all.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(all.count - 1)
+        let omega = longRun * (1 - alpha - beta)
+        var v = longRun
+        for i in 2..<x.count {
+            if let prev = r[i - 1] { v = omega + alpha * prev * prev + beta * v }
+            out[i] = v.squareRoot() * annualize.squareRoot() * 100
+        }
+        return out
+    }
+
+    /// Wilder's Average True Range.
+    static func atr(_ c: [Candle], _ n: Int) -> [Double?] {
+        var out = [Double?](repeating: nil, count: c.count)
+        guard n > 0, c.count > n else { return out }
+        var tr = [Double](repeating: 0, count: c.count)
+        tr[0] = c[0].h - c[0].l
+        for i in 1..<c.count {
+            tr[i] = max(c[i].h - c[i].l, abs(c[i].h - c[i - 1].c), abs(c[i].l - c[i - 1].c))
+        }
+        var a = tr[1...n].reduce(0, +) / Double(n)
+        out[n] = a
+        if c.count > n + 1 {
+            for i in (n + 1)..<c.count {
+                a = (a * Double(n - 1) + tr[i]) / Double(n)
+                out[i] = a
+            }
+        }
+        return out
+    }
+
+    /// (price − rolling mean) / rolling standard deviation.
+    static func zscore(_ x: [Double], _ n: Int) -> [Double?] {
+        var out = [Double?](repeating: nil, count: x.count)
+        guard n > 1, x.count >= n else { return out }
+        for i in (n - 1)..<x.count {
+            var s = 0.0, s2 = 0.0
+            for j in (i - n + 1)...i { s += x[j]; s2 += x[j] * x[j] }
+            let mean = s / Double(n), sd = max(0, (s2 - Double(n) * mean * mean) / Double(n - 1)).squareRoot()
+            out[i] = sd > 0 ? (x[i] - mean) / sd : 0
+        }
+        return out
+    }
+
+    /// Time-series momentum scaled by volatility: the n-bar log return divided by its expected size
+    /// (per-bar volatility × √n). Around ±1 is a typical move, beyond ±2 a strong trend.
+    static func tsMomentum(_ x: [Double], _ n: Int) -> [Double?] {
+        let r = logReturns(x)
+        var out = [Double?](repeating: nil, count: x.count)
+        guard n > 1, x.count > n else { return out }
+        for i in n..<x.count {
+            var s = 0.0, s2 = 0.0, k = 0.0
+            for j in (i - n + 1)...i { if let v = r[j] { s += v; s2 += v * v; k += 1 } }
+            guard k > 1 else { continue }
+            let mean = s / k, sd = max(0, (s2 - k * mean * mean) / (k - 1)).squareRoot()
+            out[i] = sd > 0 ? s / (sd * k.squareRoot()) : 0
+        }
+        return out
+    }
+
+    /// One-dimensional Kalman filter (local level model): the estimate follows the price with a lag set by
+    /// `lag` — process noise Q = R / lag², measurement noise R = variance of price changes.
+    static func kalman(_ x: [Double], lag: Int) -> [Double?] {
+        guard x.count > 2 else { return x.map { _ in nil } }
+        var diffs = 0.0
+        for i in 1..<x.count { diffs += (x[i] - x[i - 1]) * (x[i] - x[i - 1]) }
+        let R = max(diffs / Double(x.count - 1), 1e-18)
+        let Q = R / Double(max(lag, 1) * max(lag, 1))
+        var est = x[0], p = R
+        var out = [Double?](repeating: nil, count: x.count)
+        out[0] = est
+        for i in 1..<x.count {
+            p += Q                       // predict
+            let k = p / (p + R)          // update
+            est += k * (x[i] - est)
+            p *= (1 - k)
+            out[i] = est
+        }
+        return out
+    }
+
     static func smaOpt(_ x: [Double?], _ n: Int) -> [Double?] {
         guard let start = x.firstIndex(where: { $0 != nil }) else { return x }
         let vals: [Double] = x[start...].map { $0 ?? 0 }
@@ -324,6 +480,30 @@ struct ChartLayers {
                                          histogram: m.hist, levels: [0]))
             case .highLow:
                 r.highLow = (color, cfg.p2 != 0)
+            case .realizedVol:
+                r.panes.append(ChartPane(title: cfg.label + " %", titleColor: color,
+                                         lines: [ChartSeries(values: TA.realizedVol(close, cfg.p1, annualize: TA.barsPerYear(interval)), color: color)]))
+            case .ewmaVol:
+                r.panes.append(ChartPane(title: cfg.label + " %", titleColor: color,
+                                         lines: [ChartSeries(values: TA.ewmaVol(close, lambda: Double(cfg.p1) / 100, annualize: TA.barsPerYear(interval)), color: color)]))
+            case .garchVol:
+                r.panes.append(ChartPane(title: cfg.label + " %", titleColor: color,
+                                         lines: [ChartSeries(values: TA.garchVol(close, alpha: Double(cfg.p1) / 100, beta: Double(cfg.p2) / 100,
+                                                                                 annualize: TA.barsPerYear(interval)), color: color)]))
+            case .atr:
+                r.panes.append(ChartPane(title: cfg.label, titleColor: color,
+                                         lines: [ChartSeries(values: TA.atr(candles, cfg.p1), color: color)]))
+            case .zscore:
+                r.panes.append(ChartPane(title: cfg.label, titleColor: color,
+                                         lines: [ChartSeries(values: TA.zscore(close, cfg.p1), color: color)],
+                                         levels: [cfg.lower, 0, cfg.upper]))
+            case .momentum:
+                r.panes.append(ChartPane(title: cfg.label, titleColor: color,
+                                         lines: [ChartSeries(values: TA.tsMomentum(close, cfg.p1), color: color)],
+                                         histogram: TA.tsMomentum(close, cfg.p1), levels: [cfg.lower, 0, cfg.upper]))
+            case .kalman:
+                r.overlays.append(ChartSeries(values: TA.kalman(close, lag: cfg.p1), color: color, width: 1.5))
+                r.legend.append((cfg.label, color))
             case .volumeProfile:
                 r.volumeProfile = VolumeProfileSpec(rows: max(5, cfg.p1), valueArea: min(0.99, max(0.1, cfg.upper / 100)),
                                                     widthFraction: min(0.8, max(0.05, Double(cfg.p2) / 100)), color: color)
