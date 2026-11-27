@@ -95,6 +95,8 @@ struct CandleChart: View {
     @State private var crosshair: CGPoint?
     @AppStorage("chartLegendCollapsed") private var legendCollapsed = false
     @State private var showHiddenIndicators = false
+    /// Size of the indicator list in the top-left corner, so chart labels can move out from under it.
+    @State private var legendSize: CGSize = .zero
     // Drawing state: a measurement, the drawing being created or moved, the first tapped point.
     @State private var ruler: (a: ChartPoint, b: ChartPoint)?
     @State private var draft: ChartDrawing?
@@ -610,6 +612,18 @@ struct CandleChart: View {
                 ctx.draw(Text(Fmt.price(crossPrice, decimals: labelDec)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlBg),
                          at: CGPoint(x: plotW + 4, y: p.y), anchor: .leading)
             }
+            // Candle time under the crosshair, on the time axis.
+            let lastIdx = candles.count - 1
+            let ci = lastIdx - Int(((plotW - p.x) / spacing - rightOffset - 0.5).rounded())
+            if candles.indices.contains(ci) {
+                let label = ctx.resolve(Text(Fmt.dateTime(Date(timeIntervalSince1970: candles[ci].t / 1000)))
+                    .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.hlBg))
+                let w = label.measure(in: CGSize(width: 300, height: 20)).width + 10
+                let cx = min(max(p.x, w / 2), plotW - w / 2)
+                ctx.fill(Path(roundedRect: CGRect(x: cx - w / 2, y: size.height - timeH, width: w, height: timeH), cornerRadius: 3),
+                         with: .color(.hlInk))
+                ctx.draw(label, at: CGPoint(x: cx, y: size.height - timeH / 2))
+            }
         }
     }
 
@@ -670,7 +684,13 @@ struct CandleChart: View {
             // Leader to the right of the candle, or to the left near the right edge.
             let toRight = px + 16 + size.width < plotW
             let lx = toRight ? px + 14 : px - 14
-            let ly = isHigh ? max(size.height / 2 + 1, py - 6) : min(mainH - size.height / 2 - 1, py + 6)
+            var ly = isHigh ? max(size.height / 2 + 1, py - 6) : min(mainH - size.height / 2 - 1, py + 6)
+            // Keep the label out from under the indicator list in the top-left corner.
+            let labelMinX = toRight ? lx : lx - size.width - 4
+            let legendBottom = legendSize.height + 6
+            if legendSize.width > 0, labelMinX < legendSize.width + 6, ly - size.height / 2 < legendBottom {
+                ly = legendBottom + size.height / 2 + 2
+            }
             var lead = Path()
             lead.move(to: CGPoint(x: px, y: py)); lead.addLine(to: CGPoint(x: lx, y: ly))
             ctx.stroke(lead, with: .color(hl.color.opacity(0.8)), lineWidth: 1)
@@ -772,24 +792,27 @@ struct CandleChart: View {
         let all = layers.items
         let hiddenCount = all.filter { !$0.visible }.count
         let items = showHiddenIndicators ? all : all.filter(\.visible)
+        if crosshair != nil || !all.isEmpty || showVolume {
         VStack(alignment: .leading, spacing: 2) {
-            if crosshair != nil, let i = idx {
-                // Candle under the crosshair: time, OHLC and change.
-                let c = candles[i]
-                let ch = c.o > 0 ? c.c / c.o - 1 : 0
-                Text(Fmt.dateTime(Date(timeIntervalSince1970: c.t / 1000))).foregroundStyle(Color.hlMuted)
-                Text("O \(Fmt.price(c.o, decimals: dec))  H \(Fmt.price(c.h, decimals: dec))  L \(Fmt.price(c.l, decimals: dec))  C \(Fmt.price(c.c, decimals: dec))  ")
-                    + Text(Fmt.pct(ch)).foregroundColor(ch >= 0 ? .hlGreen : .hlRed)
-            }
-            if !items.isEmpty || showVolume {
-                Button { legendCollapsed.toggle() } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: legendCollapsed ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .bold))
-                        Text(legendCollapsed ? L("Indicators ({0})", all.count - hiddenCount) : L("Indicators")).foregroundStyle(Color.hlMuted)
+            // One fixed slot: the candle's OHLC while the crosshair is on (the time is on the time axis),
+            // otherwise the list's header. Swapping in place keeps the rows below from jumping.
+            Group {
+                if crosshair != nil, let i = idx {
+                    let c = candles[i]
+                    let ch = c.o > 0 ? c.c / c.o - 1 : 0
+                    Text("O \(Fmt.price(c.o, decimals: dec)) H \(Fmt.price(c.h, decimals: dec)) L \(Fmt.price(c.l, decimals: dec)) C \(Fmt.price(c.c, decimals: dec)) ")
+                        + Text(Fmt.pct(ch)).foregroundColor(ch >= 0 ? .hlGreen : .hlRed)
+                } else {
+                    Button { legendCollapsed.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: legendCollapsed ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .bold))
+                            Text(legendCollapsed ? L("Indicators ({0})", all.count - hiddenCount) : L("Indicators")).foregroundStyle(Color.hlMuted)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .frame(height: 14)
             if !legendCollapsed {
                 if showVolume, let i = idx {
                     HStack(spacing: 4) {
@@ -832,21 +855,15 @@ struct CandleChart: View {
         .font(.system(size: 10, weight: .medium, design: .monospaced))
         .lineLimit(1)
         .padding(.horizontal, 5).padding(.vertical, 3)
-        .background(Color.hlBg.opacity(crosshair != nil ? 0.85 : 0.55), in: RoundedRectangle(cornerRadius: 6))
+        .foregroundStyle(Color.hlInk)
+        // Nearly opaque so candles and chart labels under the list don't show through the text.
+        .background(Color.hlBg.opacity(0.92), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.hlMuted.opacity(0.25), lineWidth: 0.5))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { legendSize = $0 }
+        .onDisappear { legendSize = .zero }
         .frame(maxWidth: size.width - axisW - 8, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func crosshairInfo(size: CGSize) -> String? {
-        guard let p = crosshair, !candles.isEmpty else { return nil }
-        let plotW = size.width - axisW
-        let lastIdx = candles.count - 1
-        let idx = lastIdx - Int(((plotW - p.x) / spacing - rightOffset - 0.5).rounded())
-        guard candles.indices.contains(idx) else { return nil }
-        let c = candles[idx]
-        let d = decimals ?? Fmt.autoDecimals(c.c)
-        let ch = c.o > 0 ? c.c / c.o - 1 : 0
-        return "\(Fmt.dateTime(Date(timeIntervalSince1970: c.t / 1000)))  O \(Fmt.price(c.o, decimals: d)) H \(Fmt.price(c.h, decimals: d)) L \(Fmt.price(c.l, decimals: d)) C \(Fmt.price(c.c, decimals: d)) \(Fmt.pct(ch))  V \(Fmt.compact(c.v))"
+        }
     }
 }
 
