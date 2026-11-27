@@ -270,12 +270,19 @@ struct IndicatorsSheet: View {
                 }
                 if !isEditing {
                     Section {
+                        // Grouped into submenus so every indicator fits on screen.
                         Menu {
-                            ForEach(IndicatorKind.allCases) { k in
-                                Button(k.title) {
-                                    let cfg = IndicatorConfig.make(k, color: model.indicators.count)
-                                    model.indicators.append(cfg)
-                                    editing = cfg.id
+                            ForEach(IndicatorGroup.allCases) { g in
+                                Menu {
+                                    ForEach(g.kinds) { k in
+                                        Button(k.title) {
+                                            let cfg = IndicatorConfig.make(k, color: model.indicators.count)
+                                            model.indicators.append(cfg)
+                                            editing = cfg.id
+                                        }
+                                    }
+                                } label: {
+                                    Label(g.title, systemImage: g.icon)
                                 }
                             }
                         } label: {

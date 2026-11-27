@@ -28,6 +28,10 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Oscillators": "Осцилляторы",
+        "Trend & overlays": "Тренд и наложения",
+        "Volatility": "Волатильность",
+        "Volume & levels": "Объём и уровни",
         "Fee ≈ (taker, crosses the spread)": "Комиссия ≈ (тейкер, пересекает спред)",
         "Average true range in price units — a common distance for stops (e.g. 1.5–2 × ATR).": "Средний истинный диапазон в единицах цены — типичное расстояние для стопа (например, 1,5–2 × ATR).",
         "Beyond visible book": "Глубже видимого стакана",

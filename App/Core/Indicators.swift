@@ -36,6 +36,36 @@ enum IndicatorKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Groups for the "Add indicator" menu.
+enum IndicatorGroup: String, CaseIterable, Identifiable {
+    case trend, oscillators, volatility, volume
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .trend: return L("Trend & overlays")
+        case .oscillators: return L("Oscillators")
+        case .volatility: return L("Volatility")
+        case .volume: return L("Volume & levels")
+        }
+    }
+    var icon: String {
+        switch self {
+        case .trend: return "chart.line.uptrend.xyaxis"
+        case .oscillators: return "waveform.path.ecg"
+        case .volatility: return "arrow.up.and.down"
+        case .volume: return "chart.bar"
+        }
+    }
+    var kinds: [IndicatorKind] {
+        switch self {
+        case .trend: return [.ema, .sma, .bollinger, .vwap, .kalman]
+        case .oscillators: return [.rsi, .macd, .stochastic, .zscore, .momentum]
+        case .volatility: return [.realizedVol, .ewmaVol, .garchVol, .atr]
+        case .volume: return [.volumeProfile, .highLow]
+        }
+    }
+}
+
 /// A user-configured indicator instance. Several instances of the same kind are allowed.
 struct IndicatorConfig: Identifiable, Codable, Hashable {
     var id = UUID()
