@@ -18,9 +18,12 @@ struct OrderFormView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if !market.isSpot { leverageRow }
             sideToggle
-            typeMenu
+            // Order type and leverage share one row (leverage as a compact chip; spot has none).
+            HStack(spacing: 6) {
+                typeMenu
+                if !market.isSpot { leverageChip }
+            }
 
             if f.type.needsTrigger {
                 NumField(title: L("Trigger"), text: $f.triggerText, placeholder: Fmt.price(refMid)) { midButton { f.triggerText = $0 } }
@@ -124,20 +127,26 @@ struct OrderFormView: View {
 
     // MARK: Subviews
 
-    private var leverageRow: some View {
-        Button { showLeverage = true } label: {
-            HStack {
-                Text(model.activeAsset.isCross && model.crossAllowed(market) ? "Cross" : "Isolated")
-                Spacer()
-                Text("\(currentLeverage)x").bold()
-                Image(systemName: "slider.horizontal.3").font(.caption)
+    /// "30x · C" (cross) or "30x · I" (isolated, in orange); opens the leverage and margin mode sheet.
+    private var leverageChip: some View {
+        let cross = model.activeAsset.isCross && model.crossAllowed(market)
+        return Button { showLeverage = true } label: {
+            HStack(spacing: 3) {
+                Text("\(currentLeverage)x").font(.system(size: 13, weight: .bold, design: .monospaced))
+                Text("· \(cross ? "C" : "I")").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(cross ? Color.hlMuted : Color.orange)
             }
-            .font(.system(size: 12))
-            .padding(.horizontal, 10).frame(height: 30)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 9).frame(height: 34)
             .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if !cross { RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.5), lineWidth: 1) }
+            }
         }
         .buttonStyle(.plain)
         .disabled(!model.canTrade)
+        .accessibilityLabel(L("Leverage {0}x, {1}", currentLeverage, cross ? "Cross" : "Isolated"))
     }
 
     private var sideToggle: some View {
@@ -166,7 +175,7 @@ struct OrderFormView: View {
             }
         } label: {
             HStack {
-                Text(f.type.title).font(.system(size: 14, weight: .semibold))
+                Text(f.type.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 Spacer()
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.hlMuted)
             }
