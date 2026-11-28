@@ -28,6 +28,8 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "build {0}": "сборка {0}",
+        "Updated to build {0}": "Обновлено до сборки {0}",
         "Indicators ({0})": "Индикаторы ({0})",
         "Hide off indicators": "Скрыть выключенные",
         "+{0} off": "+{0} выкл.",

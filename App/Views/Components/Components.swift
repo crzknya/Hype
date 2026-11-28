@@ -106,7 +106,6 @@ struct NumField<Trailing: View>: View {
     @Binding var text: String
     var placeholder: String = "0"
     @ViewBuilder var trailing: Trailing
-    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -115,25 +114,10 @@ struct NumField<Trailing: View>: View {
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
-                .focused($focused)
             trailing
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        // The whole field is a tap target, not only the digits.
-        .background { Color.clear.contentShape(Rectangle()).onTapGesture { focused = true } }
-        .onChange(of: focused) { _, on in
-            // Entering the field puts the cursor after the last digit (usually the one being changed);
-            // later taps place it wherever tapped. Set after the tap's own cursor placement, on the UIKit
-            // field itself: SwiftUI's `selection:` binding drops the keyboard's Done toolbar.
-            guard on else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(60))
-                if let tf = UIResponder.current as? UITextField {
-                    tf.selectedTextRange = tf.textRange(from: tf.endOfDocument, to: tf.endOfDocument)
-                }
-            }
-        }
         .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             if Fmt.isAmbiguous(text) { RoundedRectangle(cornerRadius: 8).stroke(Color.hlRed, lineWidth: 1) }
@@ -340,15 +324,54 @@ struct UnderlineTabs<ID: Hashable>: View {
     }
 }
 
-extension UIResponder {
-    private static weak var found: UIResponder?
+/// Number pads: the cursor starts after the last digit (usually the one being changed), and a Done bar
+/// is always there (SwiftUI's keyboard toolbar doesn't show on every screen). Plain UIKit, so it can't
+/// interfere with the SwiftUI fields.
+@MainActor
+enum NumberPadHelper {
+    private static var installed = false
 
-    /// The current first responder (e.g. the text field being edited).
-    static var current: UIResponder? {
-        found = nil
-        UIApplication.shared.sendAction(#selector(captureFirstResponder), to: nil, from: nil, for: nil)
-        return found
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in
+            guard let tf = note.object as? UITextField, tf.keyboardType == .decimalPad || tf.keyboardType == .numberPad else { return }
+            MainActor.assumeIsolated {
+                if tf.inputAccessoryView == nil {
+                    tf.inputAccessoryView = doneBar(for: tf)
+                    tf.reloadInputViews()
+                }
+                // After the tap has placed its own cursor; later taps in the field place it freely.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                    guard tf.isFirstResponder else { return }
+                    tf.selectedTextRange = tf.textRange(from: tf.endOfDocument, to: tf.endOfDocument)
+                }
+            }
+        }
     }
 
-    @objc private func captureFirstResponder() { UIResponder.found = self }
+    private static func doneBar(for tf: UITextField) -> UIToolbar {
+        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+        let done = UIBarButtonItem(title: L("Done"), primaryAction: UIAction { [weak tf] _ in tf?.resignFirstResponder() })
+        done.style = .done
+        bar.items = [UIBarButtonItem(systemItem: .flexibleSpace), done]
+        bar.sizeToFit()
+        return bar
+    }
+}
+
+/// Build number (CI run) and commit, so an installed build can be told apart from the previous one.
+enum BuildInfo {
+    static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0" }
+    static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?" }
+    static var commit: String {
+        let c = Bundle.main.infoDictionary?["HypeCommit"] as? String ?? ""
+        return c.hasPrefix("$") ? "" : c
+    }
+    /// "1.0.0 · build 114 · abc1234"
+    static var label: String {
+        var s = "\(version) · " + L("build {0}", build)
+        if !commit.isEmpty { s += " · \(commit)" }
+        return s
+    }
 }

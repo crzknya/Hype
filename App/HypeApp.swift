@@ -11,6 +11,7 @@ struct HypeApp: App {
         BackgroundAlerts.register()
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
         ThemeAppearance.apply()
+        NumberPadHelper.install()
     }
 
     var body: some Scene {
@@ -18,7 +19,15 @@ struct HypeApp: App {
             RootView()
                 .environment(model)
                 .preferredColorScheme(model.theme.isDark ? .dark : .light)
-                .task { model.start() }
+                .task {
+                    model.start()
+                    // Say which build is running after an update, so it's clear the new IPA is installed.
+                    let seen = UserDefaults.standard.string(forKey: "lastSeenBuild")
+                    if seen != BuildInfo.build {
+                        UserDefaults.standard.set(BuildInfo.build, forKey: "lastSeenBuild")
+                        if seen != nil { model.show(.success, L("Updated to build {0}", BuildInfo.build)) }
+                    }
+                }
                 .onChange(of: phase) { _, p in
                     model.sceneActive(p == .active)
                     if p == .background { BackgroundAlerts.schedule() }

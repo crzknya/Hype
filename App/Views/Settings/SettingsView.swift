@@ -140,7 +140,7 @@ struct SettingsView: View {
                 }
 
                 Section(L("About")) {
-                    LabeledContent(L("Version"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    LabeledContent(L("Version"), value: BuildInfo.label)
                     Link("Hyperliquid API Docs", destination: URL(string: "https://hyperliquid.gitbook.io/hyperliquid-docs")!)
                     Link(L("Create an API wallet (app.hyperliquid.xyz/API)"), destination: URL(string: "https://app.hyperliquid.xyz/API")!)
                     Text(L("Unofficial client. Leveraged trading carries high risk.")).font(.caption).foregroundStyle(Color.hlMuted)

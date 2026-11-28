@@ -59,6 +59,7 @@ jobs:
             -skipPackagePluginValidation \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} HYPE_COMMIT=${GITHUB_SHA::7} \
             build | tee build.log | grep -E "error:|\*\* BUILD" || true
           test -f build/Build/Products/Release-iphoneos/Hype.app/Hype || { grep -E "error:" build.log | head -80; exit 1; }
       - name: Package IPA

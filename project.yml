@@ -27,6 +27,7 @@ targets:
         CFBundleDisplayName: Hype
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        HypeCommit: $(HYPE_COMMIT)
         UILaunchScreen:
           UIColorName: ""
         UIApplicationSceneManifest:
