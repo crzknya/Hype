@@ -330,6 +330,8 @@ struct UnderlineTabs<ID: Hashable>: View {
 @MainActor
 enum NumberPadHelper {
     private static var installed = false
+    /// Screens whose order bar shows its own Done (no extra bar over the keyboard there).
+    static var screensWithOwnDone = 0
 
     static func install() {
         guard !installed else { return }
@@ -337,7 +339,7 @@ enum NumberPadHelper {
         NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in
             guard let tf = note.object as? UITextField, tf.keyboardType == .decimalPad || tf.keyboardType == .numberPad else { return }
             MainActor.assumeIsolated {
-                if tf.inputAccessoryView == nil {
+                if tf.inputAccessoryView == nil && screensWithOwnDone <= 0 {
                     tf.inputAccessoryView = doneBar(for: tf)
                     tf.reloadInputViews()
                 }

@@ -92,7 +92,8 @@ struct TradeView: View {
                     }
                 }
             }
-            .keyboardDoneToolbar()
+            // No keyboard toolbar here: its floating Done covered the Long / Short button; the order bar
+            // carries its own Done while the keyboard is up.
             .sheet(isPresented: $showPicker) { MarketPickerSheet() }
             .onChange(of: model.tradeTabReselected) { _, _ in
                 switch model.tradeLayout {
@@ -358,19 +359,37 @@ final class OrderBarState {
     var submit: () -> Void = {}
 }
 
-/// Pinned "Long / Short" button at the bottom of the trade screen.
+/// Pinned "Long / Short" button at the bottom of the trade screen. While the keyboard is up it sits right
+/// above it with a Done button beside it (instead of the system's floating Done, which covered it).
 struct OrderActionBar: View {
     let bar: OrderBarState
+    @State private var keyboardUp = false
 
     var body: some View {
         VStack(spacing: 4) {
             if !bar.detail.isEmpty {
                 Text(bar.detail).font(.caption2.monospacedDigit()).foregroundStyle(Color.hlMuted)
             }
-            PrimaryButton(title: bar.title, color: bar.isBuy ? .hlGreen : .hlRed, busy: bar.busy, disabled: !bar.enabled) {
-                bar.submit()
+            HStack(spacing: 8) {
+                PrimaryButton(title: bar.title, color: bar.isBuy ? .hlGreen : .hlRed, busy: bar.busy, disabled: !bar.enabled) {
+                    bar.submit()
+                }
+                if keyboardUp {
+                    Button(L("Done")) { hideKeyboard() }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.hlAccent)
+                        .frame(width: 76, height: 46)
+                        .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 12))
+                        .buttonStyle(.plain)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: keyboardUp)
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
+        .onAppear { NumberPadHelper.screensWithOwnDone += 1 }
+        .onDisappear { NumberPadHelper.screensWithOwnDone -= 1 }
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 6)

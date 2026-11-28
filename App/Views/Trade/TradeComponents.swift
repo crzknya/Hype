@@ -222,7 +222,6 @@ struct OrderSheet: View {
             .navigationTitle(market.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
-            .keyboardDoneToolbar()
         }
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
