@@ -579,6 +579,18 @@ struct OrderFormView: View {
         return d
     }
 
+    /// Same weights as the exchange ladder: linear from 1 (at From) to `skew` (at To).
+    private func scalePreview(_ d: OrderDraft) -> (first: Double, last: Double, avg: Double, step: Double)? {
+        guard let a = d.scaleStart, let b = d.scaleEnd, a > 0, b > 0, d.scaleCount >= 2, d.size > 0 else { return nil }
+        let n = d.scaleCount
+        let w = (0..<n).map { i in 1 + (d.scaleSkew - 1) * Double(i) / Double(n - 1) }
+        let wsum = w.reduce(0, +)
+        guard wsum > 0 else { return nil }
+        let px = (0..<n).map { i in a + (b - a) * Double(i) / Double(n - 1) }
+        let avg = zip(w, px).reduce(0) { $0 + $1.0 * $1.1 } / wsum
+        return (d.size * w[0] / wsum, d.size * w[n - 1] / wsum, avg, abs(b - a) / Double(n - 1))
+    }
+
     func summaryLines(_ given: OrderDraft?) -> [SummaryLine] {
         let d = given ?? draft()
         let px = refPrice
@@ -597,6 +609,12 @@ struct OrderFormView: View {
             if let tp = d.tp { lines.append(SummaryLine(L("Take profit"), Fmt.price(tp), .hlGreen)) }
             if let sl = d.sl { lines.append(SummaryLine(L("Stop loss"), Fmt.price(sl), .hlRed)) }
             if d.reduceOnly { lines.append(SummaryLine("Reduce only", L("yes"), .primary)) }
+        }
+        if d.type == .scale, let g = scalePreview(d) {
+            // What the skew does: sizes of the first and last order, and the size-weighted entry.
+            lines.append(SummaryLine(L("Orders (From → To)"), "\(Fmt.num(g.first, market.szDecimals)) → \(Fmt.num(g.last, market.szDecimals)) \(market.base)", .primary))
+            lines.append(SummaryLine(L("Step"), Fmt.price(g.step), .primary))
+            lines.append(SummaryLine(L("Avg entry if all fill ≈"), Fmt.price(g.avg), .primary))
         }
         lines.append(SummaryLine(L("Value"), value > 0 ? Fmt.usd(value) : "—", .primary))
         if !market.isSpot {

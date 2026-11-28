@@ -28,6 +28,9 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Step": "Шаг",
+        "Orders (From → To)": "Ордера (From → To)",
+        "Avg entry if all fill ≈": "Средний вход, если всё исполнится ≈",
         "Risk, $": "Риск, $",
         "{0}% of balance ≈ {1}": "{0}% баланса ≈ {1}",
         "% bal.": "% бал.",
@@ -751,7 +754,7 @@ enum Translations {
         "From": "От",
         "To": "До",
         "Orders: {0}": "Ордеров: {0}",
-        "Skew {0}": "Скос {0}",
+        "Skew {0}": "Skew {0}",
         "Duration: {0}": "Длительность: {0}",
         "Randomize intervals": "Случайные интервалы",
         "Watch-only account": "Аккаунт только для просмотра",
