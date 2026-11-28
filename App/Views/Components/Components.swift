@@ -106,18 +106,32 @@ struct NumField<Trailing: View>: View {
     @Binding var text: String
     var placeholder: String = "0"
     @ViewBuilder var trailing: Trailing
+    @FocusState private var focused: Bool
+    @State private var selection: TextSelection?
 
     var body: some View {
         HStack(spacing: 6) {
             Text(title).font(.caption).foregroundStyle(Color.hlMuted).lineLimit(1).fixedSize()
-            TextField(placeholder, text: $text)
+            TextField(placeholder, text: $text, selection: $selection)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
+                .focused($focused)
             trailing
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
+        // The whole field is a tap target, not only the digits.
+        .background { Color.clear.contentShape(Rectangle()).onTapGesture { focused = true } }
+        .onChange(of: focused) { _, on in
+            // Entering the field puts the cursor after the last digit (usually the one being changed);
+            // later taps place it wherever tapped. Set after the tap's own cursor placement.
+            guard on else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(60))
+                selection = TextSelection(insertionPoint: text.endIndex)
+            }
+        }
         .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             if Fmt.isAmbiguous(text) { RoundedRectangle(cornerRadius: 8).stroke(Color.hlRed, lineWidth: 1) }
