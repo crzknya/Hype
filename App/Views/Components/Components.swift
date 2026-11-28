@@ -112,7 +112,9 @@ struct NumField<Trailing: View>: View {
             Text(title).font(.caption).foregroundStyle(Color.hlMuted).lineLimit(1).fixedSize()
             TextField(placeholder, text: $text)
                 .keyboardType(.decimalPad)
-                .multilineTextAlignment(.trailing)
+                // Centered: empty space on both sides, so a tap right of the digits puts the cursor at the
+                // end and a tap left of them at the start (taps on the digits land between them).
+                .multilineTextAlignment(.center)
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
             trailing
         }
@@ -321,44 +323,6 @@ struct UnderlineTabs<ID: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Number pads: the cursor starts after the last digit (usually the one being changed), and a Done bar
-/// is always there (SwiftUI's keyboard toolbar doesn't show on every screen). Plain UIKit, so it can't
-/// interfere with the SwiftUI fields.
-@MainActor
-enum NumberPadHelper {
-    private static var installed = false
-    /// Screens whose order bar shows its own Done (no extra bar over the keyboard there).
-    static var screensWithOwnDone = 0
-
-    static func install() {
-        guard !installed else { return }
-        installed = true
-        NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in
-            guard let tf = note.object as? UITextField, tf.keyboardType == .decimalPad || tf.keyboardType == .numberPad else { return }
-            MainActor.assumeIsolated {
-                if tf.inputAccessoryView == nil && screensWithOwnDone <= 0 {
-                    tf.inputAccessoryView = doneBar(for: tf)
-                    tf.reloadInputViews()
-                }
-                // After the tap has placed its own cursor; later taps in the field place it freely.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-                    guard tf.isFirstResponder else { return }
-                    tf.selectedTextRange = tf.textRange(from: tf.endOfDocument, to: tf.endOfDocument)
-                }
-            }
-        }
-    }
-
-    private static func doneBar(for tf: UITextField) -> UIToolbar {
-        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
-        let done = UIBarButtonItem(title: L("Done"), primaryAction: UIAction { [weak tf] _ in tf?.resignFirstResponder() })
-        done.style = .done
-        bar.items = [UIBarButtonItem(systemItem: .flexibleSpace), done]
-        bar.sizeToFit()
-        return bar
     }
 }
 

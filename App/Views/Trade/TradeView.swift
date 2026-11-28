@@ -388,8 +388,6 @@ struct OrderActionBar: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
-        .onAppear { NumberPadHelper.screensWithOwnDone += 1 }
-        .onDisappear { NumberPadHelper.screensWithOwnDone -= 1 }
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 6)

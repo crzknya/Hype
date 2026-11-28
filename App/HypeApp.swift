@@ -11,7 +11,6 @@ struct HypeApp: App {
         BackgroundAlerts.register()
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
         ThemeAppearance.apply()
-        NumberPadHelper.install()
     }
 
     var body: some Scene {
