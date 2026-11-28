@@ -107,12 +107,11 @@ struct NumField<Trailing: View>: View {
     var placeholder: String = "0"
     @ViewBuilder var trailing: Trailing
     @FocusState private var focused: Bool
-    @State private var selection: TextSelection?
 
     var body: some View {
         HStack(spacing: 6) {
             Text(title).font(.caption).foregroundStyle(Color.hlMuted).lineLimit(1).fixedSize()
-            TextField(placeholder, text: $text, selection: $selection)
+            TextField(placeholder, text: $text)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
@@ -125,11 +124,14 @@ struct NumField<Trailing: View>: View {
         .background { Color.clear.contentShape(Rectangle()).onTapGesture { focused = true } }
         .onChange(of: focused) { _, on in
             // Entering the field puts the cursor after the last digit (usually the one being changed);
-            // later taps place it wherever tapped. Set after the tap's own cursor placement.
+            // later taps place it wherever tapped. Set after the tap's own cursor placement, on the UIKit
+            // field itself: SwiftUI's `selection:` binding drops the keyboard's Done toolbar.
             guard on else { return }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(60))
-                selection = TextSelection(insertionPoint: text.endIndex)
+                if let tf = UIResponder.current as? UITextField {
+                    tf.selectedTextRange = tf.textRange(from: tf.endOfDocument, to: tf.endOfDocument)
+                }
             }
         }
         .background(Color.hlCard2, in: RoundedRectangle(cornerRadius: 8))
@@ -336,4 +338,17 @@ struct UnderlineTabs<ID: Hashable>: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+extension UIResponder {
+    private static weak var found: UIResponder?
+
+    /// The current first responder (e.g. the text field being edited).
+    static var current: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(captureFirstResponder), to: nil, from: nil, for: nil)
+        return found
+    }
+
+    @objc private func captureFirstResponder() { UIResponder.found = self }
 }
