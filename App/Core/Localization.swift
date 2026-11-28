@@ -28,6 +28,12 @@ func L(_ key: String, _ args: Any...) -> String {
 
 enum Translations {
     static let ru: [String: String] = [
+        "Risk, $": "Риск, $",
+        "{0}% of balance ≈ {1}": "{0}% баланса ≈ {1}",
+        "% bal.": "% бал.",
+        "Loss at SL ≈ {0} (+ fees) · size {1} {2}": "Убыток на SL ≈ {0} (+ комиссии) · размер {1} {2}",
+        "Not enough margin: at {0}x the maximum is {1} {2}, a risk of about {3}.": "Не хватает маржи: при {0}x максимум {1} {2}, это риск около {3}.",
+        "Reduce to the maximum": "Урезать до максимума",
         "Leverage {0}x, {1}": "Плечо {0}x, {1}",
         "build {0}": "сборка {0}",
         "Updated to build {0}": "Обновлено до сборки {0}",

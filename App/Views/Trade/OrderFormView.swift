@@ -109,14 +109,21 @@ struct OrderFormView: View {
         .onChange(of: model.canTrade) { _, _ in syncBar() }
         .onChange(of: f.sizeText) { _, _ in syncBar() }
         .onChange(of: f.priceText) { _, _ in syncBar() }
-        .onChange(of: f.riskOn) { _, on in if on { f.tpslOn = true } }
+        .onChange(of: f.riskOn) { _, on in
+            if on {
+                f.tpslOn = true
+                // The size now comes from the risk; the slider's share no longer applies.
+                f.pct = 0
+                applyRisk()
+            }
+        }
         .onChange(of: f.tpslOn) { _, on in if !on { f.riskOn = false } }
         .onChange(of: f.type) { _, t in
             // TP/SL and risk sizing only exist for plain market/limit orders.
             if !t.allowsTpsl { f.riskOn = false }
             if f.pct > 0 { applyPct(f.pct) }
         }
-        .onChange(of: f.isBuy) { _, _ in if f.pct > 0 { applyPct(f.pct) } }
+        .onChange(of: f.isBuy) { _, _ in if f.pct > 0 { applyPct(f.pct) }; applyRisk() }
         .onChange(of: f.reduceOnly) { _, _ in if f.pct > 0 { applyPct(f.pct) } }
         .sheet(isPresented: $showLeverage) { LeverageSheet(market: market) }
         .sheet(item: $confirm) { d in
@@ -255,9 +262,9 @@ struct OrderFormView: View {
             HStack(spacing: 8) {
                 Slider(value: $f.pct, in: 0...1)
                     .tint(f.isBuy ? .hlGreen : .hlRed)
-                Text("\(Int((f.pct * 100).rounded()))%")
+                Text(f.riskOn ? "—" : "\(Int((f.pct * 100).rounded()))%")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(f.pct > 0 ? Color.primary : Color.hlMuted)
+                    .foregroundStyle(f.pct > 0 && !f.riskOn ? Color.primary : Color.hlMuted)
                     .frame(width: 36, alignment: .trailing)
             }
             HStack(spacing: 4) {
@@ -273,6 +280,9 @@ struct OrderFormView: View {
                 }
             }
         }
+        // With risk sizing the size comes from the risk and the stop, not from a share of the balance.
+        .disabled(f.riskOn)
+        .opacity(f.riskOn ? 0.35 : 1)
         .onChange(of: f.pct) { _, v in applyPct(v) }
     }
 
@@ -348,22 +358,66 @@ struct OrderFormView: View {
             }
             Text(L("Buttons: SL at ±% or k × ATR (chart interval), TP at double the distance (R:R 1:2)")).font(.system(size: 9)).foregroundStyle(Color.hlMuted)
             if f.riskOn {
-                NumField(title: L("Risk $"), text: $f.riskText, placeholder: "50") {
+                NumField(title: L("Risk, $"), text: $f.riskText, placeholder: "50") {
+                    // Shortcut that fills the dollar amount from a share of the balance (the field stays in $).
                     Menu {
                         ForEach([0.005, 0.01, 0.02, 0.05], id: \.self) { p in
-                            Button(L("{0}% of balance", Fmt.num(p * 100, 1))) {
+                            Button(L("{0}% of balance ≈ {1}", Fmt.num(p * 100, 1), Fmt.usd(model.tradingEquity * p))) {
                                 f.riskText = Fmt.input(model.tradingEquity * p, 2)
                             }
                         }
-                    } label: { Image(systemName: "percent").font(.caption) }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text(L("% bal.")).font(.system(size: 11, weight: .semibold))
+                            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                        }
+                        .foregroundStyle(Color.hlAccent)
+                    }
                 }
-                Text(L("Size is calculated so that the loss at SL equals the risk."))
-                    .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+                riskInfo
             }
         }
         .onChange(of: f.riskText) { _, _ in applyRisk() }
         .onChange(of: f.slText) { _, _ in applyRisk() }
         .onChange(of: f.priceText) { _, _ in applyRisk() }
+    }
+
+    /// Stop distance per unit and the size that loses exactly the risk at the stop.
+    private var riskSizing: (risk: Double, dist: Double, size: Double)? {
+        guard let risk = Fmt.parse(f.riskText), risk > 0, let sl = Fmt.parse(f.slText), refPrice > 0 else { return nil }
+        let dist = abs(refPrice - sl)
+        guard dist > 0 else { return nil }
+        return (risk, dist, risk / dist)
+    }
+
+    @ViewBuilder
+    private var riskInfo: some View {
+        if let r = riskSizing {
+            let maxSz = maxSize
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("Loss at SL ≈ {0} (+ fees) · size {1} {2}", Fmt.usd(r.risk), Fmt.num(r.size, market.szDecimals), market.base))
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.hlMuted)
+                if maxSz > 0 && r.size > maxSz {
+                    // The exchange would reject it: not enough margin at this leverage.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L("Not enough margin: at {0}x the maximum is {1} {2}, a risk of about {3}.",
+                               currentLeverage, Fmt.num(maxSz, market.szDecimals), market.base, Fmt.usd(maxSz * r.dist)))
+                            .font(.system(size: 10)).foregroundStyle(Color.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(L("Reduce to the maximum")) {
+                            f.riskText = Fmt.input((maxSz * r.dist * 100).rounded(.down) / 100, 2)
+                        }
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.hlAccent)
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(L("Size is calculated so that the loss at SL equals the risk."))
+                .font(.system(size: 9)).foregroundStyle(Color.hlMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var summary: some View {
@@ -465,10 +519,8 @@ struct OrderFormView: View {
     }
 
     private func applyRisk() {
-        guard f.riskOn, let risk = Fmt.parse(f.riskText), let sl = Fmt.parse(f.slText) else { return }
-        let dist = abs(refPrice - sl)
-        guard dist > 0 else { return }
-        let sz = risk / dist
+        guard f.riskOn, let r = riskSizing else { return }
+        let sz = r.size
         f.sizeText = f.sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(sz, market.szDecimals)
     }
 
