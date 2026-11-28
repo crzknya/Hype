@@ -15,6 +15,9 @@ struct OrderFormView: View {
     @State private var busy = false
     @State private var confirm: IdentifiedDraft?
     @State private var showLeverage = false
+    // Slider ⇄ size sync without the two feeding each other.
+    @State private var sizeFromSlider = false
+    @State private var sliderFromSize = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -107,7 +110,10 @@ struct OrderFormView: View {
         .onChange(of: f.type) { _, _ in syncBar() }
         .onChange(of: busy) { _, _ in syncBar() }
         .onChange(of: model.canTrade) { _, _ in syncBar() }
-        .onChange(of: f.sizeText) { _, _ in syncBar() }
+        .onChange(of: f.sizeText) { _, _ in
+            syncBar()
+            syncSliderToSize()
+        }
         .onChange(of: f.priceText) { _, _ in syncBar() }
         .onChange(of: f.riskOn) { _, on in
             if on {
@@ -283,7 +289,10 @@ struct OrderFormView: View {
         // With risk sizing the size comes from the risk and the stop, not from a share of the balance.
         .disabled(f.riskOn)
         .opacity(f.riskOn ? 0.35 : 1)
-        .onChange(of: f.pct) { _, v in applyPct(v) }
+        .onChange(of: f.pct) { _, v in
+            if sliderFromSize { sliderFromSize = false; return }
+            applyPct(v)
+        }
     }
 
     private var trailingFields: some View {
@@ -511,12 +520,34 @@ struct OrderFormView: View {
         return Fmt.pct(move * Double(currentLeverage), 1)
     }
 
+    /// A size typed by hand moves the slider to its share of the maximum.
+    private func syncSliderToSize() {
+        if sizeFromSlider { sizeFromSlider = false; return }
+        guard !f.riskOn else { return }
+        let entered = Fmt.parse(f.sizeText) ?? 0
+        let base = f.sizeInUsd ? (refPrice > 0 ? entered / refPrice : 0) : entered
+        let mx = maxSize
+        let ratio = mx > 0 ? min(1, max(0, base / mx)) : 0
+        guard abs(ratio - f.pct) > 0.0005 else { return }
+        sliderFromSize = true
+        f.pct = ratio
+    }
+
     private func applyPct(_ v: Double) {
         guard !f.riskOn else { return }
         let sz = maxSize * v
-        guard sz > 0 else { if v == 0 { f.sizeText = "" }; return }
-        f.sizeText = f.sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(NSDecimalNumber(decimal: market.roundSize(sz)).doubleValue, market.szDecimals)
+        let text: String
+        if sz > 0 {
+            text = f.sizeInUsd ? Fmt.input(sz * refPrice, 2) : Fmt.input(NSDecimalNumber(decimal: market.roundSize(sz)).doubleValue, market.szDecimals)
+        } else if v == 0 {
+            text = ""
+        } else { return }
+        // Mark the change as coming from the slider only when it really changes the text (else no onChange fires).
+        guard text != f.sizeText else { return }
+        sizeFromSlider = true
+        f.sizeText = text
     }
+
 
     private func applyRisk() {
         guard f.riskOn, let r = riskSizing else { return }
